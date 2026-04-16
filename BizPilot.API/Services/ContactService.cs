@@ -19,7 +19,14 @@ public class ContactService : IContactService
         var query = _db.Contacts.Where(c => c.BusinessId == businessId);
 
         if (!string.IsNullOrWhiteSpace(search))
-            query = query.Where(c => c.Name.Contains(search) || (c.PhoneNumber != null && c.PhoneNumber.Contains(search)));
+        {
+            // Case-insensitive name matching via PostgreSQL's ILIKE — users expect "ada" to find "Ada Beauty"
+            // without minding capitalization. ILIKE will use the IX_Contacts_BusinessId_NameLower functional
+            // index added in the AddCaseInsensitiveIndexes migration, so it's fast even at large contact counts.
+            // Phone numbers are digits + "+", so Contains (case-sensitive) is fine there.
+            query = query.Where(c => EF.Functions.ILike(c.Name, $"%{search}%")
+                                  || (c.PhoneNumber != null && c.PhoneNumber.Contains(search)));
+        }
 
         if (!string.IsNullOrWhiteSpace(type) && Enum.TryParse<ContactType>(type, true, out var ct))
             query = query.Where(c => c.Type == ct);
