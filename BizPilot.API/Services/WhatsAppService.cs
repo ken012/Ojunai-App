@@ -1703,17 +1703,21 @@ public class WhatsAppService : IWhatsAppService
             existingUser.PasswordResetCode = BCrypt.Net.BCrypt.HashPassword(setupCode);
             existingUser.PasswordResetCodeExpiresAtUtc = DateTime.UtcNow.AddHours(24);
             existingUser.TokenVersion++;
-            // Reset failed-login counters — they're getting a fresh start
             existingUser.FailedLoginAttempts = 0;
             existingUser.LockoutEndsAtUtc = null;
             user = existingUser;
         }
-        else if (existingUser != null && !existingUser.IsActive)
-        {
-            return $"The number {normalizedPhone} is linked to another business. They need to be fully removed first.";
-        }
         else
         {
+            // If the phone belongs to deactivated staff at a DIFFERENT business, free it up by
+            // swapping their phone to a placeholder before creating the new user. The old row stays
+            // intact for audit history at the original business.
+            if (existingUser != null && !existingUser.IsActive)
+            {
+                existingUser.PhoneNumber = $"deleted-{existingUser.Id:N}";
+                await _db.SaveChangesAsync();
+            }
+
             var tempPassword = Guid.NewGuid().ToString("N")[..16];
             user = new User
             {

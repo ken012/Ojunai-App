@@ -67,8 +67,17 @@ public class StaffController : BizPilotBaseController
         var existingUser = await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == normalizedPhone);
         if (existingUser != null && existingUser.IsActive)
             return BadRequest(ApiResponse<StaffDto>.Fail("Phone number already registered."));
+
+        // If the phone belongs to a deactivated user at a DIFFERENT business, free it up by swapping
+        // their phone to a placeholder. The deactivated row stays for audit history — only the phone
+        // changes so the unique index no longer blocks reuse. This handles the real-world case where
+        // someone leaves one business and joins another.
         if (existingUser != null && !existingUser.IsActive && existingUser.BusinessId != BusinessId)
-            return BadRequest(ApiResponse<StaffDto>.Fail("Phone number is linked to another business."));
+        {
+            existingUser.PhoneNumber = $"deleted-{existingUser.Id:N}";
+            await _db.SaveChangesAsync();
+            existingUser = null;
+        }
 
         User user;
         if (existingUser != null && !existingUser.IsActive && existingUser.BusinessId == BusinessId)
