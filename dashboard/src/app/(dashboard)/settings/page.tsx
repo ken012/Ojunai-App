@@ -533,6 +533,8 @@ function ManageCategoriesCard({
 
 type PlanFeature = { text: string; included: boolean };
 
+const PLAN_ORDER = ["starter", "shop", "pro", "business"];
+
 const PLAN_DETAILS: Record<string, { label: string; tagline: string; price: string; color: string; features: PlanFeature[] }> = {
   starter: {
     label: "Starter",
@@ -553,7 +555,7 @@ const PLAN_DETAILS: Record<string, { label: string; tagline: string; price: stri
   shop: {
     label: "Shop",
     tagline: "For growing shops with staff",
-    price: "—",
+    price: "7,500",
     color: "bg-sky-100 text-sky-700",
     features: [
       { text: "Everything in Starter", included: true },
@@ -568,7 +570,7 @@ const PLAN_DETAILS: Record<string, { label: string; tagline: string; price: stri
   pro: {
     label: "Pro",
     tagline: "Full power for serious businesses",
-    price: "—",
+    price: "12,500",
     color: "bg-violet-100 text-violet-700",
     features: [
       { text: "Everything in Shop", included: true },
@@ -581,7 +583,7 @@ const PLAN_DETAILS: Record<string, { label: string; tagline: string; price: stri
   business: {
     label: "Business",
     tagline: "Enterprise-grade for multi-location businesses",
-    price: "—",
+    price: "30,000",
     color: "bg-amber-100 text-amber-700",
     features: [
       { text: "Everything in Pro", included: true },
@@ -731,10 +733,10 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
 
         {subError && <p className="text-xs text-red-500">{subError}</p>}
 
-        {isBillable && !hasActiveSub && (
-          <div className="pt-2 space-y-2">
+        {isBillable && !isSubscriber && (
+          <div className="pt-3 space-y-3">
             <Button
-              className="w-full"
+              className="w-full h-11 text-base font-semibold bg-sky-600 hover:bg-sky-700 text-white shadow-sm"
               onClick={() => handleSubscribe(plan)}
               disabled={subscribing !== null}
             >
@@ -749,7 +751,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
                       key={key}
                       onClick={() => handleSubscribe(key)}
                       disabled={subscribing !== null}
-                      className="text-xs text-sky-600 hover:underline"
+                      className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-sky-600 hover:border-sky-200 transition-colors disabled:opacity-50"
                     >
                       {subscribing === key ? "..." : `${d.label} — ₦${d.price}/mo`}
                     </button>
@@ -759,7 +761,32 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
           </div>
         )}
 
-        {isBillable && hasActiveSub && (
+        {isBillable && isSubscriber && !hasActiveSub && plan !== "business" && (
+          <div className="pt-3">
+            <p className="text-xs text-slate-500 mb-2">Upgrade your plan:</p>
+            <div className="flex flex-wrap gap-2">
+              {PLAN_ORDER
+                .filter((key) => PLAN_ORDER.indexOf(key) > PLAN_ORDER.indexOf(plan))
+                .map((key) => {
+                  const d = PLAN_DETAILS[key];
+                  if (!d) return null;
+                  return (
+                    <Button
+                      key={key}
+                      variant="outline"
+                      onClick={() => handleSubscribe(key)}
+                      disabled={subscribing !== null}
+                      className="text-sm"
+                    >
+                      {subscribing === key ? "Redirecting..." : `Upgrade to ${d.label} — ₦${d.price}/mo`}
+                    </Button>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+
+        {isBillable && (hasActiveSub || isSubscriber) && (
           <div className="pt-2">
             <button
               onClick={handleCancel}
