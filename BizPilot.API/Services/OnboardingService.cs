@@ -210,10 +210,15 @@ public class OnboardingService
             return false;
         }
 
-        // Remove any deactivated user with this phone so we can reuse the number
+        // If a deactivated user holds this phone (from a previous business), free it by swapping
+        // to a placeholder instead of deleting. This preserves audit history — their RecordedByUserId
+        // references in the old business's sales/expenses stay intact.
         var deactivated = await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == phone && !u.IsActive);
         if (deactivated != null)
-            _db.Users.Remove(deactivated);
+        {
+            deactivated.PhoneNumber = $"x{deactivated.Id.ToString("N")[..18]}";
+            await _db.SaveChangesAsync();
+        }
 
         var business = new Business
         {
