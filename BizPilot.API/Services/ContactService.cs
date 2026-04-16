@@ -24,7 +24,7 @@ public class ContactService : IContactService
             // without minding capitalization. ILIKE will use the IX_Contacts_BusinessId_NameLower functional
             // index added in the AddCaseInsensitiveIndexes migration, so it's fast even at large contact counts.
             // Phone numbers are digits + "+", so Contains (case-sensitive) is fine there.
-            query = query.Where(c => EF.Functions.ILike(c.Name, $"%{search}%")
+            query = query.Where(c => EF.Functions.ILike(c.Name, $"{search}%")
                                   || (c.PhoneNumber != null && c.PhoneNumber.Contains(search)));
         }
 
