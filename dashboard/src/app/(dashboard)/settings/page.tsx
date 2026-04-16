@@ -743,46 +743,67 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
               {subscribing === plan ? "Redirecting..." : `Subscribe to ${details.label} — ${price}/mo`}
             </Button>
             {plan !== "business" && (
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(PLAN_DETAILS)
-                  .filter(([key]) => key !== plan && key !== "business")
-                  .map(([key, d]) => (
-                    <button
-                      key={key}
-                      onClick={() => handleSubscribe(key)}
-                      disabled={subscribing !== null}
-                      className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-sky-600 hover:border-sky-200 transition-colors disabled:opacity-50"
-                    >
-                      {subscribing === key ? "..." : `${d.label} — ₦${d.price}/mo`}
-                    </button>
-                  ))}
+              <div className="space-y-2">
+                <p className="text-xs text-slate-400">Or choose a different plan:</p>
+                {PLAN_ORDER
+                  .filter((key) => key !== plan && key !== "business")
+                  .map((key) => {
+                    const d = PLAN_DETAILS[key];
+                    if (!d) return null;
+                    return (
+                      <Button
+                        key={key}
+                        variant="outline"
+                        className="w-full h-9 text-sm font-medium"
+                        onClick={() => handleSubscribe(key)}
+                        disabled={subscribing !== null}
+                      >
+                        {subscribing === key ? "Redirecting..." : `${d.label} — ₦${d.price}/mo`}
+                      </Button>
+                    );
+                  })}
+                <a
+                  href={`mailto:contact@bizpilot-ai.com?subject=${encodeURIComponent("Business Plan Enquiry")}&body=${encodeURIComponent(
+                    `Hi BizPilot Team,\n\nI'm interested in the Business plan.\n\nI'd like to learn more about:\n- Multi-branch support\n- Custom report exports\n- Bulk CSV import\n- API access\n- Unlimited staff accounts\n\nPlease get in touch to discuss my requirements.\n\nBusiness name: ${business?.name ?? "[Your business name]"}\n\nThank you.`
+                  )}`}
+                  className="flex items-center justify-center w-full h-9 text-sm font-medium rounded-lg border-2 border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:border-amber-500 transition-colors"
+                >
+                  Business — Contact Us
+                </a>
               </div>
             )}
           </div>
         )}
 
         {isBillable && isSubscriber && !hasActiveSub && plan !== "business" && (
-          <div className="pt-3">
-            <p className="text-xs text-slate-500 mb-2">Upgrade your plan:</p>
-            <div className="flex flex-wrap gap-2">
-              {PLAN_ORDER
-                .filter((key) => PLAN_ORDER.indexOf(key) > PLAN_ORDER.indexOf(plan))
-                .map((key) => {
-                  const d = PLAN_DETAILS[key];
-                  if (!d) return null;
-                  return (
-                    <Button
-                      key={key}
-                      variant="outline"
-                      onClick={() => handleSubscribe(key)}
-                      disabled={subscribing !== null}
-                      className="text-sm"
-                    >
-                      {subscribing === key ? "Redirecting..." : `Upgrade to ${d.label} — ₦${d.price}/mo`}
-                    </Button>
-                  );
-                })}
-            </div>
+          <div className="pt-3 space-y-3">
+            <p className="text-xs text-slate-500 mb-1">Upgrade your plan:</p>
+            {PLAN_ORDER
+              .filter((key) => PLAN_ORDER.indexOf(key) > PLAN_ORDER.indexOf(plan) && key !== "business")
+              .map((key) => {
+                const d = PLAN_DETAILS[key];
+                if (!d) return null;
+                return (
+                  <Button
+                    key={key}
+                    className="w-full h-11 text-base font-semibold bg-sky-600 hover:bg-sky-700 text-white shadow-sm"
+                    onClick={() => handleSubscribe(key)}
+                    disabled={subscribing !== null}
+                  >
+                    {subscribing === key ? "Redirecting..." : `Upgrade to ${d.label} — ₦${d.price}/mo`}
+                  </Button>
+                );
+              })}
+            {PLAN_ORDER.indexOf(plan) < PLAN_ORDER.indexOf("business") && (
+              <a
+                href={`mailto:contact@bizpilot-ai.com?subject=${encodeURIComponent("Business Plan Enquiry")}&body=${encodeURIComponent(
+                  `Hi BizPilot Team,\n\nI'm currently on the ${details.label} plan and I'm interested in upgrading to the Business plan.\n\nI'd like to learn more about:\n- Multi-branch support\n- Custom report exports\n- Bulk CSV import\n- API access\n- Unlimited staff accounts\n\nPlease get in touch to discuss my requirements.\n\nBusiness name: ${business?.name ?? "[Your business name]"}\n\nThank you.`
+                )}`}
+                className="flex items-center justify-center w-full h-11 text-base font-semibold rounded-lg border-2 border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:border-amber-500 transition-colors shadow-sm"
+              >
+                Upgrade to Business — Contact Us
+              </a>
+            )}
           </div>
         )}
 
