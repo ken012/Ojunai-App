@@ -23,6 +23,14 @@ public class ClaudeParsingService : IClaudeParsingService
 
     public async Task<ParsedMessage> ParseAsync(string message, BusinessContext context, List<(string Role, string Content)>? history = null)
     {
+        // Claude rejects whitespace-only message bodies with a 400 (and rightly so — there's nothing to parse).
+        // Short-circuit here to avoid the wasted API call, the logged error, and the ~2s latency hit. The
+        // downstream handler will treat this as an unknown low-confidence parse and ask for clarification.
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return new ParsedMessage { Intent = "unknown", Confidence = 0 };
+        }
+
         var systemPrompt = BuildSystemPrompt(context);
         var model = _config["Claude:Model"] ?? "claude-opus-4-6";
         var maxTokens = int.Parse(_config["Claude:MaxTokens"] ?? "1024");
@@ -797,7 +805,8 @@ Use update_last_sale to change payment status, customer, or payment method on th
 - "I'm closing for the day" / "End of day" → Emit get_today_sales (show them the summary)
 - "Made 50k today" → This is a REPORT request (get_today_sales), NOT a sale.
 - "How do I use this?" → Emit greet (shows the help menu)
-- "Repeat last sale" / "do that again" / "same sale again" → repeat_last_sale {}
+- "Repeat last sale" / "do that again" / "same sale again" / "same again" / "make it again" / "one more like that" → repeat_last_sale {}
+  Note: "same again" is a common commerce shorthand ("I'll have the same again"). The server checks whether there's a recent sale to repeat — if not, it returns a friendly "no recent sale found" message. Safe to emit even if context is thin.
 - "Add 2 more rice to that" / "also add beans to that sale" → add_to_last_sale {productName:"rice", quantity:2}
 - "Add 3 shampoo to that last order" → add_to_last_sale {productName:"shampoo", quantity:3}
 

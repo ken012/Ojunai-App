@@ -8,8 +8,8 @@
 # - message:     exact user input
 # - expect.intent:       canonical intent name from ClaudeParsingService
 # - expect.contains:     optional — keys/values that MUST appear in businessAction
-# - expect.min_confidence: optional — reject if Claude's confidence is lower
-# - expect.allow_clarification: optional — pass if bot asks for clarification, even if intent matches
+# - expect.minConfidence: optional — reject if Claude's confidence is lower
+# - expect.allowClarification: optional — pass if bot asks for clarification, even if intent matches
 # - notes:       why this case matters (regression from a real bug, new phrasing pattern, etc.)
 #
 # WORKFLOW
@@ -54,7 +54,7 @@ cases:
     expect:
       intent: create_sale
       contains: { items: [{ productName: "rice", quantity: 3, unitPrice: 5000 }] }
-      min_confidence: 0.90
+      minConfidence: 0.90
 
   - id: sale-basic-002
     message: "Sold 5 rice to Ada"
@@ -279,7 +279,7 @@ cases:
     message: "Bought rice today"
     expect:
       intent: add_inventory
-      allow_clarification: true
+      allowClarification: true
     notes: "Missing quantity — bot should ask"
 
   - id: restock-found-extra-001
@@ -333,7 +333,7 @@ cases:
     message: "Spent money on transport"
     expect:
       intent: create_expense
-      allow_clarification: true
+      allowClarification: true
 
   # ═════════════════════════════════════════════════════════════════════════════════
   # QUERIES — read-only commands
@@ -805,25 +805,25 @@ cases:
   - id: edge-empty-001
     message: " "
     expect:
-      allow_clarification: true
+      allowClarification: true
 
   - id: edge-gibberish-001
     message: "asdfghjkl"
     expect:
       intent: unknown
-      allow_clarification: true
+      allowClarification: true
 
   - id: edge-ambiguous-qty-001
     message: "Add 5"
     expect:
       intent: add_inventory
-      allow_clarification: true
+      allowClarification: true
     notes: "Too ambiguous — must ask 'add 5 of what?'"
 
   - id: edge-negative-qty-001
     message: "Sold -3 rice"
     expect:
-      allow_clarification: true
+      allowClarification: true
     notes: "Negative quantity is nonsense — bot should ask"
 
   # ═════════════════════════════════════════════════════════════════════════════════
