@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { formatNaira, formatDateTime } from "@/lib/format";
@@ -27,23 +27,33 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Users, Pencil, CreditCard, Banknote } from "lucide-react";
+import { Users, Pencil, CreditCard, Banknote, Search, X } from "lucide-react";
 import { hasPermission, Permission } from "@/lib/permissions";
 
 export default function ContactsPage() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<ContactDto | null>(null);
   const [recordingDebt, setRecordingDebt] = useState(false);
   const [recordingPayment, setRecordingPayment] = useState<ContactDto | null>(null);
   const [viewingLedger, setViewingLedger] = useState<ContactDto | null>(null);
 
+  // Debounce the search input so we don't fire a request on every keystroke. 250ms feels
+  // responsive without hammering the API.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const { data, isLoading } = useQuery({
-    queryKey: ["contacts", typeFilter],
+    queryKey: ["contacts", typeFilter, debouncedSearch],
     queryFn: async () => {
       const typeParam = typeFilter !== "all" ? `&type=${typeFilter}` : "";
+      const searchParam = debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : "";
       const { data } = await api.get<{ data: PaginatedResult<ContactDto> }>(
-        `/contacts?page=1&pageSize=100${typeParam}`
+        `/contacts?page=1&pageSize=100${typeParam}${searchParam}`
       );
       return data.data!;
     },
@@ -87,13 +97,36 @@ export default function ContactsPage() {
         </Card>
       </div>
 
-      <Tabs value={typeFilter} onValueChange={setTypeFilter}>
-        <TabsList>
-          <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger value="Customer">Customers</TabsTrigger>
-          <TabsTrigger value="Supplier">Suppliers</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+        <Tabs value={typeFilter} onValueChange={setTypeFilter}>
+          <TabsList>
+            <TabsTrigger value="all">All</TabsTrigger>
+            <TabsTrigger value="Customer">Customers</TabsTrigger>
+            <TabsTrigger value="Supplier">Suppliers</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div className="relative w-full sm:max-w-xs">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <Input
+            type="search"
+            placeholder="Search by name..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 pr-9"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1 rounded"
+              aria-label="Clear search"
+              type="button"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      </div>
 
       <Card>
         <CardContent className="pt-4">
@@ -182,7 +215,9 @@ export default function ContactsPage() {
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8 text-slate-400">
                       <Users size={24} className="mx-auto mb-2 opacity-30" />
-                      No contacts yet
+                      {debouncedSearch
+                        ? <>No contacts match &ldquo;{debouncedSearch}&rdquo;.</>
+                        : "No contacts yet"}
                     </TableCell>
                   </TableRow>
                 )}
@@ -222,6 +257,15 @@ function RecordDebtDialog({ open, onClose, contacts }: { open: boolean; onClose:
   const [form, setForm] = useState({ contactId: "", type: "receivable", amount: "", notes: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [contactSearch, setContactSearch] = useState("");
+
+  // Client-side filter over the already-loaded contacts. We don't re-fetch because the contacts prop
+  // already reflects the page's active tab filter — no need to double-round-trip for a sub-selection.
+  const filteredContacts = useMemo(() => {
+    const q = contactSearch.trim().toLowerCase();
+    if (!q) return contacts;
+    return contacts.filter((c) => c.name.toLowerCase().includes(q));
+  }, [contacts, contactSearch]);
 
   async function handleSave() {
     if (!form.contactId || !form.amount || !form.notes) return;
@@ -246,6 +290,7 @@ function RecordDebtDialog({ open, onClose, contacts }: { open: boolean; onClose:
 
   function handleClose() {
     setForm({ contactId: "", type: "receivable", amount: "", notes: "" });
+    setContactSearch("");
     setError(null);
     onClose();
   }
@@ -270,16 +315,30 @@ function RecordDebtDialog({ open, onClose, contacts }: { open: boolean; onClose:
           </div>
           <div>
             <Label>Contact</Label>
+            <div className="relative mb-1">
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <Input
+                type="search"
+                placeholder="Filter contacts..."
+                value={contactSearch}
+                onChange={(e) => setContactSearch(e.target.value)}
+                className="pl-7 h-8 text-xs"
+              />
+            </div>
             <select
               className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
               value={form.contactId}
               onChange={(e) => setForm({ ...form, contactId: e.target.value })}
+              size={Math.min(6, Math.max(2, filteredContacts.length + 1))}
             >
               <option value="">Select contact</option>
-              {contacts.map((c) => (
+              {filteredContacts.map((c) => (
                 <option key={c.id} value={c.id}>{c.name} ({c.type})</option>
               ))}
             </select>
+            {contactSearch && filteredContacts.length === 0 && (
+              <p className="text-xs text-slate-400 mt-1">No contacts match &ldquo;{contactSearch}&rdquo;.</p>
+            )}
           </div>
           <div>
             <Label>Amount</Label>
