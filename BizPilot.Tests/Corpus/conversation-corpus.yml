@@ -1,0 +1,853 @@
+# BizPilot Conversation Corpus
+#
+# Realistic test messages from the BizPilot domain: Nigerian SMEs writing in English, Pidgin, and
+# informal text with typos. Each entry is assigned an ID so failures are trackable across runs.
+#
+# STRUCTURE
+# - id:          stable identifier (e.g. "sale-basic-001"). Never change once committed.
+# - message:     exact user input
+# - expect.intent:       canonical intent name from ClaudeParsingService
+# - expect.contains:     optional — keys/values that MUST appear in businessAction
+# - expect.min_confidence: optional — reject if Claude's confidence is lower
+# - expect.allow_clarification: optional — pass if bot asks for clarification, even if intent matches
+# - notes:       why this case matters (regression from a real bug, new phrasing pattern, etc.)
+#
+# WORKFLOW
+# 1. When a user reports "the bot didn't understand X", copy their exact message into a new entry here
+# 2. Run the corpus locally — the new entry should FAIL
+# 3. Fix the prompt/handler until it passes
+# 4. Commit fix + corpus entry together
+#
+# The test database is seeded with the `products` and `contacts` lists below so Claude has realistic
+# context to parse against. Keep these lists in sync with common Nigerian SME inventory.
+
+seed:
+  business:
+    name: "Test Business"
+    plan: "shop"   # Shop tier so ledger and csv_import features are enabled
+  products:
+    - { name: "Rice",         unit: "bag",    currentStock: 50,  costPrice: 3000, sellingPrice: 5000, category: "Grains & Staples" }
+    - { name: "Beans",        unit: "bag",    currentStock: 30,  costPrice: 2500, sellingPrice: 4200, category: "Grains & Staples" }
+    - { name: "Shampoo",      unit: "bottle", currentStock: 10,  costPrice: 1200, sellingPrice: 2500, category: "Beauty & Personal Care" }
+    - { name: "Face Primer",  unit: "piece",  currentStock: 100, costPrice: 3000, sellingPrice: 6000, category: "Beauty & Personal Care" }
+    - { name: "Conditioner",  unit: "bottle", currentStock: 15,  costPrice: 1500, sellingPrice: 3500, category: "Beauty & Personal Care" }
+    - { name: "Palm Oil",     unit: "litre",  currentStock: 40,  costPrice: 1800, sellingPrice: 2800, category: "Groceries" }
+    - { name: "Milk",         unit: "carton", currentStock: 8,   costPrice: 4500, sellingPrice: 7000, category: "Groceries" }
+    - { name: "Bread",        unit: "loaf",   currentStock: 20,  costPrice: 500,  sellingPrice: 900,  category: "Bakery" }
+    - { name: "Hair Brush",   unit: "piece",  currentStock: 25,  costPrice: 800,  sellingPrice: 2000, category: "Beauty & Personal Care" }
+    - { name: "Toothpaste",   unit: "tube",   currentStock: 3,   costPrice: 400,  sellingPrice: 800,  category: "Personal Care" }   # low-stock
+    - { name: "Sugar",        unit: "bag",    currentStock: 0,   costPrice: 1000, sellingPrice: 1800, category: "Groceries" }       # out of stock
+  contacts:
+    - { name: "Ada",   type: "Customer" }
+    - { name: "Tunde", type: "Customer" }
+    - { name: "Ngozi", type: "Customer" }
+    - { name: "Emeka", type: "Customer" }
+    - { name: "Market Mama", type: "Supplier" }
+
+cases:
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # CREATE_SALE — the single most important intent, covered thoroughly
+  # ═════════════════════════════════════════════════════════════════════════════════
+
+  - id: sale-basic-001
+    message: "Sold 3 bags of rice at 5000"
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "rice", quantity: 3, unitPrice: 5000 }] }
+      min_confidence: 0.90
+
+  - id: sale-basic-002
+    message: "Sold 5 rice to Ada"
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "rice", quantity: 5 }], contactName: "Ada" }
+
+  - id: sale-basic-003
+    message: "Sold 3 rice at 5000 to Tunde on credit"
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "rice", quantity: 3, unitPrice: 5000 }], contactName: "Tunde", paymentStatus: "Unpaid" }
+
+  - id: sale-basic-004
+    message: "Emeka bought 2 bottles of shampoo"
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "shampoo", quantity: 2 }], contactName: "Emeka" }
+
+  - id: sale-multi-001
+    message: "Sold 3 rice and 2 beans"
+    expect:
+      intent: create_sale
+      contains:
+        items:
+          - { productName: "rice", quantity: 3 }
+          - { productName: "beans", quantity: 2 }
+
+  - id: sale-multi-002
+    message: "Sold 3 rice at 5000 and 2 beans at 4000"
+    expect:
+      intent: create_sale
+      contains:
+        items:
+          - { productName: "rice", quantity: 3, unitPrice: 5000 }
+          - { productName: "beans", quantity: 2, unitPrice: 4000 }
+
+  - id: sale-multi-003
+    message: "Sold rice, beans, oil — 5 each at 2000"
+    expect:
+      intent: create_sale
+      contains:
+        items:
+          - { productName: "rice", quantity: 5, unitPrice: 2000 }
+          - { productName: "beans", quantity: 5, unitPrice: 2000 }
+
+  - id: sale-sell-all-001
+    message: "Sell all my stock of shampoo"
+    expect:
+      intent: create_sale
+      contains: { sellAllProduct: "shampoo" }
+    notes: "Sell-all-X flag. Server computes quantity from live stock."
+
+  - id: sale-sell-all-002
+    message: "Sell all my rice at 5500"
+    expect:
+      intent: create_sale
+      contains: { sellAllProduct: "rice", unitPrice: 5500 }
+
+  - id: sale-sell-half-001
+    message: "Sell half my stock of shampoo"
+    expect:
+      intent: create_sale
+      contains: { sellHalfProduct: "shampoo" }
+    notes: "Regression test for the half-stock bug. Server must compute half from DB, not Claude."
+
+  - id: sale-sell-half-002
+    message: "Sell half my stock of face primer at 6k"
+    expect:
+      intent: create_sale
+      contains: { sellHalfProduct: "face primer", unitPrice: 6000 }
+    notes: "Half with price. The scenario that originally exposed the bug."
+
+  - id: sale-sell-half-003
+    message: "Sell half the conditioner"
+    expect:
+      intent: create_sale
+      contains: { sellHalfProduct: "conditioner" }
+
+  - id: sale-worth-001
+    message: "Sold rice worth 10k"
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "rice", totalAmount: 10000 }] }
+    notes: "Reverse calc — server derives quantity from totalAmount and stored price."
+
+  - id: sale-worth-002
+    message: "Ada bought rice worth 5000"
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "rice", totalAmount: 5000 }], contactName: "Ada" }
+
+  - id: sale-each-qty-001
+    message: "Sell 20 of each beauty product"
+    expect:
+      intent: create_sale
+      contains: { sellEachQty: 20, sellCategory: "Beauty & Personal Care" }
+
+  - id: sale-each-qty-002
+    message: "Sell 5 of each product except rice and beans"
+    expect:
+      intent: create_sale
+      contains: { sellEachQty: 5, excludeProducts: ["rice", "beans"] }
+
+  - id: sale-discount-001
+    message: "Sold 3 rice at 10% off"
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "rice", quantity: 3 }], discountPercent: 10 }
+
+  - id: sale-pidgin-001
+    message: "I don sell 5 bags of rice"
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "rice", quantity: 5 }] }
+    notes: "Pidgin: 'I don sell' = sold"
+
+  - id: sale-pidgin-002
+    message: "Oya record 3 rice to Ada, she go pay later"
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "rice", quantity: 3 }], contactName: "Ada", paymentStatus: "Unpaid" }
+    notes: "Pidgin: 'go pay later' = credit"
+
+  - id: sale-typo-001
+    message: "Sold 3 bag of rics"
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "rice" }] }
+    notes: "Typo: 'rics' should fuzzy-match to rice. Claude should resolve, or server FindProductAsync suggests."
+
+  - id: sale-typo-002
+    message: "Sold 2 botle of shamoo"
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "shampoo" }] }
+
+  - id: sale-free-001
+    message: "Give Ada 2 rice free"
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "rice", quantity: 2, unitPrice: 0 }], contactName: "Ada" }
+    notes: "Zero-price comp sale"
+
+  - id: sale-payment-method-001
+    message: "Sold 3 rice, paid cash"
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "rice", quantity: 3 }], paymentMethod: "Cash" }
+
+  - id: sale-payment-method-002
+    message: "Sold 5 shampoo, transfer"
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "shampoo", quantity: 5 }], paymentMethod: "Transfer" }
+
+  - id: sale-dozen-001
+    message: "Sold 2 dozen toothpaste at 800"
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "toothpaste", quantity: 24, unitPrice: 800 }] }
+    notes: "Dozen = 12"
+
+  - id: sale-half-bag-001
+    message: "Sold half bag of rice to Tunde"
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "rice", quantity: 0.5 }], contactName: "Tunde" }
+    notes: "Fractional quantity"
+
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # ADD_INVENTORY — restocking
+  # ═════════════════════════════════════════════════════════════════════════════════
+
+  - id: restock-basic-001
+    message: "Bought 10 bags of rice at 3000"
+    expect:
+      intent: add_inventory
+      contains: { productName: "rice", quantity: 10, unitCost: 3000 }
+
+  - id: restock-basic-002
+    message: "Restocked 50 bottles of shampoo"
+    expect:
+      intent: add_inventory
+      contains: { productName: "shampoo", quantity: 50 }
+
+  - id: restock-basic-003
+    message: "Got 20 cartons of milk from supplier"
+    expect:
+      intent: add_inventory
+      contains: { productName: "milk", quantity: 20 }
+
+  - id: restock-multi-001
+    message: "Bought 30 bags rice, 40 boxes juice, 25 bottles shampoo"
+    expect:
+      intent: add_inventory
+      contains:
+        items:
+          - { productName: "rice", quantity: 30 }
+          - { productName: "shampoo", quantity: 25 }
+
+  - id: restock-pay-later-001
+    message: "Received 50 mascara from Market Mama, will pay later"
+    expect:
+      intent: add_inventory
+      contains: { productName: "mascara", payLater: "true", supplierName: "Market Mama" }
+
+  - id: restock-with-sell-price-001
+    message: "Bought 6 hair brushes for 10k, want to sell at 2000 each"
+    expect:
+      intent: add_inventory
+      contains: { productName: "hair brush", quantity: 6, unitCost: 10000, sellingPrice: 2000 }
+    notes: "Purchase + selling price in one message"
+
+  - id: restock-pidgin-001
+    message: "I don buy 20 bag of rice"
+    expect:
+      intent: add_inventory
+      contains: { productName: "rice", quantity: 20 }
+
+  - id: restock-missing-qty-001
+    message: "Bought rice today"
+    expect:
+      intent: add_inventory
+      allow_clarification: true
+    notes: "Missing quantity — bot should ask"
+
+  - id: restock-found-extra-001
+    message: "I found 3 extra bags of rice"
+    expect:
+      intent: add_inventory
+      contains: { productName: "rice", quantity: 3 }
+
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # CREATE_EXPENSE — operating costs
+  # ═════════════════════════════════════════════════════════════════════════════════
+
+  - id: expense-basic-001
+    message: "Spent 5k on transport"
+    expect:
+      intent: create_expense
+      contains: { category: "Transport", amount: 5000 }
+
+  - id: expense-basic-002
+    message: "Paid 100k for rent"
+    expect:
+      intent: create_expense
+      contains: { category: "Rent", amount: 100000 }
+
+  - id: expense-intangible-001
+    message: "Bought airtime 1000"
+    expect:
+      intent: create_expense
+      contains: { amount: 1000 }
+    notes: "Airtime is expense, not add_inventory. Critical rule."
+
+  - id: expense-nepa-001
+    message: "NEPA bill 8k"
+    expect:
+      intent: create_expense
+      contains: { amount: 8000 }
+
+  - id: expense-salary-001
+    message: "Paid staff salary 50k"
+    expect:
+      intent: create_expense
+      contains: { category: "Salaries", amount: 50000 }
+
+  - id: expense-fuel-001
+    message: "3000 fuel"
+    expect:
+      intent: create_expense
+      contains: { amount: 3000 }
+
+  - id: expense-missing-amount-001
+    message: "Spent money on transport"
+    expect:
+      intent: create_expense
+      allow_clarification: true
+
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # QUERIES — read-only commands
+  # ═════════════════════════════════════════════════════════════════════════════════
+
+  - id: query-today-sales-001
+    message: "Today's sales"
+    expect: { intent: get_today_sales }
+
+  - id: query-today-sales-002
+    message: "How much did I make today?"
+    expect: { intent: get_today_sales }
+
+  - id: query-today-sales-003
+    message: "Wetin I sell today?"
+    expect: { intent: get_today_sales_detail }
+    notes: "Pidgin: 'wetin' = what. 'Wetin I sell' asks for the breakdown, not just totals — Claude correctly routes to _detail."
+
+  - id: query-summary-001
+    message: "Daily summary"
+    expect: { intent: get_daily_summary }
+
+  - id: query-stock-001
+    message: "Check stock"
+    expect: { intent: get_all_stock }
+
+  - id: query-stock-002
+    message: "What's my inventory"
+    expect: { intent: get_all_stock }
+
+  - id: query-stock-specific-001
+    message: "How much rice do I have"
+    expect:
+      intent: get_specific_stock
+      contains: { productNames: ["rice"] }
+
+  - id: query-stock-low-001
+    message: "What's running low"
+    expect: { intent: get_low_stock }
+
+  - id: query-stock-low-002
+    message: "Show me low stock items"
+    expect: { intent: get_low_stock }
+
+  - id: query-debtors-001
+    message: "Who owes me money"
+    expect: { intent: get_outstanding_receivables }
+
+  - id: query-debtors-002
+    message: "Outstanding receivables"
+    expect: { intent: get_outstanding_receivables }
+
+  - id: query-payables-001
+    message: "Who do I owe"
+    expect: { intent: get_outstanding_payables }
+
+  - id: query-customer-balance-001
+    message: "How much does Ada owe me"
+    expect:
+      intent: get_customer_balance
+      contains: { contactName: "Ada" }
+
+  - id: query-profit-001
+    message: "What's my profit this month"
+    expect: { intent: get_profit_estimate }
+
+  - id: query-top-products-001
+    message: "Top 3 products"
+    expect:
+      intent: get_top_products
+      contains: { count: 3 }
+
+  - id: query-top-products-002
+    message: "Least selling items"
+    expect:
+      intent: get_top_products
+      contains: { direction: "bottom" }
+
+  - id: query-dead-stock-001
+    message: "What isn't selling"
+    expect: { intent: get_dead_stock }
+
+  - id: query-stockout-prediction-001
+    message: "When will I run out of rice"
+    expect: { intent: get_stockout_prediction }
+
+  - id: query-week-comparison-001
+    message: "Compare this week to last week"
+    expect: { intent: get_week_comparison }
+
+  - id: query-stock-value-001
+    message: "How much is my inventory worth"
+    expect: { intent: get_stock_value }
+
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # LEDGER — debts and payments
+  # ═════════════════════════════════════════════════════════════════════════════════
+
+  - id: receivable-basic-001
+    message: "Ada owes me 20k"
+    expect:
+      intent: create_receivable
+      contains: { contactName: "Ada", amount: 20000 }
+
+  - id: receivable-basic-002
+    message: "Tunde owes 50k for the rice"
+    expect:
+      intent: create_receivable
+      contains: { contactName: "Tunde", amount: 50000 }
+
+  - id: payable-basic-001
+    message: "I owe Market Mama 30k"
+    expect:
+      intent: create_payable
+      contains: { contactName: "Market Mama", amount: 30000 }
+
+  - id: payment-basic-001
+    message: "Ada paid 10k"
+    expect:
+      intent: record_receivable_payment
+      contains: { contactName: "Ada", amount: 10000 }
+
+  - id: payment-clear-one-001
+    message: "Clear Tunde's debt"
+    expect:
+      intent: record_receivable_payment
+      contains: { contactName: "Tunde", clearAll: "true" }
+
+  - id: payment-clear-all-001
+    message: "Clear all debts"
+    expect:
+      intent: record_receivable_payment
+      contains: { clearAllDebts: "true" }
+
+  - id: payment-partial-001
+    message: "Received 5k from Ada"
+    expect:
+      intent: record_receivable_payment
+      contains: { contactName: "Ada", amount: 5000 }
+
+  - id: payment-pidgin-001
+    message: "Ada don pay me 10k"
+    expect:
+      intent: record_receivable_payment
+      contains: { contactName: "Ada", amount: 10000 }
+
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # PRODUCT MANAGEMENT
+  # ═════════════════════════════════════════════════════════════════════════════════
+
+  - id: product-create-001
+    message: "Add new product: lipstick, unit piece, sells at 2000"
+    expect:
+      intent: create_product
+      contains: { name: "lipstick", sellingPrice: 2000 }
+
+  - id: product-update-price-001
+    message: "Rice now sells at 5500"
+    expect:
+      intent: update_product_price
+      contains: { productName: "rice", sellingPrice: 5500 }
+
+  - id: product-update-price-delta-001
+    message: "Increase shampoo price by 500"
+    expect:
+      intent: update_product_price
+      contains: { productName: "shampoo", sellingPriceChange: 500 }
+
+  - id: product-update-price-delta-002
+    message: "Reduce rice cost by 1000"
+    expect:
+      intent: update_product_price
+      contains: { productName: "rice", costPriceChange: -1000 }
+
+  - id: product-threshold-001
+    message: "Alert me when rice hits 5 bags"
+    expect:
+      intent: update_low_stock_threshold
+      contains: { productName: "rice", threshold: 5 }
+
+  - id: product-delete-001
+    message: "Delete toothpaste from my products"
+    expect:
+      intent: delete_product
+      contains: { productName: "toothpaste" }
+
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # REMOVE / DAMAGE / RETURN
+  # ═════════════════════════════════════════════════════════════════════════════════
+
+  - id: remove-basic-001
+    message: "Remove 5 bags of rice from stock"
+    expect:
+      intent: remove_inventory
+      contains: { productName: "rice", quantity: 5 }
+
+  - id: remove-zeroout-001
+    message: "Zero out the rice"
+    expect:
+      intent: remove_inventory
+      contains: { productName: "rice", zeroOut: "true" }
+
+  - id: remove-zeroall-001
+    message: "Delete all my stock"
+    expect:
+      intent: remove_inventory
+      contains: { zeroAll: "true" }
+
+  - id: damage-001
+    message: "3 bottles of shampoo got damaged"
+    expect:
+      intent: mark_damaged_inventory
+      contains: { productName: "shampoo", quantity: 3 }
+
+  - id: damage-shrinkage-001
+    message: "We lost 2 rice"
+    expect:
+      intent: remove_inventory
+      contains: { productName: "rice", quantity: 2 }
+
+  - id: return-001
+    message: "Customer returned 3 hair brushes"
+    expect:
+      intent: return_product
+      contains: { productName: "hair brush", quantity: 3 }
+
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # CORRECTIONS — these depend on recent activity and must be robust
+  # ═════════════════════════════════════════════════════════════════════════════════
+
+  - id: correction-qty-001
+    message: "Actually I sold 2"
+    expect:
+      intent: correct_last_sale
+      contains: { quantity: 2 }
+
+  - id: correction-credit-001
+    message: "That was on credit"
+    expect:
+      intent: update_last_sale
+      contains: { paymentStatus: "Unpaid" }
+
+  - id: correction-contact-001
+    message: "Add Ada to that sale"
+    expect:
+      intent: update_last_sale
+      contains: { contactName: "Ada" }
+
+  - id: correction-method-001
+    message: "Actually make it transfer"
+    expect:
+      intent: update_last_sale
+      contains: { paymentMethod: "Transfer" }
+
+  - id: correction-undo-001
+    message: "Cancel that"
+    expect: { intent: undo_last_action }
+
+  - id: correction-undo-002
+    message: "Scratch that last one"
+    expect: { intent: undo_last_action }
+
+  - id: correction-add-item-001
+    message: "Plus 2 beans"
+    expect:
+      intent: add_to_last_sale
+      contains: { productName: "beans", quantity: 2 }
+
+  - id: correction-repeat-001
+    message: "Same again"
+    expect: { intent: repeat_last_sale }
+
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # HOLDS
+  # ═════════════════════════════════════════════════════════════════════════════════
+
+  - id: hold-create-001
+    message: "Hold 5 bags of rice for Ada"
+    expect:
+      intent: hold_stock
+      contains: { productName: "rice", quantity: 5, contactName: "Ada" }
+
+  - id: hold-convert-001
+    message: "Ada came for her rice"
+    expect:
+      intent: release_hold
+      contains: { contactName: "Ada", productName: "rice", convertToSale: "true" }
+
+  - id: hold-release-001
+    message: "Release Ada's hold"
+    expect:
+      intent: release_hold
+      contains: { contactName: "Ada" }
+
+  - id: hold-list-001
+    message: "What's on hold"
+    expect: { intent: get_active_holds }
+
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # STAFF
+  # ═════════════════════════════════════════════════════════════════════════════════
+
+  - id: staff-add-001
+    message: "Add staff Mary 08012345678"
+    expect:
+      intent: add_staff
+      contains: { fullName: "Mary", phoneNumber: "08012345678" }
+
+  - id: staff-add-role-001
+    message: "Add Ada as bookkeeper, number 09034567890"
+    expect:
+      intent: add_staff
+      contains: { fullName: "Ada", role: "Bookkeeper" }
+
+  - id: staff-list-001
+    message: "Who are my staff"
+    expect: { intent: get_staff_list }
+
+  - id: staff-sales-001
+    message: "What did Mary sell today"
+    expect:
+      intent: get_staff_sales
+      contains: { staffName: "Mary" }
+
+  - id: staff-product-001
+    message: "Who sold rice today"
+    expect:
+      intent: get_product_staff
+      contains: { productName: "rice" }
+
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # STOCKTAKE
+  # ═════════════════════════════════════════════════════════════════════════════════
+
+  - id: stocktake-001
+    message: "I counted 15 rice, 8 beans, 20 oil"
+    expect:
+      intent: stocktake
+      contains:
+        items:
+          - { productName: "rice", actualCount: 15 }
+          - { productName: "beans", actualCount: 8 }
+
+  - id: stocktake-single-001
+    message: "Actual rice count is 12"
+    expect:
+      intent: stocktake
+      contains: { items: [{ productName: "rice", actualCount: 12 }] }
+
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # GREETINGS + SMALLTALK — handled by short-circuit, should not need Claude
+  # ═════════════════════════════════════════════════════════════════════════════════
+
+  - id: greet-hi
+    message: "Hi"
+    expect: { intent: greet }
+
+  - id: greet-hello
+    message: "Hello"
+    expect: { intent: greet }
+
+  - id: greet-morning
+    message: "Good morning"
+    expect: { intent: greet }
+
+  - id: help-001
+    message: "help"
+    expect: { intent: help }
+
+  - id: help-002
+    message: "What can you do"
+    expect: { intent: greet }
+    notes: "Claude reasonably maps open-ended 'what can you do' to greet (welcome + common commands). Both greet and help produce helpful output."
+
+  - id: account-001
+    message: "My account"
+    expect: { intent: get_my_account }
+
+  - id: account-002
+    message: "Who am I"
+    expect: { intent: get_my_account }
+
+  - id: plan-001
+    message: "My plan"
+    expect: { intent: get_my_plan }
+
+  - id: plans-001
+    message: "Show me plans"
+    expect: { intent: get_plans }
+
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # PENDING-ACTION FOLLOW-UPS — these require a prior bot question in history
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # Each case specifies a "pending" block describing what the bot previously asked.
+  # The corpus runner threads this into the Claude request as a PendingAction.
+
+  - id: pending-price-001
+    message: "6000"
+    pending:
+      intent: create_sale
+      awaitingField: unitPrice
+      questionText: "No selling price is set for shampoo. Please say the price."
+      partialPayload: '{"sellHalfProduct":"shampoo"}'
+    expect:
+      intent: create_sale
+      contains: { unitPrice: 6000, sellHalfProduct: "shampoo" }
+    notes: "THE original bug. Bare '6000' must complete the pending sell-half-shampoo sale."
+
+  - id: pending-price-002
+    message: "5k"
+    pending:
+      intent: create_sale
+      awaitingField: unitPrice
+      questionText: "What price for rice?"
+      partialPayload: '{"items":[{"productName":"rice","quantity":2}]}'
+    expect:
+      intent: create_sale
+      contains: { items: [{ productName: "rice", quantity: 2, unitPrice: 5000 }] }
+
+  - id: pending-quantity-001
+    message: "10"
+    pending:
+      intent: add_inventory
+      awaitingField: quantity
+      questionText: "How many rice did you buy?"
+      partialPayload: '{"productName":"rice"}'
+    expect:
+      intent: add_inventory
+      contains: { productName: "rice", quantity: 10 }
+
+  - id: pending-customer-001
+    message: "Ada"
+    pending:
+      intent: update_last_sale
+      awaitingField: contactName
+      questionText: "No customer name was recorded. What's their name?"
+      partialPayload: "{}"
+    expect:
+      intent: update_last_sale
+      contains: { contactName: "Ada" }
+
+  - id: pending-yes-001
+    message: "yes"
+    pending:
+      intent: create_sale
+      awaitingField: confirmation
+      questionText: "Sell all 50 bags of rice at 5000 each — total ₦250,000?"
+      partialPayload: '{"sellAllProduct":"rice"}'
+    expect:
+      intent: create_sale
+      contains: { sellAllProduct: "rice" }
+    notes: "Bare 'yes' confirms the proposed action"
+
+  - id: pending-topic-switch-001
+    message: "What did I sell today?"
+    pending:
+      intent: create_sale
+      awaitingField: unitPrice
+      questionText: "No selling price is set for shampoo. Please say the price."
+      partialPayload: '{"sellHalfProduct":"shampoo"}'
+    expect:
+      intent: get_today_sales_detail
+    notes: "User changes topic — abandon pending, handle new intent. Claude routes 'what did I sell' to the detailed version."
+
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # ERROR EDGE CASES — should ask clarification, not silently break
+  # ═════════════════════════════════════════════════════════════════════════════════
+
+  - id: edge-empty-001
+    message: " "
+    expect:
+      allow_clarification: true
+
+  - id: edge-gibberish-001
+    message: "asdfghjkl"
+    expect:
+      intent: unknown
+      allow_clarification: true
+
+  - id: edge-ambiguous-qty-001
+    message: "Add 5"
+    expect:
+      intent: add_inventory
+      allow_clarification: true
+    notes: "Too ambiguous — must ask 'add 5 of what?'"
+
+  - id: edge-negative-qty-001
+    message: "Sold -3 rice"
+    expect:
+      allow_clarification: true
+    notes: "Negative quantity is nonsense — bot should ask"
+
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # REPORTS — delegation to dashboard
+  # ═════════════════════════════════════════════════════════════════════════════════
+
+  - id: reports-show-001
+    message: "Reports"
+    expect: { intent: show_reports }
+
+  - id: reports-show-002
+    message: "What reports are available"
+    expect: { intent: show_reports }
+
+  # ═════════════════════════════════════════════════════════════════════════════════
+  # SUBSCRIPTION
+  # ═════════════════════════════════════════════════════════════════════════════════
+
+  - id: subscribe-001
+    message: "Subscribe to shop plan"
+    expect:
+      intent: subscribe
+      contains: { plan: "shop" }
+
+  - id: subscribe-cancel-001
+    message: "Cancel my subscription"
+    expect: { intent: cancel_subscription }

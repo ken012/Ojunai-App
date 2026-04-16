@@ -1,0 +1,25 @@
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Port=5432;Database=bizpilot_dev;Username=bizpilot;Password=YOUR_LOCAL_DB_PASSWORD"
+  },
+  "Jwt": {
+    "Secret": "REPLACE_WITH_AT_LEAST_32_CHAR_RANDOM_STRING_FOR_LOCAL_DEV"
+  },
+  "Claude": {
+    "ApiKey": "sk-ant-api03-YOUR_CLAUDE_KEY_HERE"
+  },
+  "Twilio": {
+    "AccountSid": "AC_YOUR_TWILIO_SID",
+    "AuthToken": "YOUR_TWILIO_AUTH_TOKEN",
+    "SkipSignatureValidation": false
+  },
+  "Paystack": {
+    "SecretKey": "sk_test_YOUR_PAYSTACK_TEST_KEY"
+  },
+  "Admin": {
+    "AnalyticsKey": "GENERATE_A_32_CHAR_RANDOM_KEY_FOR_LOCAL_USE"
+  },
+  "Cors": {
+    "AllowedOrigins": "http://localhost:3000,http://localhost:3001"
+  }
+}

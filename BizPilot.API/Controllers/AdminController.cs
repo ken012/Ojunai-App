@@ -1,0 +1,343 @@
+using BizPilot.API.Data;
+using BizPilot.API.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+namespace BizPilot.API.Controllers;
+
+[AllowAnonymous]
+[Route("api/admin")]
+[ApiController]
+public class AdminController : ControllerBase
+{
+    private readonly AppDbContext _db;
+    private readonly IConfiguration _config;
+
+    public AdminController(AppDbContext db, IConfiguration config) { _db = db; _config = config; }
+
+    [HttpGet("onboarding-analytics")]
+    public async Task<IActionResult> GetOnboardingAnalytics([FromQuery] string key)
+    {
+        var secret = _config["Admin:AnalyticsKey"];
+        if (string.IsNullOrEmpty(secret) || secret.Length < 32) return StatusCode(503, "Admin endpoint not configured.");
+        if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            System.Text.Encoding.UTF8.GetBytes(key ?? ""),
+            System.Text.Encoding.UTF8.GetBytes(secret))) return Unauthorized();
+
+        var logs = await _db.MessageLogs
+            .Where(m => m.ParsedIntent != null && m.ParsedIntent.StartsWith("onboarding:"))
+            .OrderByDescending(m => m.CreatedAtUtc)
+            .Take(500)
+            .Select(m => new { m.ParsedIntent, m.RawMessage, m.CreatedAtUtc })
+            .ToListAsync();
+
+        var funnel = logs
+            .GroupBy(l => l.ParsedIntent)
+            .Select(g => new { Step = g.Key, Count = g.Count() })
+            .OrderByDescending(g => g.Count)
+            .ToList();
+
+        var activeFlowsRaw = await _db.OnboardingStates
+            .OrderByDescending(s => s.LastActivityUtc)
+            .Select(s => new
+            {
+                s.PhoneNumber,
+                Step = s.Step.ToString(),
+                s.BusinessName,
+                s.BusinessType,
+                s.City,
+                s.OwnerName,
+                s.CreatedAtUtc,
+                s.LastActivityUtc
+            })
+            .ToListAsync();
+
+        var activeFlows = activeFlowsRaw.Select(s => new
+        {
+            PhoneNumber = RedactPhone(s.PhoneNumber),
+            s.Step,
+            s.BusinessName,
+            s.BusinessType,
+            s.City,
+            s.OwnerName,
+            s.CreatedAtUtc,
+            s.LastActivityUtc
+        }).ToList();
+
+        var recentSignupsRaw = await _db.Businesses
+            .Include(b => b.Users)
+            .Where(b => b.CreatedAtUtc >= DateTime.UtcNow.AddDays(-30))
+            .OrderByDescending(b => b.CreatedAtUtc)
+            .Take(50)
+            .Select(b => new
+            {
+                b.Name,
+                b.BusinessType,
+                b.City,
+                Owner = b.Users.Where(u => u.Role == UserRole.Owner).Select(u => u.FullName).FirstOrDefault(),
+                Phone = b.Users.Where(u => u.Role == UserRole.Owner).Select(u => u.PhoneNumber).FirstOrDefault(),
+                b.Plan,
+                b.TrialEndsAt,
+                b.CreatedAtUtc
+            })
+            .ToListAsync();
+
+        var recentSignups = recentSignupsRaw.Select(s => new
+        {
+            s.Name,
+            s.BusinessType,
+            s.City,
+            s.Owner,
+            Phone = RedactPhone(s.Phone),
+            s.Plan,
+            s.TrialEndsAt,
+            s.CreatedAtUtc
+        }).ToList();
+
+        return Ok(new { funnel, activeFlows, recentSignups });
+    }
+
+    private static string RedactPhone(string? phone)
+    {
+        if (string.IsNullOrEmpty(phone)) return "—";
+        if (phone.Length <= 4) return phone;
+        return new string('*', phone.Length - 4) + phone[^4..];
+    }
+
+    /// <summary>
+    /// Shared admin-key validation. Returns null on success, or the action result to short-circuit with.
+    /// </summary>
+    private IActionResult? ValidateAdminKey(string? key)
+    {
+        var secret = _config["Admin:AnalyticsKey"];
+        if (string.IsNullOrEmpty(secret) || secret.Length < 32)
+            return StatusCode(503, "Admin endpoint not configured.");
+        if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            System.Text.Encoding.UTF8.GetBytes(key ?? ""),
+            System.Text.Encoding.UTF8.GetBytes(secret))) return Unauthorized();
+        return null;
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════
+    // TELEMETRY — production observability over MessageLogs
+    //
+    // These endpoints surface the signals from the principles doc: misparse rate, retry patterns,
+    // confidence distribution, and top failing phrasings. Check weekly; use the outputs to drive
+    // new corpus entries and prompt improvements.
+    // ═════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Percentage of inbound messages per intent that ended in NeedsClarification or Failed in the
+    /// last 7 days. High values for an intent flag where Claude is struggling to parse that category
+    /// of messages. Threshold of concern: >5% for any single intent.
+    /// </summary>
+    [HttpGet("telemetry/misparse-rate")]
+    public async Task<IActionResult> GetMisparseRate([FromQuery] string key, [FromQuery] int days = 7)
+    {
+        var auth = ValidateAdminKey(key);
+        if (auth != null) return auth;
+
+        var since = DateTime.UtcNow.AddDays(-Math.Clamp(days, 1, 90));
+
+        var logs = await _db.MessageLogs
+            .Where(m => m.Direction == MessageDirection.Inbound
+                        && m.CreatedAtUtc >= since
+                        && m.BusinessId != null)
+            .Select(m => new { m.ParsedIntent, m.ProcessingStatus })
+            .ToListAsync();
+
+        var byIntent = logs
+            .GroupBy(l => l.ParsedIntent ?? "unknown")
+            .Select(g => new
+            {
+                Intent = g.Key,
+                Total = g.Count(),
+                Problems = g.Count(x => x.ProcessingStatus == MessageProcessingStatus.NeedsClarification
+                                     || x.ProcessingStatus == MessageProcessingStatus.Failed),
+                Rate = g.Count() == 0 ? 0 : Math.Round(
+                    g.Count(x => x.ProcessingStatus == MessageProcessingStatus.NeedsClarification
+                              || x.ProcessingStatus == MessageProcessingStatus.Failed) * 100.0 / g.Count(),
+                    2)
+            })
+            .OrderByDescending(x => x.Rate)
+            .ThenByDescending(x => x.Total)
+            .ToList();
+
+        var overall = new
+        {
+            Total = logs.Count,
+            Problems = logs.Count(l => l.ProcessingStatus == MessageProcessingStatus.NeedsClarification
+                                    || l.ProcessingStatus == MessageProcessingStatus.Failed),
+            Rate = logs.Count == 0 ? 0 : Math.Round(
+                logs.Count(l => l.ProcessingStatus == MessageProcessingStatus.NeedsClarification
+                             || l.ProcessingStatus == MessageProcessingStatus.Failed) * 100.0 / logs.Count,
+                2)
+        };
+
+        return Ok(new { windowDays = days, overall, byIntent });
+    }
+
+    /// <summary>
+    /// Users who sent multiple messages in rapid succession after getting a clarification response.
+    /// This is the "user is frustrated" signal — they tried to tell the bot something, it didn't
+    /// understand, they rephrased. The original messages in each chain are our priority targets for
+    /// corpus additions and prompt fixes.
+    /// </summary>
+    [HttpGet("telemetry/retry-patterns")]
+    public async Task<IActionResult> GetRetryPatterns([FromQuery] string key, [FromQuery] int days = 7)
+    {
+        var auth = ValidateAdminKey(key);
+        if (auth != null) return auth;
+
+        var since = DateTime.UtcNow.AddDays(-Math.Clamp(days, 1, 30));
+
+        // Pull all inbound logs with user context. We'll scan per-user for close-succession patterns.
+        var logs = await _db.MessageLogs
+            .Where(m => m.Direction == MessageDirection.Inbound
+                        && m.CreatedAtUtc >= since
+                        && m.UserId != null)
+            .OrderBy(m => m.UserId).ThenBy(m => m.CreatedAtUtc)
+            .Select(m => new { m.UserId, m.ParsedIntent, m.ProcessingStatus, m.RawMessage, m.CreatedAtUtc })
+            .ToListAsync();
+
+        var chains = new List<object>();
+        var grouped = logs.GroupBy(l => l.UserId);
+        foreach (var g in grouped)
+        {
+            var arr = g.ToList();
+            for (int i = 0; i < arr.Count - 1; i++)
+            {
+                // Clarification + follow-up within 2 minutes is a chain seed
+                if (arr[i].ProcessingStatus != MessageProcessingStatus.NeedsClarification) continue;
+
+                var chain = new List<dynamic> { arr[i] };
+                for (int j = i + 1; j < arr.Count; j++)
+                {
+                    if ((arr[j].CreatedAtUtc - chain[^1].CreatedAtUtc).TotalMinutes > 2) break;
+                    chain.Add(arr[j]);
+                }
+
+                if (chain.Count >= 2)
+                {
+                    chains.Add(new
+                    {
+                        userId = g.Key,
+                        messages = chain.Select(m => new
+                        {
+                            message = (string)m.RawMessage,
+                            intent = (string?)m.ParsedIntent,
+                            status = m.ProcessingStatus.ToString(),
+                            at = (DateTime)m.CreatedAtUtc
+                        }).ToList()
+                    });
+                    i += chain.Count - 1; // Skip past the chain we just consumed
+                }
+            }
+        }
+
+        return Ok(new { windowDays = days, chainCount = chains.Count, chains });
+    }
+
+    /// <summary>
+    /// Histogram of Claude confidence scores for successfully-parsed inbound messages. Drift in this
+    /// distribution is the earliest signal that prompt quality, model behavior, or user phrasings
+    /// have shifted. Healthy steady state: >80% of messages at &gt;=0.90, most of the rest between
+    /// 0.75 and 0.90, low single digits in the lower tiers.
+    /// </summary>
+    [HttpGet("telemetry/confidence-distribution")]
+    public async Task<IActionResult> GetConfidenceDistribution([FromQuery] string key, [FromQuery] int days = 7)
+    {
+        var auth = ValidateAdminKey(key);
+        if (auth != null) return auth;
+
+        var since = DateTime.UtcNow.AddDays(-Math.Clamp(days, 1, 30));
+
+        var confidences = await _db.MessageLogs
+            .Where(m => m.Direction == MessageDirection.Inbound
+                        && m.CreatedAtUtc >= since
+                        && m.ConfidenceScore != null)
+            .Select(m => m.ConfidenceScore!.Value)
+            .ToListAsync();
+
+        var buckets = new[]
+        {
+            new { label = "0.00-0.20", min = 0m,    max = 0.2m },
+            new { label = "0.20-0.40", min = 0.2m,  max = 0.4m },
+            new { label = "0.40-0.60", min = 0.4m,  max = 0.6m },
+            new { label = "0.60-0.75", min = 0.6m,  max = 0.75m },
+            new { label = "0.75-0.90", min = 0.75m, max = 0.9m },
+            new { label = "0.90-1.00", min = 0.9m,  max = 1.0001m }
+        };
+
+        var distribution = buckets.Select(b => new
+        {
+            bucket = b.label,
+            count = confidences.Count(c => c >= b.min && c < b.max),
+            percent = confidences.Count == 0 ? 0 : Math.Round(confidences.Count(c => c >= b.min && c < b.max) * 100.0 / confidences.Count, 2)
+        }).ToList();
+
+        return Ok(new
+        {
+            windowDays = days,
+            totalMessages = confidences.Count,
+            mean = confidences.Count == 0 ? 0 : Math.Round((double)confidences.Average(), 3),
+            distribution
+        });
+    }
+
+    /// <summary>
+    /// Clusters the raw text of messages that ended in NeedsClarification or unknown intent, grouped
+    /// by a simple normalized form (lowercased, trimmed, alnum+space only). Top clusters are the
+    /// phrasings most frequently failing to parse — each one should become a corpus entry.
+    /// </summary>
+    [HttpGet("telemetry/top-failures")]
+    public async Task<IActionResult> GetTopFailures([FromQuery] string key, [FromQuery] int days = 7, [FromQuery] int limit = 20)
+    {
+        var auth = ValidateAdminKey(key);
+        if (auth != null) return auth;
+
+        var since = DateTime.UtcNow.AddDays(-Math.Clamp(days, 1, 30));
+
+        var failures = await _db.MessageLogs
+            .Where(m => m.Direction == MessageDirection.Inbound
+                        && m.CreatedAtUtc >= since
+                        && (m.ProcessingStatus == MessageProcessingStatus.NeedsClarification
+                            || m.ProcessingStatus == MessageProcessingStatus.Failed
+                            || m.ParsedIntent == "unknown"))
+            .Select(m => new { m.RawMessage, m.ParsedIntent, m.ProcessingStatus, m.ConfidenceScore })
+            .ToListAsync();
+
+        var clusters = failures
+            .GroupBy(f => Normalize(f.RawMessage))
+            .Select(g => new
+            {
+                normalized = g.Key,
+                count = g.Count(),
+                sampleMessage = g.First().RawMessage,
+                commonIntent = g.Where(x => x.ParsedIntent != null).GroupBy(x => x.ParsedIntent).OrderByDescending(x => x.Count()).FirstOrDefault()?.Key,
+                avgConfidence = g.Where(x => x.ConfidenceScore.HasValue).Any()
+                    ? Math.Round((double)g.Where(x => x.ConfidenceScore.HasValue).Average(x => x.ConfidenceScore!.Value), 3)
+                    : (double?)null
+            })
+            .OrderByDescending(c => c.count)
+            .Take(Math.Clamp(limit, 5, 100))
+            .ToList();
+
+        return Ok(new { windowDays = days, totalFailures = failures.Count, clusters });
+    }
+
+    /// <summary>
+    /// Simple normalization for failure clustering: lowercase, strip non-alphanumeric (except space),
+    /// collapse whitespace. Rough but good enough to group "Sold 3 rice" and "sold 3 rice!" together.
+    /// </summary>
+    private static string Normalize(string raw)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var c in raw.ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(c) || c == ' ') sb.Append(c);
+        }
+        return System.Text.RegularExpressions.Regex.Replace(sb.ToString().Trim(), @"\s+", " ");
+    }
+}

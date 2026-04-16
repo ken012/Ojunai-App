@@ -1,0 +1,56 @@
+using BizPilot.API.Common;
+using BizPilot.API.Data;
+using BizPilot.API.DTOs.Ledger;
+using BizPilot.API.Services.Interfaces;
+using Microsoft.AspNetCore.Mvc;
+
+namespace BizPilot.API.Controllers;
+
+[Route("api/ledger")]
+public class LedgerController : BizPilotBaseController
+{
+    private readonly ILedgerService _ledger;
+    private readonly PlanGuard _planGuard;
+    private readonly AppDbContext _db;
+
+    public LedgerController(ILedgerService ledger, PlanGuard planGuard, AppDbContext db) { _ledger = ledger; _planGuard = planGuard; _db = db; }
+
+    [HttpPost("receivables")]
+    [RequirePermission(Permission.ManageDebts)]
+    public async Task<ActionResult<ApiResponse<LedgerEntryDto>>> CreateReceivable([FromBody] CreateReceivableRequest request)
+    {
+        var (allowed, err) = await _planGuard.CheckFeatureAsync(BusinessId, "ledger");
+        if (!allowed) return BadRequest(ApiResponse<LedgerEntryDto>.Fail(err!));
+        var user = await _db.Users.FindAsync(UserId);
+        var result = await _ledger.CreateReceivableAsync(BusinessId, request, "Manual", user?.Id, user?.FullName);
+        return Ok(ApiResponse<LedgerEntryDto>.Ok(result, "Receivable recorded."));
+    }
+
+    [HttpPost("payables")]
+    [RequirePermission(Permission.ManageDebts)]
+    public async Task<ActionResult<ApiResponse<LedgerEntryDto>>> CreatePayable([FromBody] CreatePayableRequest request)
+    {
+        var (allowed, err) = await _planGuard.CheckFeatureAsync(BusinessId, "ledger");
+        if (!allowed) return BadRequest(ApiResponse<LedgerEntryDto>.Fail(err!));
+        var user = await _db.Users.FindAsync(UserId);
+        var result = await _ledger.CreatePayableAsync(BusinessId, request, "Manual", user?.Id, user?.FullName);
+        return Ok(ApiResponse<LedgerEntryDto>.Ok(result, "Payable recorded."));
+    }
+
+    [HttpPost("payments")]
+    [RequirePermission(Permission.ManageDebts)]
+    public async Task<ActionResult<ApiResponse<LedgerEntryDto>>> RecordPayment([FromBody] RecordPaymentRequest request)
+    {
+        var user = await _db.Users.FindAsync(UserId);
+        var result = await _ledger.RecordPaymentAsync(BusinessId, request, "Manual", user?.Id, user?.FullName);
+        return Ok(ApiResponse<LedgerEntryDto>.Ok(result, "Payment recorded."));
+    }
+
+    [HttpGet("balances")]
+    [RequirePermission(Permission.ViewOwnReports)]
+    public async Task<ActionResult<ApiResponse<List<OutstandingBalanceDto>>>> GetBalances([FromQuery] string? type = null)
+    {
+        var result = await _ledger.GetOutstandingBalancesAsync(BusinessId, type);
+        return Ok(ApiResponse<List<OutstandingBalanceDto>>.Ok(result));
+    }
+}
