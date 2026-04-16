@@ -248,7 +248,7 @@ public class BusinessController : BizPilotBaseController
                 // later signs up with the same real phone number.
                 u.FullName = "Deleted User";
                 u.Email = null;
-                u.PhoneNumber = $"deleted-{u.Id:N}";
+                u.PhoneNumber = $"x{u.Id.ToString("N")[..18]}";
                 u.PasswordHash = string.Empty;
                 u.PasswordResetCode = null;
                 u.PasswordResetCodeExpiresAtUtc = null;
