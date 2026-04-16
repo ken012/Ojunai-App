@@ -74,7 +74,7 @@ public class StaffController : BizPilotBaseController
         // someone leaves one business and joins another.
         if (existingUser != null && !existingUser.IsActive && existingUser.BusinessId != BusinessId)
         {
-            existingUser.PhoneNumber = $"deleted-{existingUser.Id:N}";
+            existingUser.PhoneNumber = $"x{existingUser.Id.ToString("N")[..18]}";
             await _db.SaveChangesAsync();
             existingUser = null;
         }

@@ -1714,7 +1714,7 @@ public class WhatsAppService : IWhatsAppService
             // intact for audit history at the original business.
             if (existingUser != null && !existingUser.IsActive)
             {
-                existingUser.PhoneNumber = $"deleted-{existingUser.Id:N}";
+                existingUser.PhoneNumber = $"x{existingUser.Id.ToString("N")[..18]}";
                 await _db.SaveChangesAsync();
             }
 
