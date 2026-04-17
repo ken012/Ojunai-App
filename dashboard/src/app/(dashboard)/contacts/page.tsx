@@ -62,7 +62,7 @@ export default function ContactsPage() {
 
   // Client-side balance filter — applied after the server returns contacts with their balances.
   // Keeps totals reflecting the full dataset while the table shows the filtered subset.
-  const allContacts = data?.items ?? [];
+  const allContacts = useMemo(() => data?.items ?? [], [data?.items]);
   const filteredContacts = useMemo(() => {
     if (balanceFilter === "all") return allContacts;
     if (balanceFilter === "receivable") return allContacts.filter(c => c.outstandingReceivable > 0);
