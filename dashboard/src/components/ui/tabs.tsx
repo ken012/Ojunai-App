@@ -63,35 +63,15 @@ function TabsTrigger({ className, ...props }: TabsPrimitive.Tab.Props) {
     <TabsPrimitive.Tab
       data-slot="tabs-trigger"
       className={cn(
-        // Shared: button-like affordance with explicit cursor-pointer so the clickability is obvious.
+        // Base: button-like with cursor pointer. Uses aria-selected for active state because
+        // base-ui's Tab sets aria-selected="true" on the active tab — more reliable than data-active.
         "relative cursor-pointer select-none rounded-md px-4 py-2 text-sm font-medium whitespace-nowrap transition-all outline-none",
+        "text-slate-600 hover:bg-white hover:text-slate-900",
         "focus-visible:ring-2 focus-visible:ring-sky-400/50 focus-visible:ring-offset-1",
-        "disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50",
+        "disabled:pointer-events-none disabled:opacity-50",
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        // Default variant (pill group): hover goes white, active goes sky-500 with shadow lift.
-        "group-data-[variant=default]/tabs-list:text-slate-600",
-        "group-data-[variant=default]/tabs-list:hover:bg-white",
-        "group-data-[variant=default]/tabs-list:hover:text-slate-900",
-        "group-data-[variant=default]/tabs-list:data-active:bg-sky-500",
-        "group-data-[variant=default]/tabs-list:data-active:text-white",
-        "group-data-[variant=default]/tabs-list:data-active:shadow-sm",
-        "group-data-[variant=default]/tabs-list:data-active:font-semibold",
-        // Line variant: underlined active tab, no background.
-        "group-data-[variant=line]/tabs-list:rounded-none",
-        "group-data-[variant=line]/tabs-list:px-1",
-        "group-data-[variant=line]/tabs-list:pb-2",
-        "group-data-[variant=line]/tabs-list:text-slate-500",
-        "group-data-[variant=line]/tabs-list:hover:text-slate-900",
-        "group-data-[variant=line]/tabs-list:data-active:text-sky-600",
-        "group-data-[variant=line]/tabs-list:data-active:font-semibold",
-        "group-data-[variant=line]/tabs-list:after:absolute",
-        "group-data-[variant=line]/tabs-list:after:inset-x-0",
-        "group-data-[variant=line]/tabs-list:after:bottom-0",
-        "group-data-[variant=line]/tabs-list:after:h-0.5",
-        "group-data-[variant=line]/tabs-list:after:bg-sky-500",
-        "group-data-[variant=line]/tabs-list:after:opacity-0",
-        "group-data-[variant=line]/tabs-list:after:transition-opacity",
-        "group-data-[variant=line]/tabs-list:data-active:after:opacity-100",
+        // Active state — sky-500 blue to match the contact filter buttons
+        "aria-selected:bg-sky-500 aria-selected:text-white aria-selected:shadow-sm aria-selected:font-semibold",
         className
       )}
       {...props}
