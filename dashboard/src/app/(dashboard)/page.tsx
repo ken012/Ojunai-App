@@ -490,31 +490,31 @@ export default function DashboardPage() {
               <CardContent>
                 {insights.expenseCategories.length === 0 ? (
                   <p className="text-sm text-slate-400 text-center py-8">No expenses yet</p>
-                ) : (
-                  <ResponsiveContainer width="100%" height={220}>
-                    <PieChart>
-                      <Pie
-                        data={insights.expenseCategories}
-                        dataKey="amount"
-                        nameKey="category"
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={75}
-                        innerRadius={40}
-                        paddingAngle={2}
-                      >
-                        {insights.expenseCategories.map((_, i) => (
-                          <Cell
-                            key={i}
-                            fill={["#ef4444", "#f59e0b", "#8b5cf6", "#0ea5e9", "#10b981", "#ec4899", "#6366f1"][i % 7]}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(v) => formatNaira(Number(v))} />
-                      <Legend wrapperStyle={{ fontSize: 11 }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
+                ) : (() => {
+                  const COLORS = ["#0ea5e9", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444", "#ec4899", "#6366f1", "#14b8a6"];
+                  const colored = insights.expenseCategories.map((c, i) => ({
+                    ...c,
+                    fill: COLORS[i % COLORS.length]
+                  }));
+                  return (
+                    <ResponsiveContainer width="100%" height={220}>
+                      <PieChart>
+                        <Pie
+                          data={colored}
+                          dataKey="amount"
+                          nameKey="category"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={75}
+                          innerRadius={40}
+                          paddingAngle={2}
+                        />
+                        <Tooltip formatter={(v) => formatNaira(Number(v))} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  );
+                })()}
               </CardContent>
             </Card>
 
