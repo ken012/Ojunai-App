@@ -85,6 +85,7 @@ export default function ReportsPage() {
 
 // ───────── Overview tab (existing reports, all roles) ─────────
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
   const { data: daily, isLoading: loadingDaily } = useQuery({
     queryKey: ["report-daily"],
@@ -93,12 +94,10 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
   const { data: weekly, isLoading: loadingWeekly } = useQuery({
     queryKey: ["report-weekly"],
     queryFn: async () => (await api.get<{ data: WeeklySummaryDto }>("/reports/weekly")).data.data!,
-    enabled: hasAdvanced,
   });
   const { data: cashPos, isLoading: loadingCash } = useQuery({
     queryKey: ["cash-position"],
     queryFn: async () => (await api.get<{ data: CashPositionDto }>("/reports/cash-position")).data.data!,
-    enabled: hasAdvanced,
   });
   const { data: deadStock } = useQuery({
     queryKey: ["dead-stock"],
@@ -157,8 +156,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {!hasAdvanced ? <UpgradePrompt feature="Weekly Reports" plan="Pro" />
-              : loadingWeekly ? <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
+            {loadingWeekly ? <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
               : weekly ? (
                 <>
                   <p className="text-xs text-slate-400 mb-3">{weekly.weekStart} — {weekly.weekEnd}</p>
@@ -190,8 +188,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {!hasAdvanced ? <UpgradePrompt feature="Cash Position" plan="Pro" />
-              : loadingCash ? <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
+            {loadingCash ? <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
               : cashPos ? (
                 <>
                   <StatRow label="Sales (MTD)" value={formatNaira(cashPos.totalSalesThisMonth)} accent="text-emerald-600" />

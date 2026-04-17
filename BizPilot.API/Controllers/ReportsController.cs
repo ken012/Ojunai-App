@@ -25,9 +25,6 @@ public class ReportsController : BizPilotBaseController
     [RequirePermission(Permission.ViewAllReports)]
     public async Task<ActionResult<ApiResponse<WeeklySummaryDto>>> GetWeekly([FromQuery] DateOnly? weekStart = null)
     {
-        var (allowed, planErr) = await _planGuard.CheckFeatureAsync(BusinessId, "advanced_reports");
-        if (!allowed) return BadRequest(ApiResponse<WeeklySummaryDto>.Fail(planErr!));
-
         var result = await _reports.GetWeeklySummaryAsync(BusinessId, weekStart);
         return Ok(ApiResponse<WeeklySummaryDto>.Ok(result));
     }
@@ -36,9 +33,6 @@ public class ReportsController : BizPilotBaseController
     [RequirePermission(Permission.ViewAllReports)]
     public async Task<ActionResult<ApiResponse<CashPositionDto>>> GetCashPosition()
     {
-        var (allowed, planErr) = await _planGuard.CheckFeatureAsync(BusinessId, "advanced_reports");
-        if (!allowed) return BadRequest(ApiResponse<CashPositionDto>.Fail(planErr!));
-
         var result = await _reports.GetCashPositionAsync(BusinessId);
         return Ok(ApiResponse<CashPositionDto>.Ok(result));
     }
