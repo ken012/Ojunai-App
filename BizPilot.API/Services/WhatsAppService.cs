@@ -1605,10 +1605,18 @@ public class WhatsAppService : IWhatsAppService
             return type == "receivable" ? "No outstanding receivables." : "No outstanding payables.";
 
         var title = type == "receivable" ? "💰 Outstanding Receivables" : "💸 Outstanding Payables";
-        var lines = balances.Take(10).Select(b =>
-            type == "receivable" ? $"• {b.ContactName}: ₦{b.TotalReceivable:N0}" : $"• {b.ContactName}: ₦{b.TotalPayable:N0}");
         var total = type == "receivable" ? balances.Sum(b => b.TotalReceivable) : balances.Sum(b => b.TotalPayable);
-        return $"{title}\n{string.Join("\n", lines)}\n\n*Total: ₦{total:N0}*";
+
+        // Show all contacts, not just 10. The message-truncation logic in SendMessageAsync
+        // handles the WhatsApp character limit if the list is very long.
+        var lines = balances
+            .OrderByDescending(b => type == "receivable" ? b.TotalReceivable : b.TotalPayable)
+            .Select(b => type == "receivable"
+                ? $"• {b.ContactName}: ₦{b.TotalReceivable:N0}"
+                : $"• {b.ContactName}: ₦{b.TotalPayable:N0}");
+
+        var countNote = balances.Count > 1 ? $" ({balances.Count} contacts)" : "";
+        return $"{title}{countNote}\n{string.Join("\n", lines)}\n\n*Total: ₦{total:N0}*";
     }
 
     private async Task<string> HandleGetContactBalanceAsync(Guid businessId, JsonElement ba)
@@ -2665,10 +2673,23 @@ public class WhatsAppService : IWhatsAppService
 
         var toNumber = to.StartsWith("whatsapp:") ? to : $"whatsapp:{to}";
 
+        // WhatsApp messages have a 1600-character limit. Truncate long messages (e.g., bulk sales
+        // listing 30+ products) rather than letting Twilio reject the send and crashing the flow.
+        // The full text is preserved in MessageLogs for audit; the user just sees a trimmed version.
+        const int MaxWhatsAppLength = 1500; // buffer under the 1600 hard limit
+        var body = text;
+        if (body.Length > MaxWhatsAppLength)
+        {
+            var truncated = body[..MaxWhatsAppLength];
+            var lastNewline = truncated.LastIndexOf('\n');
+            if (lastNewline > MaxWhatsAppLength / 2) truncated = truncated[..lastNewline];
+            body = truncated + "\n\n... (message trimmed — full details on dashboard)";
+        }
+
         var message = await MessageResource.CreateAsync(
             from: new PhoneNumber(from),
             to: new PhoneNumber(toNumber),
-            body: text);
+            body: body);
 
         _logger.LogInformation("Twilio message sent: {Sid}", message.Sid);
 
