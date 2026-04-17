@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+// Tabs removed — using plain buttons to avoid base-ui context conflicts between two filter groups
 import {
   Table,
   TableBody,
@@ -48,31 +48,43 @@ export default function ContactsPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // Fetch ALL contacts once (no server-side type filter). Both the type filter and balance filter
+  // are applied client-side so they work together synchronously without async timing issues.
   const { data, isLoading } = useQuery({
-    queryKey: ["contacts", typeFilter, debouncedSearch],
+    queryKey: ["contacts", debouncedSearch],
     queryFn: async () => {
-      const typeParam = typeFilter !== "all" ? `&type=${typeFilter}` : "";
       const searchParam = debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : "";
       const { data } = await api.get<{ data: PaginatedResult<ContactDto> }>(
-        `/contacts?page=1&pageSize=100${typeParam}${searchParam}`
+        `/contacts?page=1&pageSize=200${searchParam}`
       );
       return data.data!;
     },
   });
 
-  // Client-side balance filter — applied after the server returns contacts with their balances.
-  // Keeps totals reflecting the full dataset while the table shows the filtered subset.
-  const allContacts = useMemo(() => data?.items ?? [], [data?.items]);
-  const filteredContacts = useMemo(() => {
-    if (balanceFilter === "bal-all") return allContacts;
-    if (balanceFilter === "bal-receivable") return allContacts.filter(c => c.outstandingReceivable > 0);
-    if (balanceFilter === "bal-payable") return allContacts.filter(c => c.outstandingPayable > 0);
-    if (balanceFilter === "bal-settled") return allContacts.filter(c => c.outstandingReceivable === 0 && c.outstandingPayable === 0);
-    return allContacts;
-  }, [allContacts, balanceFilter]);
+  // Both filters applied client-side on the same dataset — no async gaps between them.
+  const allItems = useMemo(() => data?.items ?? [], [data?.items]);
 
-  const totalReceivable = allContacts.reduce((s, c) => s + c.outstandingReceivable, 0);
-  const totalPayable = allContacts.reduce((s, c) => s + c.outstandingPayable, 0);
+  const filteredContacts = useMemo(() => {
+    let result = allItems;
+
+    // Type filter
+    if (typeFilter !== "all")
+      result = result.filter(c => c.type === typeFilter);
+
+    // Balance filter
+    if (balanceFilter === "bal-receivable")
+      result = result.filter(c => c.outstandingReceivable > 0);
+    else if (balanceFilter === "bal-payable")
+      result = result.filter(c => c.outstandingPayable > 0);
+    else if (balanceFilter === "bal-settled")
+      result = result.filter(c => c.outstandingReceivable === 0 && c.outstandingPayable === 0);
+
+    return result;
+  }, [allItems, typeFilter, balanceFilter]);
+
+  // Totals always reflect the full unfiltered set so the headline numbers don't jump when filtering.
+  const totalReceivable = allItems.reduce((s, c) => s + c.outstandingReceivable, 0);
+  const totalPayable = allItems.reduce((s, c) => s + c.outstandingPayable, 0);
   const contacts = filteredContacts;
 
   return (
@@ -109,24 +121,70 @@ export default function ContactsPage() {
         </Card>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <div className="flex flex-wrap gap-2">
-          <Tabs value={typeFilter} onValueChange={setTypeFilter}>
-            <TabsList>
-              <TabsTrigger value="all">All</TabsTrigger>
-              <TabsTrigger value="Customer">Customers</TabsTrigger>
-              <TabsTrigger value="Supplier">Suppliers</TabsTrigger>
-            </TabsList>
-          </Tabs>
+      {/* Active filter badges */}
+      {(typeFilter !== "all" || balanceFilter !== "bal-all") && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-slate-400">Filtered by:</span>
+          {typeFilter !== "all" && (
+            <Badge variant="secondary" className="text-xs gap-1">
+              {typeFilter === "Customer" ? "Customers" : "Suppliers"}
+              <button onClick={() => setTypeFilter("all")} className="ml-1 hover:text-red-500"><X size={10} /></button>
+            </Badge>
+          )}
+          {balanceFilter !== "bal-all" && (
+            <Badge variant="secondary" className="text-xs gap-1">
+              {balanceFilter === "bal-receivable" ? "Owes You" : balanceFilter === "bal-payable" ? "You Owe" : "Settled"}
+              <button onClick={() => setBalanceFilter("bal-all")} className="ml-1 hover:text-red-500"><X size={10} /></button>
+            </Badge>
+          )}
+          <button onClick={() => { setTypeFilter("all"); setBalanceFilter("bal-all"); }} className="text-xs text-slate-400 hover:text-slate-700 underline">
+            Clear all
+          </button>
+        </div>
+      )}
 
-          <Tabs value={balanceFilter} onValueChange={setBalanceFilter}>
-            <TabsList>
-              <TabsTrigger value="bal-all">All Balances</TabsTrigger>
-              <TabsTrigger value="bal-receivable">Owes You</TabsTrigger>
-              <TabsTrigger value="bal-payable">You Owe</TabsTrigger>
-              <TabsTrigger value="bal-settled">Settled</TabsTrigger>
-            </TabsList>
-          </Tabs>
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+        <div className="flex flex-wrap gap-1.5">
+          {/* Type filter — plain buttons, no Tabs context */}
+          {[
+            { value: "all", label: "All" },
+            { value: "Customer", label: "Customers" },
+            { value: "Supplier", label: "Suppliers" },
+          ].map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setTypeFilter(opt.value)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
+                typeFilter === opt.value
+                  ? "bg-sky-500 text-white border-sky-500 shadow-sm"
+                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+
+          <span className="w-px h-6 bg-slate-200 mx-1 self-center" />
+
+          {/* Balance filter — plain buttons, no Tabs context */}
+          {[
+            { value: "bal-all", label: "All Balances" },
+            { value: "bal-receivable", label: "Owes You" },
+            { value: "bal-payable", label: "You Owe" },
+            { value: "bal-settled", label: "Settled" },
+          ].map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setBalanceFilter(opt.value)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
+                balanceFilter === opt.value
+                  ? "bg-sky-500 text-white border-sky-500 shadow-sm"
+                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
 
         <div className="relative w-full sm:max-w-xs">
@@ -262,7 +320,7 @@ export default function ContactsPage() {
       <RecordDebtDialog
         open={recordingDebt}
         onClose={() => setRecordingDebt(false)}
-        contacts={contacts}
+        contacts={allItems}
       />
       <RecordPaymentDialog
         contact={recordingPayment}
