@@ -32,7 +32,7 @@ import { hasPermission, Permission } from "@/lib/permissions";
 
 export default function ContactsPage() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [balanceFilter, setBalanceFilter] = useState<string>("all");
+  const [balanceFilter, setBalanceFilter] = useState<string>("bal-all");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [adding, setAdding] = useState(false);
@@ -64,10 +64,10 @@ export default function ContactsPage() {
   // Keeps totals reflecting the full dataset while the table shows the filtered subset.
   const allContacts = useMemo(() => data?.items ?? [], [data?.items]);
   const filteredContacts = useMemo(() => {
-    if (balanceFilter === "all") return allContacts;
-    if (balanceFilter === "receivable") return allContacts.filter(c => c.outstandingReceivable > 0);
-    if (balanceFilter === "payable") return allContacts.filter(c => c.outstandingPayable > 0);
-    if (balanceFilter === "settled") return allContacts.filter(c => c.outstandingReceivable === 0 && c.outstandingPayable === 0);
+    if (balanceFilter === "bal-all") return allContacts;
+    if (balanceFilter === "bal-receivable") return allContacts.filter(c => c.outstandingReceivable > 0);
+    if (balanceFilter === "bal-payable") return allContacts.filter(c => c.outstandingPayable > 0);
+    if (balanceFilter === "bal-settled") return allContacts.filter(c => c.outstandingReceivable === 0 && c.outstandingPayable === 0);
     return allContacts;
   }, [allContacts, balanceFilter]);
 
@@ -121,10 +121,10 @@ export default function ContactsPage() {
 
           <Tabs value={balanceFilter} onValueChange={setBalanceFilter}>
             <TabsList>
-              <TabsTrigger value="all">All Balances</TabsTrigger>
-              <TabsTrigger value="receivable">Owes You</TabsTrigger>
-              <TabsTrigger value="payable">You Owe</TabsTrigger>
-              <TabsTrigger value="settled">Settled</TabsTrigger>
+              <TabsTrigger value="bal-all">All Balances</TabsTrigger>
+              <TabsTrigger value="bal-receivable">Owes You</TabsTrigger>
+              <TabsTrigger value="bal-payable">You Owe</TabsTrigger>
+              <TabsTrigger value="bal-settled">Settled</TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
@@ -240,9 +240,9 @@ export default function ContactsPage() {
                       <Users size={24} className="mx-auto mb-2 opacity-30" />
                       {debouncedSearch
                         ? <>No contacts match &ldquo;{debouncedSearch}&rdquo;.</>
-                        : balanceFilter === "receivable" ? "No contacts with outstanding receivables."
-                        : balanceFilter === "payable" ? "No contacts with outstanding payables."
-                        : balanceFilter === "settled" ? "No fully settled contacts."
+                        : balanceFilter === "bal-receivable" ? "No contacts with outstanding receivables."
+                        : balanceFilter === "bal-payable" ? "No contacts with outstanding payables."
+                        : balanceFilter === "bal-settled" ? "No fully settled contacts."
                         : "No contacts yet"}
                     </TableCell>
                   </TableRow>
