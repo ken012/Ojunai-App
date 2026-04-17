@@ -32,6 +32,7 @@ import { hasPermission, Permission } from "@/lib/permissions";
 
 export default function ContactsPage() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [balanceFilter, setBalanceFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [adding, setAdding] = useState(false);
@@ -59,9 +60,20 @@ export default function ContactsPage() {
     },
   });
 
-  const totalReceivable = data?.items.reduce((s, c) => s + c.outstandingReceivable, 0) ?? 0;
-  const totalPayable = data?.items.reduce((s, c) => s + c.outstandingPayable, 0) ?? 0;
-  const contacts = data?.items ?? [];
+  // Client-side balance filter — applied after the server returns contacts with their balances.
+  // Keeps totals reflecting the full dataset while the table shows the filtered subset.
+  const allContacts = data?.items ?? [];
+  const filteredContacts = useMemo(() => {
+    if (balanceFilter === "all") return allContacts;
+    if (balanceFilter === "receivable") return allContacts.filter(c => c.outstandingReceivable > 0);
+    if (balanceFilter === "payable") return allContacts.filter(c => c.outstandingPayable > 0);
+    if (balanceFilter === "settled") return allContacts.filter(c => c.outstandingReceivable === 0 && c.outstandingPayable === 0);
+    return allContacts;
+  }, [allContacts, balanceFilter]);
+
+  const totalReceivable = allContacts.reduce((s, c) => s + c.outstandingReceivable, 0);
+  const totalPayable = allContacts.reduce((s, c) => s + c.outstandingPayable, 0);
+  const contacts = filteredContacts;
 
   return (
     <div className="space-y-6">
@@ -98,13 +110,24 @@ export default function ContactsPage() {
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-        <Tabs value={typeFilter} onValueChange={setTypeFilter}>
-          <TabsList>
-            <TabsTrigger value="all">All</TabsTrigger>
-            <TabsTrigger value="Customer">Customers</TabsTrigger>
-            <TabsTrigger value="Supplier">Suppliers</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="flex flex-wrap gap-2">
+          <Tabs value={typeFilter} onValueChange={setTypeFilter}>
+            <TabsList>
+              <TabsTrigger value="all">All</TabsTrigger>
+              <TabsTrigger value="Customer">Customers</TabsTrigger>
+              <TabsTrigger value="Supplier">Suppliers</TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          <Tabs value={balanceFilter} onValueChange={setBalanceFilter}>
+            <TabsList>
+              <TabsTrigger value="all">All Balances</TabsTrigger>
+              <TabsTrigger value="receivable">Owes You</TabsTrigger>
+              <TabsTrigger value="payable">You Owe</TabsTrigger>
+              <TabsTrigger value="settled">Settled</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
 
         <div className="relative w-full sm:max-w-xs">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -217,6 +240,9 @@ export default function ContactsPage() {
                       <Users size={24} className="mx-auto mb-2 opacity-30" />
                       {debouncedSearch
                         ? <>No contacts match &ldquo;{debouncedSearch}&rdquo;.</>
+                        : balanceFilter === "receivable" ? "No contacts with outstanding receivables."
+                        : balanceFilter === "payable" ? "No contacts with outstanding payables."
+                        : balanceFilter === "settled" ? "No fully settled contacts."
                         : "No contacts yet"}
                     </TableCell>
                   </TableRow>
