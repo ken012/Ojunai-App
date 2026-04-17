@@ -172,7 +172,7 @@ export default function ContactsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data?.items.map((contact) => (
+                {contacts.map((contact) => (
                   <TableRow key={contact.id}>
                     <TableCell className="font-medium">{contact.name}</TableCell>
                     <TableCell>
@@ -234,7 +234,7 @@ export default function ContactsPage() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {data?.items.length === 0 && (
+                {contacts.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8 text-slate-400">
                       <Users size={24} className="mx-auto mb-2 opacity-30" />
