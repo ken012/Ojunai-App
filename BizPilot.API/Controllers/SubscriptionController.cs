@@ -46,6 +46,49 @@ public class SubscriptionController : BizPilotBaseController
         return Ok(ApiResponse<object>.Ok(null!, "Subscription cancelled. You'll keep access until the end of your billing period."));
     }
 
+    [HttpPost("change-plan")]
+    [RequirePermission(Permission.ManageSettings)]
+    public async Task<ActionResult<ApiResponse<object>>> ChangePlan([FromBody] ChangePlanRequest request)
+    {
+        var business = await _db.Businesses.FindAsync(BusinessId);
+        if (business == null) return NotFound(ApiResponse<object>.Fail("Business not found."));
+
+        var targetPlan = request.Plan?.ToLower();
+        var planConfig = PlanLimits.Get(targetPlan ?? "");
+        if (planConfig.PricePerMonth <= 0 && targetPlan != "starter")
+            return BadRequest(ApiResponse<object>.Fail("Invalid plan. Choose: starter, shop, pro, or business."));
+
+        var currentRank = PlanGuard.PlanRank(business.Plan);
+        var targetRank = PlanGuard.PlanRank(targetPlan);
+
+        if (targetRank == currentRank)
+            return BadRequest(ApiResponse<object>.Fail($"You're already on the {business.Plan} plan."));
+
+        if (targetRank > currentRank)
+            return BadRequest(ApiResponse<object>.Fail("Use the subscribe/upgrade button for upgrades — this endpoint handles downgrades only."));
+
+        var hasActiveSub = !string.IsNullOrEmpty(business.PaystackSubscriptionCode);
+        var targetLabel = targetPlan![0..1].ToUpper() + targetPlan[1..];
+
+        if (hasActiveSub && business.SubscriptionEndsAt.HasValue && business.SubscriptionEndsAt > DateTime.UtcNow)
+        {
+            business.PendingPlanChange = targetPlan;
+            await _db.SaveChangesAsync();
+            return Ok(ApiResponse<object>.Ok(null!,
+                $"Plan change scheduled. You'll keep your current features until {business.SubscriptionEndsAt.Value:dd MMM yyyy}, then switch to {targetLabel}."));
+        }
+
+        // No active billing period — switch immediately. Keep SubscribedPlan set (even for Starter)
+        // so the user is recognized as a subscriber who downgraded, not a new user needing a trial.
+        business.Plan = targetPlan;
+        business.SubscribedPlan = targetPlan;
+        business.PendingPlanChange = null;
+        business.TrialEndsAt = null;
+        await _db.SaveChangesAsync();
+
+        return Ok(ApiResponse<object>.Ok(null!, $"Plan changed to {targetLabel}."));
+    }
+
     /// <summary>
     /// Paystack webhook endpoint. Paystack POSTs JSON events here whenever a subscription is created, charged, or cancelled.
     ///
@@ -94,6 +137,11 @@ public class SubscriptionController : BizPilotBaseController
 }
 
 public class InitializeSubscriptionRequest
+{
+    public string Plan { get; set; } = string.Empty;
+}
+
+public class ChangePlanRequest
 {
     public string Plan { get; set; } = string.Empty;
 }
