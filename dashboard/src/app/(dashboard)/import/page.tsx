@@ -19,10 +19,11 @@ import {
 } from "@/components/ui/table";
 import { Upload, Download, Copy, CheckCircle, AlertTriangle, Clock } from "lucide-react";
 
-type ImportType = "inventory" | "sales" | "expenses";
+type ImportType = "inventory" | "sales" | "expenses" | "contacts" | "contacts-ledger";
 
-const FORMATS: Record<ImportType, { headers: string; example: string; required: string; optional: string; permission: string }> = {
+const FORMATS: Record<ImportType, { headers: string; example: string; required: string; optional: string; permission: string; label: string }> = {
   inventory: {
+    label: "Inventory (Products & Stock)",
     headers: "ProductName,Quantity,Unit,CostPrice,SellingPrice",
     example: "Rice,100,bag,3000,5000\nShampoo,50,bottle,1200,2500\nCement,30,bag,4500,6000",
     required: "ProductName, Quantity",
@@ -30,6 +31,7 @@ const FORMATS: Record<ImportType, { headers: string; example: string; required: 
     permission: Permission.ManageStock,
   },
   sales: {
+    label: "Sales",
     headers: "ProductName,Quantity,UnitPrice,CustomerName,PaymentStatus",
     example: "Rice,5,5000,Emeka,Paid\nShampoo,3,2500,Ngozi,Unpaid",
     required: "ProductName, Quantity, UnitPrice",
@@ -37,11 +39,28 @@ const FORMATS: Record<ImportType, { headers: string; example: string; required: 
     permission: Permission.RecordSales,
   },
   expenses: {
+    label: "Expenses",
     headers: "Category,Amount,PaidTo,Notes",
     example: "Transport,5000,Driver,Market run\nRent,100000,Landlord,Monthly rent\nElectricity,15000,NEPA,April bill",
     required: "Category, Amount",
     optional: "PaidTo, Notes",
     permission: Permission.RecordExpenses,
+  },
+  contacts: {
+    label: "Contacts Only",
+    headers: "Name,Phone,Type",
+    example: "Ada Okafor,08012345678,Customer\nMarket Mama,08098765432,Supplier\nTunde Bakare,,Customer",
+    required: "Name",
+    optional: "Phone, Type (Customer, Supplier, or Both — default: Customer)",
+    permission: Permission.ManageDebts,
+  },
+  "contacts-ledger": {
+    label: "Contacts with Debts",
+    headers: "Name,Phone,Amount,LedgerType,Notes",
+    example: "Ada Okafor,08012345678,25000,Receivable,3 bags of rice on credit\nMarket Mama,08098765432,50000,Payable,Bulk supply — pay by month end\nTunde Bakare,,15000,Receivable,Outstanding from last week",
+    required: "Name, Amount, LedgerType (Receivable or Payable)",
+    optional: "Phone, Type (auto-detected from LedgerType), Notes",
+    permission: Permission.ManageDebts,
   },
 };
 
@@ -200,9 +219,9 @@ export default function ImportPage() {
           onChange={(e) => { setType(e.target.value as ImportType); resetForNewImport(); }}
           disabled={!!isProcessing}
         >
-          <option value="inventory">Inventory (Products & Stock)</option>
-          <option value="sales">Sales</option>
-          <option value="expenses">Expenses</option>
+          {Object.entries(FORMATS).map(([key, f]) => (
+            <option key={key} value={key}>{f.label}</option>
+          ))}
         </select>
       </div>
 

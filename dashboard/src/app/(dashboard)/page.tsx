@@ -491,28 +491,31 @@ export default function DashboardPage() {
                 {insights.expenseCategories.length === 0 ? (
                   <p className="text-sm text-slate-400 text-center py-8">No expenses yet</p>
                 ) : (() => {
-                  const COLORS = ["#0ea5e9", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444", "#ec4899", "#6366f1", "#14b8a6"];
-                  const colored = insights.expenseCategories.map((c, i) => ({
-                    ...c,
-                    fill: COLORS[i % COLORS.length]
-                  }));
+                  const COLORS = ["#0ea5e9", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444", "#ec4899", "#6366f1", "#14b8a6", "#f97316", "#06b6d4", "#a855f7", "#84cc16"];
+                  const sorted = [...insights.expenseCategories].sort((a, b) => b.amount - a.amount);
+                  const total = sorted.reduce((s, c) => s + c.amount, 0);
                   return (
-                    <ResponsiveContainer width="100%" height={220}>
-                      <PieChart>
-                        <Pie
-                          data={colored}
-                          dataKey="amount"
-                          nameKey="category"
-                          cx="50%"
-                          cy="50%"
-                          outerRadius={75}
-                          innerRadius={40}
-                          paddingAngle={2}
-                        />
-                        <Tooltip formatter={(v) => formatNaira(Number(v))} />
-                        <Legend wrapperStyle={{ fontSize: 11 }} />
-                      </PieChart>
-                    </ResponsiveContainer>
+                    <div className="space-y-1.5 max-h-[260px] overflow-y-auto">
+                      {sorted.map((c, i) => {
+                        const pct = total > 0 ? (c.amount / total * 100) : 0;
+                        return (
+                          <div key={c.category}>
+                            <div className="flex justify-between text-xs mb-0.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className="inline-block w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                                <span className="text-slate-700 truncate">{c.category}</span>
+                              </div>
+                              <span className="text-slate-900 font-medium ml-2 flex-shrink-0">
+                                {formatNaira(c.amount)} <span className="text-slate-400">({pct.toFixed(1)}%)</span>
+                              </span>
+                            </div>
+                            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                              <div className="h-full rounded-full" style={{ width: `${Math.max(1, pct)}%`, backgroundColor: COLORS[i % COLORS.length] }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   );
                 })()}
               </CardContent>

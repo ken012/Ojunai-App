@@ -136,4 +136,27 @@ public class ContactService : IContactService
         await _db.SaveChangesAsync();
         return await GetByIdAsync(businessId, contactId);
     }
+
+    public async Task DeleteAsync(Guid businessId, Guid contactId)
+    {
+        var contact = await _db.Contacts
+            .FirstOrDefaultAsync(c => c.Id == contactId && c.BusinessId == businessId)
+            ?? throw new KeyNotFoundException("Contact not found.");
+
+        // Nullify FK references on sales so the delete doesn't cascade or fail.
+        // The sale records stay — they just lose the contact link.
+        var linkedSales = await _db.Sales
+            .Where(s => s.ContactId == contactId && s.BusinessId == businessId)
+            .ToListAsync();
+        foreach (var sale in linkedSales) sale.ContactId = null;
+
+        // Remove ledger entries for this contact (debts are meaningless without the contact).
+        var ledgerEntries = await _db.LedgerEntries
+            .Where(e => e.ContactId == contactId && e.BusinessId == businessId)
+            .ToListAsync();
+        _db.LedgerEntries.RemoveRange(ledgerEntries);
+
+        _db.Contacts.Remove(contact);
+        await _db.SaveChangesAsync();
+    }
 }

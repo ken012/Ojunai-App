@@ -57,6 +57,18 @@ public class ImportController : BizPilotBaseController
     public Task<ActionResult<ApiResponse<ImportJobDto>>> ImportExpenses(IFormFile file)
         => EnqueueImportAsync(file, ImportJobType.Expenses, Permission.RecordExpenses);
 
+    [HttpPost("contacts")]
+    [RequirePermission(Permission.ManageDebts)]
+    [RequestSizeLimit(MaxFileSize)]
+    public Task<ActionResult<ApiResponse<ImportJobDto>>> ImportContacts(IFormFile file)
+        => EnqueueImportAsync(file, ImportJobType.Contacts, Permission.ManageDebts);
+
+    [HttpPost("contacts-ledger")]
+    [RequirePermission(Permission.ManageDebts)]
+    [RequestSizeLimit(MaxFileSize)]
+    public Task<ActionResult<ApiResponse<ImportJobDto>>> ImportContactsLedger(IFormFile file)
+        => EnqueueImportAsync(file, ImportJobType.ContactsWithLedger, Permission.ManageDebts);
+
     /// <summary>
     /// Polling endpoint. Returns the current status, progress counters, and any errors for a job.
     /// Tenant-scoped: can't read jobs belonging to another business.

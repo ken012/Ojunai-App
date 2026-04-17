@@ -158,6 +158,30 @@ public static class CsvParser
         ["notes"] = "notes",
         ["note"] = "notes",
         ["description"] = "notes",
+
+        // Contact fields
+        ["contactname"] = "contactname",
+        ["contact name"] = "contactname",
+        ["contact"] = "contactname",
+
+        // Contact type
+        ["contacttype"] = "contacttype",
+        ["contact type"] = "contacttype",
+        ["type"] = "contacttype",
+
+        // Phone (alias — also recognized as "phone" for contacts import)
+        ["phone"] = "phonenumber",
+        ["phone number"] = "phonenumber",
+        ["phonenumber"] = "phonenumber",
+        ["mobile"] = "phonenumber",
+        ["tel"] = "phonenumber",
+
+        // Ledger fields
+        ["ledgertype"] = "ledgertype",
+        ["ledger type"] = "ledgertype",
+        ["debt type"] = "ledgertype",
+        ["entry type"] = "ledgertype",
+        ["direction"] = "ledgertype",
     };
 
     private static string NormalizeHeader(string raw)

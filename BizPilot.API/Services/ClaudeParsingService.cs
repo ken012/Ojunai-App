@@ -198,6 +198,13 @@ Supported intents:
   Triggers: "add staff Mary +2348012345678", "add Mary as sales staff", "register new staff", "add team member"
   User: "Add staff Mary 08012345678" → {fullName:"Mary", phoneNumber:"08012345678", role:"Sales"}
   User: "Add Ada as bookkeeper, number is 09034567890" → {fullName:"Ada", phoneNumber:"09034567890", role:"Bookkeeper"}
+- create_contact: {contactName, phoneNumber?, contactType?} — add a new customer or supplier contact.
+  contactType: "Customer" (default), "Supplier", or "Both".
+  Triggers: "add contact Ada", "new customer Tunde 08012345678", "add supplier Market Mama", "save contact"
+  User: "Add contact Ada Okafor" → {contactName:"Ada Okafor", contactType:"Customer"}
+  User: "Add supplier Market Mama, phone 09012345678" → {contactName:"Market Mama", phoneNumber:"09012345678", contactType:"Supplier"}
+  User: "Save Tunde's number 08098765432" → {contactName:"Tunde", phoneNumber:"08098765432"}
+  NOTE: Do NOT use this for "add staff" — staff use the add_staff intent. Contacts are customers/suppliers, not team members.
 - get_staff_sales: {staffName} — what a specific staff member sold today
 - get_product_staff: {productName} — which staff members sold a specific product today
 - get_transaction_history: {} — today's full transaction log with buyer, time, items

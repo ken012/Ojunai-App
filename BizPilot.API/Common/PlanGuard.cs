@@ -191,10 +191,13 @@ public class PlanGuard
 
         foreach (var biz in pendingChanges)
         {
+            // Keep SubscribedPlan set to the new plan (even Starter) so the user stays recognized
+            // as a subscriber who changed plans, not a new user. Prevents trial UI from re-appearing.
             biz.Plan = biz.PendingPlanChange!;
-            biz.SubscribedPlan = null;
+            biz.SubscribedPlan = biz.PendingPlanChange;
             biz.PendingPlanChange = null;
             biz.SubscriptionEndsAt = null;
+            biz.TrialEndsAt = null;
         }
 
         if (pendingChanges.Count > 0)

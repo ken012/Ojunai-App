@@ -715,6 +715,7 @@ public class WhatsAppService : IWhatsAppService
             "get_active_holds" => await HandleGetActiveHoldsAsync(businessId),
             "add_staff" => await HandleAddStaffAsync(businessId, ba),
             "get_staff_list" => await HandleGetStaffListAsync(businessId),
+            "create_contact" => await HandleCreateContactAsync(businessId, ba),
             "correct_last_sale" => await HandleCorrectLastSaleAsync(businessId, ba, user),
             "update_last_sale" => await HandleUpdateLastSaleAsync(businessId, ba, user),
             "undo_last_action" => await HandleUndoLastActionAsync(businessId, user),
@@ -2555,6 +2556,56 @@ public class WhatsAppService : IWhatsAppService
             }
         }
         return matrix[a.Length, b.Length];
+    }
+
+    private async Task<string> HandleCreateContactAsync(Guid businessId, JsonElement ba)
+    {
+        var name = ba.GetStringOrNull("contactName");
+        if (string.IsNullOrWhiteSpace(name))
+            return "Please provide the contact's name. E.g. \"Add contact Ada Okafor\"";
+
+        var phone = ba.GetStringOrNull("phoneNumber");
+        var typeStr = ba.GetStringOrNull("contactType") ?? "Customer";
+        var contactType = Enum.TryParse<ContactType>(typeStr, true, out var ct) ? ct : ContactType.Customer;
+
+        var existing = await _db.Contacts.FirstOrDefaultAsync(c =>
+            c.BusinessId == businessId && EF.Functions.ILike(c.Name, name));
+
+        if (existing != null)
+        {
+            var updates = new List<string>();
+            if (!string.IsNullOrEmpty(phone) && string.IsNullOrEmpty(existing.PhoneNumber))
+            {
+                existing.PhoneNumber = phone;
+                updates.Add($"phone: {phone}");
+            }
+            if (existing.Type != contactType && contactType != ContactType.Customer)
+            {
+                existing.Type = contactType;
+                updates.Add($"type: {contactType}");
+            }
+
+            if (updates.Count > 0)
+            {
+                await _db.SaveChangesAsync();
+                return $"Contact *{existing.Name}* already exists — updated {string.Join(", ", updates)}.";
+            }
+            return $"Contact *{existing.Name}* already exists ({existing.Type}).";
+        }
+
+        var contact = new Contact
+        {
+            BusinessId = businessId,
+            Name = name.Trim(),
+            PhoneNumber = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim(),
+            Type = contactType,
+            Source = EntrySource.WhatsApp
+        };
+        _db.Contacts.Add(contact);
+        await _db.SaveChangesAsync();
+
+        var phoneNote = !string.IsNullOrEmpty(phone) ? $"\n📞 {phone}" : "";
+        return $"✅ Contact added: *{contact.Name}* ({contact.Type}){phoneNote}";
     }
 
     private async Task<Contact> FindOrCreateContactAsync(Guid businessId, string name, ContactType type)

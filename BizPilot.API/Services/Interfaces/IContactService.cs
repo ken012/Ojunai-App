@@ -9,4 +9,5 @@ public interface IContactService
     Task<ContactDto> GetByIdAsync(Guid businessId, Guid contactId);
     Task<ContactDto> CreateAsync(Guid businessId, CreateContactRequest request);
     Task<ContactDto> UpdateAsync(Guid businessId, Guid contactId, CreateContactRequest request);
+    Task DeleteAsync(Guid businessId, Guid contactId);
 }

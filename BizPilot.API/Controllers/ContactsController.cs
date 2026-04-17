@@ -60,4 +60,12 @@ public class ContactsController : BizPilotBaseController
         var result = await _ledger.GetContactLedgerAsync(BusinessId, id);
         return Ok(ApiResponse<List<LedgerEntryDto>>.Ok(result));
     }
+
+    [HttpDelete("{id:guid}")]
+    [RequirePermission(Permission.ManageDebts)]
+    public async Task<ActionResult<ApiResponse<object>>> Delete(Guid id)
+    {
+        await _contacts.DeleteAsync(BusinessId, id);
+        return Ok(ApiResponse<object>.Ok(null!, "Contact deleted."));
+    }
 }

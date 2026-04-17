@@ -136,23 +136,48 @@ public class PaystackService
         var business = await _db.Businesses.FindAsync(businessId)
             ?? throw new KeyNotFoundException("Business not found.");
 
-        if (string.IsNullOrEmpty(business.PaystackSubscriptionCode))
-            throw new InvalidOperationException("No active subscription to cancel.");
-
-        // Get the email token needed for cancellation
-        var subResponse = await GetAsync($"/subscription/{business.PaystackSubscriptionCode}");
-        var emailToken = subResponse.GetProperty("data").GetProperty("email_token").GetString();
-
-        await PostAsync("/subscription/disable", new
+        // Cancel via Paystack if there's an active subscription to disable
+        if (!string.IsNullOrEmpty(business.PaystackSubscriptionCode))
         {
-            code = business.PaystackSubscriptionCode,
-            token = emailToken
-        });
+            try
+            {
+                var subResponse = await GetAsync($"/subscription/{business.PaystackSubscriptionCode}");
+                var emailToken = subResponse.GetProperty("data").GetProperty("email_token").GetString();
+                await PostAsync("/subscription/disable", new
+                {
+                    code = business.PaystackSubscriptionCode,
+                    token = emailToken
+                });
+                _logger.LogInformation("Paystack subscription cancelled for {Business}, access until {EndsAt}",
+                    business.Name, business.SubscriptionEndsAt);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Paystack cancel API call failed for {Business} — clearing locally", business.Name);
+            }
+        }
 
-        // Keep access until end of billing period — don't change Plan or SubscribedPlan yet
-        // The subscription.disable webhook or SubscriptionEndsAt check will handle downgrade
-        _logger.LogInformation("Subscription cancelled for {Business}, access until {EndsAt}",
-            business.Name, business.SubscriptionEndsAt);
+        // Clear Paystack references regardless — even if the API call failed, we don't want the
+        // dashboard to keep showing "active subscription" for a sub the user wants gone.
+        business.PaystackSubscriptionCode = null;
+        business.PaystackPlanCode = null;
+
+        // If there's no future billing end date, revert to starter immediately.
+        // If there IS a future end date, keep access until then (the TrialRevertJobService
+        // handles the eventual downgrade when SubscriptionEndsAt passes).
+        if (business.SubscriptionEndsAt == null || business.SubscriptionEndsAt <= DateTime.UtcNow)
+        {
+            // Revert to Starter but keep SubscribedPlan = "starter" so the user is recognized as
+            // a former subscriber. Setting it to null would make them look like a new user, showing
+            // free-trial UI and "Subscribe to Starter" buttons instead of upgrade options.
+            business.Plan = "starter";
+            business.SubscribedPlan = "starter";
+            business.PendingPlanChange = null;
+            business.SubscriptionEndsAt = null;
+            business.TrialEndsAt = null;
+        }
+
+        await _db.SaveChangesAsync();
     }
 
     private async Task HandleSubscriptionCreated(JsonElement data)

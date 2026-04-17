@@ -28,7 +28,7 @@ public static class PlanLimits
             MaxStaff = 1,
             PricePerMonth = 3500,
             TrialDays = 30,
-            HasLedger = false,
+            HasLedger = true,
             HasCsvImport = false,
             HasAdvancedReports = false,
             HasMonthlyCharts = false,

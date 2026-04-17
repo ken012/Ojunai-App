@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getStoredUser, getStoredBusiness } from "@/lib/auth";
 import { api } from "@/lib/api";
+import { usePlanStatus } from "@/lib/use-plan-status";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -273,6 +274,10 @@ function TeamMembersCard() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const { data: planStatus } = usePlanStatus();
+  const maxStaff = planStatus?.maxStaff ?? 1;
+  const canAddStaff = maxStaff > 1;
+
   const { data: staff } = useQuery({
     queryKey: ["staff"],
     queryFn: async () => {
@@ -317,12 +322,19 @@ function TeamMembersCard() {
           <Users size={15} />
           Team Members
         </CardTitle>
-        <Button size="sm" variant="outline" onClick={() => setAdding(!adding)}>
-          <Plus size={14} className="mr-1" /> Add Staff
-        </Button>
+        {canAddStaff && (
+          <Button size="sm" variant="outline" onClick={() => setAdding(!adding)}>
+            <Plus size={14} className="mr-1" /> Add Staff
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
-        {adding && (
+        {!canAddStaff && (
+          <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Staff accounts aren&apos;t available on the Starter plan. Upgrade to Shop or higher to add team members.
+          </div>
+        )}
+        {adding && canAddStaff && (
           <div className="border rounded-lg p-3 space-y-2 bg-slate-50">
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -662,6 +674,22 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
     }
   }
 
+  async function handleDowngrade(targetPlan: string) {
+    const targetLabel = targetPlan.charAt(0).toUpperCase() + targetPlan.slice(1);
+    if (!confirm(`Downgrade to ${targetLabel}? You'll keep your current features until the end of your billing period.`)) return;
+    setSubscribing(targetPlan);
+    setSubError(null);
+    try {
+      await api.post("/subscription/change-plan", { plan: targetPlan });
+      qc.invalidateQueries({ queryKey: ["plan-status"] });
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      setSubError(ax.response?.data?.errors?.[0] ?? "Failed to change plan");
+    } finally {
+      setSubscribing(null);
+    }
+  }
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -775,25 +803,32 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
           </div>
         )}
 
-        {isBillable && isSubscriber && !hasActiveSub && plan !== "business" && (
+        {isBillable && isSubscriber && (
           <div className="pt-3 space-y-3">
-            <p className="text-xs text-slate-500 mb-1">Upgrade your plan:</p>
-            {PLAN_ORDER
-              .filter((key) => PLAN_ORDER.indexOf(key) > PLAN_ORDER.indexOf(plan) && key !== "business")
-              .map((key) => {
-                const d = PLAN_DETAILS[key];
-                if (!d) return null;
-                return (
-                  <Button
-                    key={key}
-                    className="w-full h-11 text-base font-semibold bg-sky-600 hover:bg-sky-700 text-white shadow-sm"
-                    onClick={() => handleSubscribe(key)}
-                    disabled={subscribing !== null}
-                  >
-                    {subscribing === key ? "Redirecting..." : `Upgrade to ${d.label} — ₦${d.price}/mo`}
-                  </Button>
-                );
-              })}
+            {/* Upgrade buttons — plans above current */}
+            {PLAN_ORDER.filter((key) => PLAN_ORDER.indexOf(key) > PLAN_ORDER.indexOf(plan) && key !== "business").length > 0 && (
+              <>
+                <p className="text-xs text-slate-500">Upgrade:</p>
+                {PLAN_ORDER
+                  .filter((key) => PLAN_ORDER.indexOf(key) > PLAN_ORDER.indexOf(plan) && key !== "business")
+                  .map((key) => {
+                    const d = PLAN_DETAILS[key];
+                    if (!d) return null;
+                    return (
+                      <Button
+                        key={key}
+                        className="w-full h-11 text-base font-semibold bg-sky-600 hover:bg-sky-700 text-white shadow-sm"
+                        onClick={() => handleSubscribe(key)}
+                        disabled={subscribing !== null}
+                      >
+                        {subscribing === key ? "Redirecting..." : `Upgrade to ${d.label} — ₦${d.price}/mo`}
+                      </Button>
+                    );
+                  })}
+              </>
+            )}
+
+            {/* Business — contact us */}
             {PLAN_ORDER.indexOf(plan) < PLAN_ORDER.indexOf("business") && (
               <a
                 href={`mailto:contact@bizpilot-ai.com?subject=${encodeURIComponent("Business Plan Enquiry")}&body=${encodeURIComponent(
@@ -803,6 +838,33 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
               >
                 Upgrade to Business — Contact Us
               </a>
+            )}
+
+            {/* Downgrade buttons — plans below current (not shown on Starter since there's nothing below) */}
+            {PLAN_ORDER.indexOf(plan) > 0 && (
+              <>
+                <div className="border-t border-slate-100 pt-3">
+                  <p className="text-xs text-slate-400 mb-2">Downgrade:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {PLAN_ORDER
+                      .filter((key) => PLAN_ORDER.indexOf(key) < PLAN_ORDER.indexOf(plan))
+                      .map((key) => {
+                        const d = PLAN_DETAILS[key];
+                        if (!d) return null;
+                        return (
+                          <button
+                            key={key}
+                            onClick={() => handleDowngrade(key)}
+                            disabled={subscribing !== null}
+                            className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 hover:border-slate-300 transition-colors disabled:opacity-50"
+                          >
+                            {subscribing === key ? "..." : `Downgrade to ${d.label} — ₦${d.price}/mo`}
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              </>
             )}
           </div>
         )}

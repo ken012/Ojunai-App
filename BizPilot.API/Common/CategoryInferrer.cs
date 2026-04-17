@@ -12,6 +12,9 @@ public static class CategoryInferrer
         ("Food & Beverages", "Dairy Products", new[] { "milk", "cheese", "butter", "cream", "yoghurt", "egg" }),
         ("Food & Beverages", "Meat & Fish", new[] { "meat", "beef", "chicken", "fish", "turkey", "goat", "pork", "suya", "kilishi", "crayfish", "prawn", "shrimp" }),
         ("Food & Beverages", "Spices & Seasoning", new[] { "pepper", "salt", "maggi", "knorr", "curry", "thyme", "ginger", "garlic", "onion", "tomato paste", "seasoning", "spice" }),
+        ("Food & Beverages", "Condiments & Sauces", new[] { "ketchup", "mayonnaise", "mayo", "mustard", "sauce", "vinegar", "salad cream", "salad dressing", "soy sauce", "chili sauce", "hot sauce" }),
+        ("Food & Beverages", "Tea & Coffee", new[] { "tea", "coffee", "cocoa", "milo", "bournvita", "ovaltine", "green tea", "lipton", "nescafe" }),
+        ("Food & Beverages", "Sugar & Sweeteners", new[] { "sugar", "honey", "syrup", "sweetener", "brown sugar", "cube sugar" }),
         ("Food & Beverages", "Canned & Packaged Goods", new[] { "sardine", "tin", "canned", "noodle", "indomie", "spaghetti", "pasta", "baked beans" }),
         ("Food & Beverages", "Bakery Items", new[] { "bread", "cake", "pie", "pastry", "doughnut", "croissant", "muffin" }),
         ("Food & Beverages", "Produce", new[] { "yam", "plantain", "cassava", "potato", "vegetable", "carrot", "cabbage", "lettuce", "palm oil", "groundnut", "pounded yam" }),
@@ -55,7 +58,7 @@ public static class CategoryInferrer
         ("Home & Kitchen", "Kitchen Appliances", new[] { "fridge", "freezer", "dispenser", "toaster", "juicer" }),
         ("Home & Kitchen", "Home Decor", new[] { "curtain", "pillow", "frame", "vase", "rug", "mat", "clock", "mirror", "lamp" }),
         ("Home & Kitchen", "Furniture", new[] { "chair", "table", "shelf", "bed", "wardrobe", "cabinet", "desk", "stool" }),
-        ("Home & Kitchen", "Cleaning Supplies", new[] { "detergent", "bleach", "omo", "ariel", "mop", "broom", "bucket", "sponge", "duster" }),
+        ("Home & Kitchen", "Cleaning Supplies", new[] { "detergent", "bleach", "omo", "ariel", "mop", "broom", "bucket", "sponge", "duster", "air freshener", "freshener", "disinfectant", "febreeze", "glade" }),
         ("Home & Kitchen", "Storage & Organization", new[] { "basket", "bin", "container", "rack", "hanger" }),
         ("Home & Kitchen", "Bedding", new[] { "sheet", "duvet", "blanket", "mattress", "pillow case" }),
 

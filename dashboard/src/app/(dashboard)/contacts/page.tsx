@@ -27,7 +27,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Users, Pencil, CreditCard, Banknote, Search, X } from "lucide-react";
+import { Users, Pencil, CreditCard, Banknote, Search, X, Trash2 } from "lucide-react";
 import { hasPermission, Permission } from "@/lib/permissions";
 
 export default function ContactsPage() {
@@ -40,6 +40,7 @@ export default function ContactsPage() {
   const [recordingDebt, setRecordingDebt] = useState(false);
   const [recordingPayment, setRecordingPayment] = useState<ContactDto | null>(null);
   const [viewingLedger, setViewingLedger] = useState<ContactDto | null>(null);
+  const [deleting, setDeleting] = useState<ContactDto | null>(null);
 
   // Debounce the search input so we don't fire a request on every keystroke. 250ms feels
   // responsive without hammering the API.
@@ -288,6 +289,15 @@ export default function ContactsPage() {
                             <Pencil size={14} />
                           </button>
                         )}
+                        {hasPermission(Permission.ManageDebts) && (
+                          <button
+                            onClick={() => setDeleting(contact)}
+                            className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500"
+                            title="Delete contact"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -331,6 +341,11 @@ export default function ContactsPage() {
         contact={viewingLedger}
         open={viewingLedger !== null}
         onClose={() => setViewingLedger(null)}
+      />
+      <DeleteContactDialog
+        contact={deleting}
+        open={deleting !== null}
+        onClose={() => setDeleting(null)}
       />
     </div>
   );
@@ -787,6 +802,78 @@ function AddContactDialog({ open, onClose }: { open: boolean; onClose: () => voi
         <DialogFooter>
           <Button variant="outline" onClick={handleClose} disabled={saving}>Cancel</Button>
           <Button onClick={handleSave} disabled={saving || !form.name}>{saving ? "Saving…" : "Add Contact"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DeleteContactDialog({ contact, open, onClose }: { contact: ContactDto | null; open: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const hasReceivable = (contact?.outstandingReceivable ?? 0) > 0;
+  const hasPayable = (contact?.outstandingPayable ?? 0) > 0;
+  const hasOpenBalance = hasReceivable || hasPayable;
+
+  async function handleDelete() {
+    if (!contact) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await api.delete(`/contacts/${contact.id}`);
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+      onClose();
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      setError(ax.response?.data?.errors?.[0] ?? "Failed to delete contact");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) { setError(null); onClose(); } }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete Contact — {contact?.name}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          {hasOpenBalance && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1">
+              <p className="text-sm font-medium text-amber-800">This contact has open balances:</p>
+              {hasReceivable && (
+                <p className="text-sm text-amber-700">
+                  • Outstanding receivable: <strong>{formatNaira(contact!.outstandingReceivable)}</strong> (they owe you)
+                </p>
+              )}
+              {hasPayable && (
+                <p className="text-sm text-amber-700">
+                  • Outstanding payable: <strong>{formatNaira(contact!.outstandingPayable)}</strong> (you owe them)
+                </p>
+              )}
+              <p className="text-xs text-amber-600 pt-1">
+                Deleting will remove all ledger entries for this contact. This cannot be undone.
+              </p>
+            </div>
+          )}
+          {!hasOpenBalance && (
+            <p className="text-sm text-slate-600">
+              Are you sure you want to delete <strong>{contact?.name}</strong>? This cannot be undone.
+            </p>
+          )}
+          {error && <p className="text-xs text-red-500">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => { setError(null); onClose(); }} disabled={deleting}>Cancel</Button>
+          <Button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="bg-red-600 hover:bg-red-700 text-white"
+          >
+            {deleting ? "Deleting..." : hasOpenBalance ? "Delete Anyway" : "Delete Contact"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -36,7 +36,9 @@ public enum ImportJobType
 {
     Inventory = 1,
     Sales = 2,
-    Expenses = 3
+    Expenses = 3,
+    Contacts = 4,
+    ContactsWithLedger = 5
 }
 
 public enum ImportJobStatus

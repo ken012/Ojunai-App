@@ -420,17 +420,26 @@ function FinancialTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                 <p className="text-xs text-slate-400 mb-3">Total: {formatNaira(expenses.totalExpenses)}</p>
                 {expenses.categories.length > 0 ? (
                   <div className="space-y-2">
-                    {expenses.categories.slice(0, 8).map((c) => (
-                      <div key={c.category}>
-                        <div className="flex justify-between text-xs mb-1">
-                          <span className="text-slate-600">{c.category}</span>
-                          <span className="text-slate-900 font-medium">{formatNaira(c.amount)} <span className="text-slate-400">({c.percentOfTotal}%)</span></span>
+                    {expenses.categories.slice(0, 8).map((c, i) => {
+                      const colors = [
+                        "bg-sky-500", "bg-emerald-500", "bg-violet-500", "bg-amber-500",
+                        "bg-rose-500", "bg-teal-500", "bg-orange-500", "bg-indigo-500"
+                      ];
+                      return (
+                        <div key={c.category}>
+                          <div className="flex justify-between text-xs mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`inline-block w-2.5 h-2.5 rounded-sm ${colors[i % colors.length]}`} />
+                              <span className="text-slate-600">{c.category}</span>
+                            </div>
+                            <span className="text-slate-900 font-medium">{formatNaira(c.amount)} <span className="text-slate-400">({c.percentOfTotal}%)</span></span>
+                          </div>
+                          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div className={`h-full ${colors[i % colors.length]}`} style={{ width: `${Math.min(100, Number(c.percentOfTotal))}%` }} />
+                          </div>
                         </div>
-                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-purple-400" style={{ width: `${Math.min(100, Number(c.percentOfTotal))}%` }} />
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : <p className="text-xs text-slate-400 italic">No expenses recorded this month.</p>}
               </>

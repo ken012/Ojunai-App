@@ -113,6 +113,12 @@ public class ImportJobService
                 case ImportJobType.Expenses:
                     await ProcessExpensesRowsAsync(job, rows, user, errors);
                     break;
+                case ImportJobType.Contacts:
+                    await ProcessContactsRowsAsync(job, rows, errors);
+                    break;
+                case ImportJobType.ContactsWithLedger:
+                    await ProcessContactsWithLedgerRowsAsync(job, rows, user, errors);
+                    break;
             }
 
             job.ErrorsJson = JsonSerializer.Serialize(errors.Take(MaxErrorsStored).ToList());
@@ -150,32 +156,33 @@ public class ImportJobService
             try
             {
                 var name = row.GetValueOrDefault("productname");
-                var qtyStr = row.GetValueOrDefault("quantity");
+                if (!ValidateName(name, rowNum, "ProductName", errors)) continue;
 
-                if (string.IsNullOrEmpty(name)) { errors.Add($"Row {rowNum}: Missing ProductName"); continue; }
-                var qty = CsvParser.ParseDecimal(qtyStr);
-                if (!qty.HasValue || qty.Value <= 0) { errors.Add($"Row {rowNum}: Invalid quantity for '{name}'"); continue; }
+                var qty = CsvParser.ParseDecimal(row.GetValueOrDefault("quantity"));
+                if (!ValidateQuantity(qty, rowNum, name!, errors)) continue;
 
-                var unit = row.GetValueOrDefault("unit") ?? UnitInferrer.Infer(name);
+                var unit = row.GetValueOrDefault("unit") ?? UnitInferrer.Infer(name!);
                 var costPrice = CsvParser.ParseDecimal(row.GetValueOrDefault("costprice"));
                 var sellingPrice = CsvParser.ParseDecimal(row.GetValueOrDefault("sellingprice"));
+                if (costPrice.HasValue && costPrice.Value > 100_000_000) { errors.Add($"Row {rowNum}: Cost price ₦{costPrice.Value:N0} for '{name}' seems unusually large"); continue; }
+                if (sellingPrice.HasValue && sellingPrice.Value > 100_000_000) { errors.Add($"Row {rowNum}: Selling price ₦{sellingPrice.Value:N0} for '{name}' seems unusually large"); continue; }
                 var csvCategory = row.GetValueOrDefault("category");
                 var csvSubcategory = row.GetValueOrDefault("subcategory");
                 var csvThreshold = CsvParser.ParseDecimal(row.GetValueOrDefault("threshold"));
 
                 var existing = await _db.Products.FirstOrDefaultAsync(p =>
-                    p.BusinessId == job.BusinessId && p.IsActive && p.Name.ToLower() == name.ToLower());
+                    p.BusinessId == job.BusinessId && p.IsActive && p.Name.ToLower() == name!.ToLower());
 
                 if (existing == null)
                 {
-                    var (inferredCat, inferredSubcat) = CategoryInferrer.Infer(name);
+                    var (inferredCat, inferredSubcat) = CategoryInferrer.Infer(name!);
                     await _products.CreateAsync(job.BusinessId, new CreateProductRequest
                     {
-                        Name = name,
+                        Name = name!,
                         Unit = unit,
                         CostPrice = costPrice,
                         SellingPrice = sellingPrice,
-                        InitialStock = qty.Value,
+                        InitialStock = qty!.Value,
                         LowStockThreshold = csvThreshold ?? 5,
                         Category = csvCategory ?? inferredCat,
                         Subcategory = csvSubcategory ?? inferredSubcat
@@ -187,7 +194,7 @@ public class ImportJobService
                     await _inventory.StockInAsync(job.BusinessId, new StockInRequest
                     {
                         ProductId = existing.Id,
-                        Quantity = qty.Value,
+                        Quantity = qty!.Value,
                         UnitCost = effectiveCost
                     }, user?.Id, user?.FullName);
 
@@ -230,19 +237,21 @@ public class ImportJobService
             try
             {
                 var name = row.GetValueOrDefault("productname");
-                var qtyStr = row.GetValueOrDefault("quantity");
-                if (string.IsNullOrEmpty(name)) { errors.Add($"Row {rowNum}: Missing ProductName"); continue; }
-                var qty = CsvParser.ParseDecimal(qtyStr);
-                if (!qty.HasValue || qty.Value <= 0) { errors.Add($"Row {rowNum}: Invalid quantity for '{name}'"); continue; }
+                if (!ValidateName(name, rowNum, "ProductName", errors)) continue;
+
+                var qty = CsvParser.ParseDecimal(row.GetValueOrDefault("quantity"));
+                if (!ValidateQuantity(qty, rowNum, name!, errors)) continue;
 
                 var product = await _db.Products.FirstOrDefaultAsync(p =>
-                    p.BusinessId == job.BusinessId && p.IsActive && p.Name.ToLower() == name.ToLower());
+                    p.BusinessId == job.BusinessId && p.IsActive && p.Name.ToLower() == name!.ToLower());
                 if (product == null) { errors.Add($"Row {rowNum}: Product '{name}' not found in inventory"); continue; }
 
                 var unitPrice = CsvParser.ParseDecimal(row.GetValueOrDefault("unitprice"));
-                if (!unitPrice.HasValue || unitPrice.Value <= 0) { errors.Add($"Row {rowNum}: UnitPrice is required for '{name}'"); continue; }
+                if (!unitPrice.HasValue || unitPrice.Value <= 0) { errors.Add($"Row {rowNum}: UnitPrice is required for '{name}'. Should be a positive number."); continue; }
+                if (unitPrice.Value > 100_000_000) { errors.Add($"Row {rowNum}: UnitPrice ₦{unitPrice.Value:N0} for '{name}' seems unusually large"); continue; }
 
                 var customerName = row.GetValueOrDefault("customername");
+                if (customerName != null && customerName.Length > 200) { errors.Add($"Row {rowNum}: Customer name too long (max 200 characters)"); continue; }
                 Guid? contactId = null;
                 if (!string.IsNullOrEmpty(customerName))
                 {
@@ -264,13 +273,17 @@ public class ImportJobService
                 }
 
                 var statusStr = row.GetValueOrDefault("paymentstatus") ?? "Paid";
+                if (!string.IsNullOrEmpty(statusStr) && statusStr != "Paid" && !ValidPaymentStatuses.Contains(statusStr))
+                {
+                    errors.Add($"Row {rowNum}: Unknown payment status '{statusStr}' for '{name}'. Use: Paid, Unpaid, or PartiallyPaid. Defaulting to Paid.");
+                }
                 var status = Enum.TryParse<PaymentStatus>(statusStr, true, out var ps) ? ps : PaymentStatus.Paid;
 
                 await _sales.CreateAsync(job.BusinessId, new CreateSaleRequest
                 {
                     Items = new List<SaleItemRequest>
                     {
-                        new() { ProductId = product.Id, Quantity = qty.Value, UnitPrice = unitPrice.Value }
+                        new() { ProductId = product.Id, Quantity = qty!.Value, UnitPrice = unitPrice!.Value }
                     },
                     ContactId = contactId,
                     PaymentStatus = status
@@ -300,16 +313,234 @@ public class ImportJobService
             try
             {
                 var category = row.GetValueOrDefault("category") ?? "General";
+                if (category.Length > 100) { errors.Add($"Row {rowNum}: Category too long (max 100 characters): '{category[..30]}...'"); continue; }
+
                 var amount = CsvParser.ParseDecimal(row.GetValueOrDefault("amount"));
-                if (!amount.HasValue || amount.Value <= 0) { errors.Add($"Row {rowNum}: Invalid amount"); continue; }
+                if (!ValidateAmount(amount, rowNum, $"category '{category}'", errors)) continue;
 
                 await _expenses.CreateAsync(job.BusinessId, new CreateExpenseRequest
                 {
                     Category = category,
-                    Amount = amount.Value,
+                    Amount = amount!.Value,
                     PaidTo = row.GetValueOrDefault("paidto"),
                     Notes = row.GetValueOrDefault("notes")
                 }, EntrySource.Import, user?.Id, user?.FullName);
+
+                job.SuccessCount++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Import row {Row} failed for job {JobId}", rowNum, job.Id);
+                errors.Add($"Row {rowNum}: {FriendlyRowError(ex)}");
+            }
+
+            job.ProcessedRows = i + 1;
+            if ((i + 1) % ProgressBatchSize == 0) await _db.SaveChangesAsync();
+        }
+
+        await _db.SaveChangesAsync();
+    }
+
+    // ─── Shared CSV validation helpers ──────────────────────────────────────────
+    //
+    // Each validator returns the cleaned value on success or null/false on failure, adding a
+    // descriptive error. The error messages deliberately suggest "check your CSV column order"
+    // when the data looks like a misplaced column — that's the #1 cause of bad imports.
+
+    private static string? ValidatePhone(string? raw, int rowNum, string contactName, List<string> errors)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var trimmed = raw.Trim();
+        if (trimmed.Length > 0 && !char.IsDigit(trimmed[0]) && trimmed[0] != '+')
+        {
+            errors.Add($"Row {rowNum}: '{trimmed}' doesn't look like a phone number for '{contactName}' — check your CSV column order");
+            return null;
+        }
+        if (trimmed.Length > 20)
+        {
+            errors.Add($"Row {rowNum}: Phone number too long for '{contactName}' (max 20 characters)");
+            return null;
+        }
+        return trimmed;
+    }
+
+    private static bool ValidateName(string? name, int rowNum, string fieldLabel, List<string> errors)
+    {
+        if (string.IsNullOrWhiteSpace(name)) { errors.Add($"Row {rowNum}: Missing {fieldLabel}"); return false; }
+        if (name.Length > 200) { errors.Add($"Row {rowNum}: {fieldLabel} too long (max 200 characters): '{name[..50]}...'"); return false; }
+        // Detect likely misplaced numeric column in a name field
+        if (decimal.TryParse(name.Replace(",", ""), out _))
+        {
+            errors.Add($"Row {rowNum}: {fieldLabel} '{name}' looks like a number, not a name — check your CSV column order");
+            return false;
+        }
+        return true;
+    }
+
+    private static bool ValidateAmount(decimal? amount, int rowNum, string context, List<string> errors)
+    {
+        if (!amount.HasValue || amount.Value <= 0)
+        {
+            errors.Add($"Row {rowNum}: Invalid or missing amount for {context}. Amount should be a positive number.");
+            return false;
+        }
+        if (amount.Value > 100_000_000)
+        {
+            errors.Add($"Row {rowNum}: Amount ₦{amount.Value:N0} for {context} seems unusually large (over ₦100M). Check your CSV data.");
+            return false;
+        }
+        return true;
+    }
+
+    private static bool ValidateQuantity(decimal? qty, int rowNum, string productName, List<string> errors)
+    {
+        if (!qty.HasValue || qty.Value <= 0)
+        {
+            errors.Add($"Row {rowNum}: Invalid quantity for '{productName}'. Should be a positive number.");
+            return false;
+        }
+        if (qty.Value > 1_000_000)
+        {
+            errors.Add($"Row {rowNum}: Quantity {qty.Value:N0} for '{productName}' seems unusually large (over 1M). Check your CSV data.");
+            return false;
+        }
+        return true;
+    }
+
+    private static readonly HashSet<string> ValidLedgerTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "receivable", "owes me", "they owe", "customer", "debt",
+        "payable", "i owe", "we owe", "supplier", "creditor"
+    };
+
+    private static readonly HashSet<string> ValidPaymentStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "paid", "unpaid", "partiallypaid", "partially paid", "credit"
+    };
+
+    private async Task ProcessContactsRowsAsync(ImportJob job, List<Dictionary<string, string>> rows, List<string> errors)
+    {
+        for (int i = 0; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            var rowNum = i + 2;
+            try
+            {
+                // "name" maps to "productname" in CsvParser, so check both keys
+                var name = row.GetValueOrDefault("contactname") ?? row.GetValueOrDefault("productname");
+                if (!ValidateName(name, rowNum, "Contact Name", errors)) continue;
+
+                var phone = ValidatePhone(row.GetValueOrDefault("phonenumber"), rowNum, name!, errors);
+                var typeStr = row.GetValueOrDefault("contacttype") ?? "Customer";
+                if (!string.IsNullOrEmpty(typeStr) && !Enum.TryParse<ContactType>(typeStr, true, out _) && typeStr != "Customer")
+                {
+                    errors.Add($"Row {rowNum}: Unknown contact type '{typeStr}' for '{name}'. Use: Customer, Supplier, or Both. Defaulting to Customer.");
+                }
+                var contactType = Enum.TryParse<ContactType>(typeStr, true, out var ct) ? ct : ContactType.Customer;
+
+                var existing = await _db.Contacts.FirstOrDefaultAsync(c =>
+                    c.BusinessId == job.BusinessId && EF.Functions.ILike(c.Name, name!));
+
+                if (existing != null)
+                {
+                    if (!string.IsNullOrEmpty(phone) && string.IsNullOrEmpty(existing.PhoneNumber))
+                        existing.PhoneNumber = phone;
+                    if (existing.Type != contactType && contactType == ContactType.Both)
+                        existing.Type = ContactType.Both;
+                }
+                else
+                {
+                    _db.Contacts.Add(new Contact
+                    {
+                        BusinessId = job.BusinessId,
+                        Name = name!.Trim(),
+                        PhoneNumber = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim(),
+                        Type = contactType,
+                        Source = EntrySource.Import
+                    });
+                }
+
+                job.SuccessCount++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Import row {Row} failed for job {JobId}", rowNum, job.Id);
+                errors.Add($"Row {rowNum}: {FriendlyRowError(ex)}");
+            }
+
+            job.ProcessedRows = i + 1;
+            if ((i + 1) % ProgressBatchSize == 0) await _db.SaveChangesAsync();
+        }
+
+        await _db.SaveChangesAsync();
+    }
+
+    private async Task ProcessContactsWithLedgerRowsAsync(ImportJob job, List<Dictionary<string, string>> rows, User? user, List<string> errors)
+    {
+        for (int i = 0; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            var rowNum = i + 2;
+            try
+            {
+                var name = row.GetValueOrDefault("contactname") ?? row.GetValueOrDefault("productname");
+                if (!ValidateName(name, rowNum, "Contact Name", errors)) continue;
+
+                var amount = CsvParser.ParseDecimal(row.GetValueOrDefault("amount"));
+                if (!ValidateAmount(amount, rowNum, $"'{name}'", errors)) continue;
+
+                var ledgerTypeStr = row.GetValueOrDefault("ledgertype") ?? "receivable";
+                if (!ValidLedgerTypes.Contains(ledgerTypeStr))
+                {
+                    errors.Add($"Row {rowNum}: Invalid ledger type '{ledgerTypeStr}' for '{name}'. Use 'Receivable' (they owe you) or 'Payable' (you owe them). Check CSV column order.");
+                    continue;
+                }
+
+                var isReceivable = ledgerTypeStr.ToLowerInvariant() switch
+                {
+                    "receivable" or "owes me" or "they owe" or "customer" or "debt" => true,
+                    _ => false
+                };
+
+                var phone = ValidatePhone(row.GetValueOrDefault("phonenumber"), rowNum, name!, errors);
+                var typeStr = row.GetValueOrDefault("contacttype");
+                var contactType = !string.IsNullOrEmpty(typeStr) && Enum.TryParse<ContactType>(typeStr, true, out var ct)
+                    ? ct
+                    : (isReceivable ? ContactType.Customer : ContactType.Supplier);
+
+                var notes = row.GetValueOrDefault("notes");
+
+                // Find or create the contact
+                var contact = await _db.Contacts.FirstOrDefaultAsync(c =>
+                    c.BusinessId == job.BusinessId && EF.Functions.ILike(c.Name, name!));
+
+                if (contact == null)
+                {
+                    contact = new Contact
+                    {
+                        BusinessId = job.BusinessId,
+                        Name = name!.Trim(),
+                        PhoneNumber = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim(),
+                        Type = contactType,
+                        Source = EntrySource.Import
+                    };
+                    _db.Contacts.Add(contact);
+                    await _db.SaveChangesAsync();
+                }
+
+                // Create the ledger entry
+                var entryType = isReceivable ? LedgerEntryType.Receivable : LedgerEntryType.Payable;
+                _db.LedgerEntries.Add(new LedgerEntry
+                {
+                    BusinessId = job.BusinessId,
+                    ContactId = contact.Id,
+                    EntryType = entryType,
+                    Amount = amount!.Value,
+                    Notes = notes,
+                    Source = EntrySource.Import,
+                    RecordedByUserId = user?.Id,
+                    RecordedByName = user?.FullName
+                });
 
                 job.SuccessCount++;
             }
