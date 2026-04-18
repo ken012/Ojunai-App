@@ -2717,12 +2717,12 @@ public class WhatsAppService : IWhatsAppService
                 .Where(e => e.BusinessId == businessId && e.ContactId == contact.Id)
                 .ToListAsync();
 
-            var debtType = latestEntry.EntryType;
-            var payType = latestEntry.EntryType == LedgerEntryType.Receivable
+            var dt = latestEntry.EntryType;
+            var pt = latestEntry.EntryType == LedgerEntryType.Receivable
                 ? LedgerEntryType.ReceivablePayment : LedgerEntryType.PayablePayment;
 
-            var outstanding = entries.Where(e => e.EntryType == debtType).Sum(e => e.Amount)
-                            - entries.Where(e => e.EntryType == payType).Sum(e => e.Amount);
+            var outstanding = entries.Where(e => e.EntryType == dt).Sum(e => e.Amount)
+                            - entries.Where(e => e.EntryType == pt).Sum(e => e.Amount);
 
             if (outstanding <= 0) return $"{contact.Name} has no outstanding {typeLabel} balance.";
 
@@ -2741,16 +2741,25 @@ public class WhatsAppService : IWhatsAppService
             return $"✅ Cleared {contact.Name}'s {typeLabel} balance (was ₦{outstanding:N0}).";
         }
 
-        // Create an adjustment entry for the difference so it appears in the activity feed
-        var delta = newAmount.Value - oldAmount;
-        if (delta == 0) return $"{contact.Name}'s {typeLabel} is already ₦{oldAmount:N0}.";
+        // Compute CURRENT outstanding balance (sum of all entries), not just the latest entry's amount.
+        // Without this, repeated adjustments (100k→200k→300k) stack incorrectly because each delta
+        // is calculated from the original entry instead of the running balance.
+        var debtType = latestEntry.EntryType;
+        var payType = latestEntry.EntryType == LedgerEntryType.Receivable
+            ? LedgerEntryType.ReceivablePayment : LedgerEntryType.PayablePayment;
 
-        var adjustmentType = delta > 0 ? latestEntry.EntryType : (latestEntry.EntryType switch
-        {
-            LedgerEntryType.Receivable => LedgerEntryType.ReceivablePayment,
-            LedgerEntryType.Payable => LedgerEntryType.PayablePayment,
-            _ => latestEntry.EntryType
-        });
+        var allEntries = await _db.LedgerEntries
+            .Where(e => e.BusinessId == businessId && e.ContactId == contact.Id
+                        && (e.EntryType == debtType || e.EntryType == payType))
+            .ToListAsync();
+
+        var currentBalance = allEntries.Where(e => e.EntryType == debtType).Sum(e => e.Amount)
+                           - allEntries.Where(e => e.EntryType == payType).Sum(e => e.Amount);
+
+        var delta = newAmount.Value - currentBalance;
+        if (delta == 0) return $"{contact.Name}'s {typeLabel} is already ₦{currentBalance:N0}.";
+
+        var adjustmentType = delta > 0 ? debtType : payType;
 
         _db.LedgerEntries.Add(new LedgerEntry
         {
@@ -2758,7 +2767,7 @@ public class WhatsAppService : IWhatsAppService
             ContactId = contact.Id,
             EntryType = adjustmentType,
             Amount = Math.Abs(delta),
-            Notes = $"Adjusted: ₦{oldAmount:N0} → ₦{newAmount.Value:N0}",
+            Notes = $"Adjusted: ₦{currentBalance:N0} → ₦{newAmount.Value:N0}",
             Source = "Adjustment",
             RecordedByUserId = recordedBy?.Id,
             RecordedByName = recordedBy?.FullName
@@ -2767,7 +2776,7 @@ public class WhatsAppService : IWhatsAppService
 
         var direction = latestEntry.EntryType == LedgerEntryType.Receivable
             ? $"{contact.Name} owes you" : $"You owe {contact.Name}";
-        return $"✅ Adjusted: {direction} ₦{newAmount.Value:N0} (was ₦{oldAmount:N0})";
+        return $"✅ Adjusted: {direction} ₦{newAmount.Value:N0} (was ₦{currentBalance:N0})";
     }
 
     private async Task<string> HandleCreateContactAsync(Guid businessId, JsonElement ba)

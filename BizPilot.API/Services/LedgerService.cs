@@ -160,25 +160,33 @@ public class LedgerService : ILedgerService
             .FirstOrDefaultAsync(e => e.Id == entryId && e.BusinessId == businessId)
             ?? throw new KeyNotFoundException("Ledger entry not found.");
 
-        var oldAmount = entry.Amount;
-        var delta = request.Amount - oldAmount;
+        // Reject edits on adjustment entries — they're system-generated corrections, not user data
+        if (entry.Source == "Adjustment")
+            throw new InvalidOperationException("Adjustment entries cannot be edited. Edit the original debt instead.");
+
+        // Compute the CURRENT outstanding balance for this contact (not just this entry's amount),
+        // so repeated adjustments stack correctly. Without this, adjusting 100k→200k→300k would
+        // create deltas from the original 100k each time instead of from the running total.
+        var isReceivable = entry.EntryType == LedgerEntryType.Receivable;
+        var debtType = isReceivable ? LedgerEntryType.Receivable : LedgerEntryType.Payable;
+        var payType = isReceivable ? LedgerEntryType.ReceivablePayment : LedgerEntryType.PayablePayment;
+
+        var allEntries = await _db.LedgerEntries
+            .Where(e => e.BusinessId == businessId && e.ContactId == entry.ContactId
+                        && (e.EntryType == debtType || e.EntryType == payType))
+            .ToListAsync();
+
+        var currentBalance = allEntries.Where(e => e.EntryType == debtType).Sum(e => e.Amount)
+                           - allEntries.Where(e => e.EntryType == payType).Sum(e => e.Amount);
+
+        var delta = request.Amount - currentBalance;
         if (delta == 0)
         {
-            if (request.Notes != entry.Notes) { entry.Notes = request.Notes; await _db.SaveChangesAsync(); }
+            if (request.Notes != null && request.Notes != entry.Notes) { entry.Notes = request.Notes; await _db.SaveChangesAsync(); }
             return await ToDtoAsync(entry);
         }
 
-        // Create an adjustment entry for the difference instead of editing the original in place.
-        // This way a new line appears at the top of the activity feed with the current timestamp,
-        // and the balance math stays correct via sum of all entries.
-        var adjustmentType = delta > 0 ? entry.EntryType : (entry.EntryType switch
-        {
-            LedgerEntryType.Receivable => LedgerEntryType.ReceivablePayment,
-            LedgerEntryType.Payable => LedgerEntryType.PayablePayment,
-            LedgerEntryType.ReceivablePayment => LedgerEntryType.Receivable,
-            LedgerEntryType.PayablePayment => LedgerEntryType.Payable,
-            _ => entry.EntryType
-        });
+        var adjustmentType = delta > 0 ? debtType : payType;
 
         var adjustmentEntry = new LedgerEntry
         {
@@ -186,7 +194,7 @@ public class LedgerService : ILedgerService
             ContactId = entry.ContactId,
             EntryType = adjustmentType,
             Amount = Math.Abs(delta),
-            Notes = $"Adjusted {entry.Contact.Name}: ₦{oldAmount:N0} → ₦{request.Amount:N0}",
+            Notes = $"Adjusted {entry.Contact.Name}: ₦{currentBalance:N0} → ₦{request.Amount:N0}",
             Source = "Adjustment",
             RecordedByUserId = entry.RecordedByUserId,
             RecordedByName = entry.RecordedByName

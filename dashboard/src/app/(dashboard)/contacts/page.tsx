@@ -690,7 +690,7 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
                         <span className={`text-sm font-semibold ${typeColor(e.entryType, e.source)}`}>
                           {e.entryType.includes("Payment") ? "-" : "+"}{formatNaira(e.amount)}
                         </span>
-                        {canManage && (
+                        {canManage && e.source !== "Adjustment" && (
                           <div className="flex gap-0.5">
                             <button onClick={() => startEdit(e)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700" title="Edit">
                               <Pencil size={12} />
