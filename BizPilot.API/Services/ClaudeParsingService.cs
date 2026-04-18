@@ -206,7 +206,9 @@ Supported intents:
   User: "Save Tunde's number 08098765432" → {contactName:"Tunde", phoneNumber:"08098765432"}
   NOTE: Do NOT use this for "add staff" — staff use the add_staff intent. Contacts are customers/suppliers, not team members.
 - get_staff_sales: {staffName} — what a specific staff member sold today
-- get_product_staff: {productName} — which staff members sold a specific product today
+- get_product_staff: {productName} — which STAFF MEMBERS recorded sales of a specific product today. Triggers: "who sold rice today", "which staff sold perfume"
+- get_product_buyers: {productName} — which CUSTOMERS bought a specific product today. Triggers: "who bought rice today", "who purchased perfume", "who bought lip gloss"
+  IMPORTANT: "who bought X" = get_product_buyers (show customers). "who sold X" = get_product_staff (show staff). These are different intents. Default to get_product_buyers when the user says "bought/purchased/ordered".
 - get_transaction_history: {} — today's full transaction log with buyer, time, items
 - get_dead_stock: {} — products that haven't sold in 2+ weeks
 - get_profit_by_product: {} — most/least profitable products
@@ -591,12 +593,17 @@ Triggers: "what did Mary sell today", "Mary's sales", "show me Mary's sales"
   User: "What did Mary sell today?" → {staffName: "Mary"}
   User: "Jack's sales" → {staffName: "Jack"}
 
-▸ get_product_staff — which staff members sold a specific product today
-Triggers: "who sold X today", "which staff sold X", "who sold the X"
-
-  User: "Who sold couscous today?" → {productName: "couscous"}
-  User: "Which staff member sold rice?" → {productName: "rice"}
+▸ get_product_staff — which STAFF recorded sales of a product today
+Triggers: "who sold X today", "which staff sold X"
   User: "Who sold the lip gloss?" → {productName: "lip gloss"}
+  User: "Which staff member sold rice?" → {productName: "rice"}
+
+▸ get_product_buyers — which CUSTOMERS bought a product today
+Triggers: "who bought X today", "who purchased X", "who ordered X", "who bought parfum"
+  User: "Who bought Lip Gloss today?" → {productName: "Lip Gloss"}
+  User: "Who bought perfume?" → {productName: "perfume"}
+  User: "Who purchased rice today?" → {productName: "rice"}
+  CRITICAL: "who BOUGHT" = customers (get_product_buyers). "who SOLD" = staff (get_product_staff). Never confuse these.
 
 ▸ get_specific_stock — inventory for specific products only (not all)
 Triggers: "show me X, Y and Z", "what's my stock for X and Y", "how much X do I have"

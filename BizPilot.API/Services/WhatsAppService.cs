@@ -704,6 +704,7 @@ public class WhatsAppService : IWhatsAppService
             "get_specific_stock" => await HandleGetSpecificStockAsync(businessId, ba),
             "get_staff_sales" => await HandleGetStaffSalesAsync(businessId, ba),
             "get_product_staff" => await HandleGetProductStaffAsync(businessId, ba),
+            "get_product_buyers" => await HandleGetProductBuyersAsync(businessId, ba),
             "get_transaction_history" => await HandleGetTransactionHistoryAsync(businessId),
             "get_dead_stock" => await HandleGetDeadStockAsync(businessId),
             "get_profit_by_product" => await HandleGetProfitByProductAsync(businessId),
@@ -1818,6 +1819,40 @@ public class WhatsAppService : IWhatsAppService
         var lines = grouped.Select(s => $"• {s.Staff}: {s.Qty:0.##} {unit} — ₦{s.Rev:N0}");
 
         return $"👥 *Who sold {productName} today*\n{string.Join("\n", lines)}";
+    }
+
+    private async Task<string> HandleGetProductBuyersAsync(Guid businessId, JsonElement ba)
+    {
+        var productName = ba.GetStringOrNull("productName");
+        if (string.IsNullOrEmpty(productName)) return "Which product? E.g. \"Who bought rice today?\"";
+
+        var todayUtc = DateTime.UtcNow.Date;
+        var saleItems = await _db.SaleItems
+            .Include(i => i.Sale).ThenInclude(s => s.Contact)
+            .Include(i => i.Product)
+            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= todayUtc
+                        && i.Product.Name.ToLower().Contains(productName.ToLower()))
+            .OrderByDescending(i => i.Sale.CreatedAtUtc)
+            .ToListAsync();
+
+        if (saleItems.Count == 0)
+            return $"No sales of {productName} today.";
+
+        var unit = saleItems.First().Product.Unit;
+        var actualName = saleItems.First().Product.Name;
+        var totalQty = saleItems.Sum(i => i.Quantity);
+        var totalRev = saleItems.Sum(i => i.TotalPrice);
+
+        var lines = saleItems.Select(i =>
+        {
+            var customer = i.Sale.Contact?.Name ?? "Walk-in customer";
+            var staff = i.Sale.RecordedByName ?? "Unknown";
+            var status = i.Sale.PaymentStatus != PaymentStatus.Paid ? $" ({i.Sale.PaymentStatus})" : "";
+            var time = i.Sale.CreatedAtUtc.ToString("HH:mm");
+            return $"• {customer}: {i.Quantity:0.##} {unit} @ ₦{i.UnitPrice:N0} = ₦{i.TotalPrice:N0}{status} — by {staff} at {time}";
+        });
+
+        return $"🛒 *Who bought {actualName} today* ({totalQty:0.##} {unit} total — ₦{totalRev:N0})\n{string.Join("\n", lines)}";
     }
 
     private async Task<string> HandleGetSpecificStockAsync(Guid businessId, JsonElement ba)
