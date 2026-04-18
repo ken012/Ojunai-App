@@ -44,9 +44,15 @@ public class DashboardController : BizPilotBaseController
     [RequirePermission(Permission.ViewOwnReports)]
     public async Task<ActionResult<ApiResponse<PaginatedActivityResult>>> GetActivityFeed(
         [FromQuery] string? type = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 50,
-        [FromQuery] string? search = null, [FromQuery] DateTime? startDate = null, [FromQuery] DateTime? endDate = null)
+        [FromQuery] string? search = null, [FromQuery] string? startDate = null, [FromQuery] string? endDate = null)
     {
-        var result = await _reports.GetActivityFeedAsync(BusinessId, type, Math.Max(1, page), Math.Clamp(pageSize, 10, 100), search, startDate, endDate);
+        // Parse date strings explicitly — HTML date inputs send "2026-04-17" which DateTime? binding
+        // sometimes fails to parse. DateOnly handles the yyyy-MM-dd format reliably.
+        DateTime? start = null, end = null;
+        if (DateOnly.TryParse(startDate, out var sd)) start = sd.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        if (DateOnly.TryParse(endDate, out var ed)) end = ed.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+
+        var result = await _reports.GetActivityFeedAsync(BusinessId, type, Math.Max(1, page), Math.Clamp(pageSize, 10, 100), search, start, end);
         return Ok(ApiResponse<PaginatedActivityResult>.Ok(result));
     }
 }
