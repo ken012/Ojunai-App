@@ -18,6 +18,11 @@ public class Business
     public string? PaystackCustomerCode { get; set; }
     public string? PaystackSubscriptionCode { get; set; }
     public string? PaystackPlanCode { get; set; }
+    public string? FlutterwaveSubscriptionId { get; set; }
+    public string? FlutterwaveCustomerId { get; set; }
+    public string BillingProvider { get; set; } = "paystack";
+    public string BillingCycle { get; set; } = "monthly";
+    public string BillingCurrency { get; set; } = "NGN";
     public DateTime? SubscriptionEndsAt { get; set; }
     public string? PendingPlanChange { get; set; }
     public decimal LargeSaleThreshold { get; set; } = 100000;

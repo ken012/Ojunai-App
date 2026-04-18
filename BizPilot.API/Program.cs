@@ -60,8 +60,17 @@ builder.Services.AddHttpClient("Paystack", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
+builder.Services.AddHttpClient("Flutterwave", client =>
+{
+    client.BaseAddress = new Uri("https://api.flutterwave.com");
+    client.DefaultRequestHeaders.Add("Authorization", $"Bearer {config["Flutterwave:SecretKey"]}");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+
 // ── Application Services ──────────────────────────────────────────────────────
 builder.Services.AddScoped<PaystackService>();
+builder.Services.AddScoped<FlutterwaveService>();
 builder.Services.AddScoped<PlanGuard>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IBusinessService, BusinessService>();

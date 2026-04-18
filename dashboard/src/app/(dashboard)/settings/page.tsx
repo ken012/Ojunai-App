@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getStoredUser, getStoredBusiness } from "@/lib/auth";
 import { api } from "@/lib/api";
@@ -21,6 +21,17 @@ import {
 import { MessageSquare, Building2, User, Pencil, Bell, Tags, X, Plus, Users, Trash2, KeyRound, CreditCard } from "lucide-react";
 import { CATEGORY_NAMES } from "@/lib/categories";
 import { hasPermission, Permission } from "@/lib/permissions";
+import {
+  type SupportedCurrency,
+  SUPPORTED_CURRENCIES,
+  CURRENCY_META,
+  PRICING,
+  getPrice,
+  getMonthlyEquivalent,
+  formatPrice,
+  getDefaultCurrency,
+  toBillingCurrency,
+} from "@/lib/pricing";
 
 const CURRENCIES = [
   "NGN", "GHS", "KES", "ZAR", "TZS", "UGX", "RWF", "XAF", "XOF", "EGP", "ETB",
@@ -581,11 +592,10 @@ type PlanFeature = { text: string; included: boolean };
 
 const PLAN_ORDER = ["starter", "shop", "pro", "business"];
 
-const PLAN_DETAILS: Record<string, { label: string; tagline: string; price: string; color: string; features: PlanFeature[] }> = {
+const PLAN_DETAILS: Record<string, { label: string; tagline: string; color: string; features: PlanFeature[] }> = {
   starter: {
     label: "Starter",
     tagline: "Best for solo traders just starting out",
-    price: "3,500",
     color: "bg-slate-100 text-slate-700",
     features: [
       { text: "1-month free trial", included: true },
@@ -601,7 +611,6 @@ const PLAN_DETAILS: Record<string, { label: string; tagline: string; price: stri
   shop: {
     label: "Shop",
     tagline: "For growing shops with staff",
-    price: "7,500",
     color: "bg-sky-100 text-sky-700",
     features: [
       { text: "Everything in Starter", included: true },
@@ -616,7 +625,6 @@ const PLAN_DETAILS: Record<string, { label: string; tagline: string; price: stri
   pro: {
     label: "Pro",
     tagline: "Full power for serious businesses",
-    price: "12,500",
     color: "bg-violet-100 text-violet-700",
     features: [
       { text: "Everything in Shop", included: true },
@@ -629,7 +637,6 @@ const PLAN_DETAILS: Record<string, { label: string; tagline: string; price: stri
   business: {
     label: "Business",
     tagline: "Enterprise-grade for multi-location businesses",
-    price: "30,000",
     color: "bg-amber-100 text-amber-700",
     features: [
       { text: "Everything in Pro", included: true },
@@ -668,6 +675,12 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
   const [subscribing, setSubscribing] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [subError, setSubError] = useState<string | null>(null);
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("annual");
+  const [selectedCurrency, setSelectedCurrency] = useState<SupportedCurrency>(getDefaultCurrency());
+
+  useEffect(() => {
+    if (business?.currency) setSelectedCurrency(toBillingCurrency(business.currency));
+  }, [business?.currency]);
 
   const plan = planStatus?.plan ?? business?.plan ?? "starter";
   const details = PLAN_DETAILS[plan] ?? PLAN_DETAILS.starter;
@@ -676,15 +689,29 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
   const isSubscriber = planStatus?.isSubscriber ?? false;
   const isBillable = planStatus?.isBillable ?? true;
   const hasActiveSub = planStatus?.hasActiveSubscription ?? false;
-  const price = planStatus?.pricePerMonth
-    ? `₦${planStatus.pricePerMonth.toLocaleString()}`
-    : `₦${details.price}`;
+  const monthlyPrice = getPrice(plan, "monthly", selectedCurrency);
+  const displayPrice = billingCycle === "annual"
+    ? formatPrice(getMonthlyEquivalent(plan, selectedCurrency), selectedCurrency)
+    : formatPrice(monthlyPrice, selectedCurrency);
+  const annualTotal = formatPrice(getPrice(plan, "annual", selectedCurrency), selectedCurrency);
+  const discount = PRICING[plan]?.annualDiscount;
+
+  function btnPrice(planKey: string) {
+    if (billingCycle === "annual") {
+      return `${formatPrice(getPrice(planKey, "annual", selectedCurrency), selectedCurrency)}/yr`;
+    }
+    return `${formatPrice(getPrice(planKey, "monthly", selectedCurrency), selectedCurrency)}/mo`;
+  }
 
   async function handleSubscribe(targetPlan: string) {
     setSubscribing(targetPlan);
     setSubError(null);
     try {
-      const { data } = await api.post<{ data: { paymentUrl: string } }>("/subscription/initialize", { plan: targetPlan });
+      const { data } = await api.post<{ data: { paymentUrl: string } }>("/subscription/initialize", {
+        plan: targetPlan,
+        currency: selectedCurrency,
+        billingCycle,
+      });
       window.location.href = data.data!.paymentUrl;
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { errors?: string[] } } };
@@ -760,10 +787,58 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
           )}
         </div>
 
+        {/* Billing cycle toggle */}
+        <div className="flex items-center bg-slate-100 rounded-lg p-1">
+          <button
+            onClick={() => setBillingCycle("monthly")}
+            className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              billingCycle === "monthly" ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            Monthly
+          </button>
+          <button
+            onClick={() => setBillingCycle("annual")}
+            className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              billingCycle === "annual" ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            Annual
+            {discount != null && <span className="ml-1 text-xs text-green-600 font-semibold">-{discount}%</span>}
+          </button>
+        </div>
+
+        {/* Currency selector */}
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          {SUPPORTED_CURRENCIES.map((c) => (
+            <button
+              key={c}
+              onClick={() => setSelectedCurrency(c)}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
+                selectedCurrency === c
+                  ? "bg-sky-100 text-sky-700 border border-sky-200"
+                  : "bg-slate-50 text-slate-500 border border-slate-200 hover:bg-slate-100"
+              }`}
+            >
+              {CURRENCY_META[c].symbol} {c}
+            </button>
+          ))}
+        </div>
+
         <div className="flex items-baseline gap-1">
-          <span className="text-2xl font-bold text-slate-900">{price}</span>
+          {billingCycle === "annual" && (
+            <span className="text-sm text-slate-400 line-through mr-1">
+              {formatPrice(monthlyPrice, selectedCurrency)}
+            </span>
+          )}
+          <span className="text-2xl font-bold text-slate-900">{displayPrice}</span>
           <span className="text-sm text-slate-400">/month</span>
         </div>
+        {billingCycle === "annual" && (
+          <p className="text-xs text-green-600 font-medium">
+            {annualTotal}/year — save {discount}%
+          </p>
+        )}
         <p className="text-xs text-slate-500">{details.tagline}</p>
 
         {trialStatus === "GracePeriod" && (
@@ -777,7 +852,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
         {trialStatus === "Expired" && (
           <div className="rounded-lg border border-red-200 bg-red-50 p-3">
             <p className="text-sm text-red-800">
-              Your {details.label} free trial has expired. Subscribe at {price}/month to keep your {details.label} features.
+              Your {details.label} free trial has expired. Subscribe at {displayPrice}/month to keep your {details.label} features.
             </p>
           </div>
         )}
@@ -802,7 +877,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
               onClick={() => handleSubscribe(plan)}
               disabled={subscribing !== null}
             >
-              {subscribing === plan ? "Redirecting..." : `Subscribe to ${details.label} — ${price}/mo`}
+              {subscribing === plan ? "Redirecting..." : `Subscribe to ${details.label} — ${btnPrice(plan)}`}
             </Button>
             {plan !== "business" && (
               <div className="space-y-2">
@@ -820,7 +895,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
                         onClick={() => handleSubscribe(key)}
                         disabled={subscribing !== null}
                       >
-                        {subscribing === key ? "Redirecting..." : `${d.label} — ₦${d.price}/mo`}
+                        {subscribing === key ? "Redirecting..." : `${d.label} — ${btnPrice(key)}`}
                       </Button>
                     );
                   })}
@@ -855,7 +930,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
                         onClick={() => handleSubscribe(key)}
                         disabled={subscribing !== null}
                       >
-                        {subscribing === key ? "Redirecting..." : `Upgrade to ${d.label} — ₦${d.price}/mo`}
+                        {subscribing === key ? "Redirecting..." : `Upgrade to ${d.label} — ${btnPrice(key)}`}
                       </Button>
                     );
                   })}
@@ -892,7 +967,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
                             disabled={subscribing !== null}
                             className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 hover:border-slate-300 transition-colors disabled:opacity-50"
                           >
-                            {subscribing === key ? "..." : `Downgrade to ${d.label} — ₦${d.price}/mo`}
+                            {subscribing === key ? "..." : `Downgrade to ${d.label} — ${btnPrice(key)}`}
                           </button>
                         );
                       })}

@@ -13,16 +13,33 @@ namespace BizPilot.API.Controllers;
 public class SubscriptionController : BizPilotBaseController
 {
     private readonly PaystackService _paystack;
+    private readonly FlutterwaveService _flutterwave;
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
 
-    public SubscriptionController(PaystackService paystack, AppDbContext db, IConfiguration config)
+    public SubscriptionController(PaystackService paystack, FlutterwaveService flutterwave, AppDbContext db, IConfiguration config)
     {
         _paystack = paystack;
+        _flutterwave = flutterwave;
         _db = db;
         _config = config;
     }
 
+    /// <summary>
+    /// Returns all pricing data for the frontend pricing page.
+    /// Public endpoint — no auth needed so the pricing page can render for visitors.
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("pricing")]
+    public IActionResult GetPricing()
+    {
+        return Ok(BillingConfig.GetAllPricing());
+    }
+
+    /// <summary>
+    /// Initialize a checkout session. Routes to Paystack (NGN) or Flutterwave (non-NGN)
+    /// based on the selected currency. Returns a payment page URL.
+    /// </summary>
     [HttpPost("initialize")]
     [RequirePermission(Permission.ManageSettings)]
     public async Task<ActionResult<ApiResponse<object>>> Initialize([FromBody] InitializeSubscriptionRequest request)
@@ -31,18 +48,50 @@ public class SubscriptionController : BizPilotBaseController
         if (business == null) return NotFound(ApiResponse<object>.Fail("Business not found."));
         if (!business.IsBillable) return BadRequest(ApiResponse<object>.Fail("This account is not billable."));
 
+        var plan = request.Plan?.ToLower() ?? "";
+        var currency = request.Currency?.ToUpper() ?? business.Currency ?? "NGN";
+        var cycle = request.BillingCycle?.ToLower() ?? "monthly";
+
+        if (!BillingConfig.IsValidCombination(plan, cycle, currency))
+            return BadRequest(ApiResponse<object>.Fail($"Invalid plan/cycle/currency combination: {plan}/{cycle}/{currency}"));
+
         var user = await _db.Users.FindAsync(UserId);
         var email = user?.Email ?? $"{user?.PhoneNumber}@bizpilot-ai.com";
 
-        var url = await _paystack.InitializeSubscriptionAsync(BusinessId, request.Plan, email);
-        return Ok(ApiResponse<object>.Ok(new { paymentUrl = url }, "Redirecting to payment..."));
+        var provider = BillingConfig.GetProvider(currency);
+        string url;
+
+        if (provider == BillingConfig.BillingProvider.Paystack)
+        {
+            url = await _paystack.InitializeSubscriptionAsync(BusinessId, plan, email);
+        }
+        else
+        {
+            url = await _flutterwave.InitializePaymentAsync(BusinessId, plan, cycle, currency, email);
+        }
+
+        // Store the billing context so the webhook knows what was intended
+        business.BillingProvider = provider.ToString().ToLower();
+        business.BillingCycle = cycle;
+        business.BillingCurrency = currency;
+        await _db.SaveChangesAsync();
+
+        return Ok(ApiResponse<object>.Ok(new { paymentUrl = url, provider = provider.ToString().ToLower() },
+            "Redirecting to payment..."));
     }
 
     [HttpPost("cancel")]
     [RequirePermission(Permission.ManageSettings)]
     public async Task<ActionResult<ApiResponse<object>>> Cancel()
     {
-        await _paystack.CancelSubscriptionAsync(BusinessId);
+        var business = await _db.Businesses.FindAsync(BusinessId);
+        if (business == null) return NotFound(ApiResponse<object>.Fail("Business not found."));
+
+        if (business.BillingProvider == "flutterwave")
+            await _flutterwave.CancelSubscriptionAsync(BusinessId);
+        else
+            await _paystack.CancelSubscriptionAsync(BusinessId);
+
         return Ok(ApiResponse<object>.Ok(null!, "Subscription cancelled. You'll keep access until the end of your billing period."));
     }
 
@@ -67,7 +116,8 @@ public class SubscriptionController : BizPilotBaseController
         if (targetRank > currentRank)
             return BadRequest(ApiResponse<object>.Fail("Use the subscribe/upgrade button for upgrades — this endpoint handles downgrades only."));
 
-        var hasActiveSub = !string.IsNullOrEmpty(business.PaystackSubscriptionCode);
+        var hasActiveSub = !string.IsNullOrEmpty(business.PaystackSubscriptionCode)
+                        || !string.IsNullOrEmpty(business.FlutterwaveSubscriptionId);
         var targetLabel = targetPlan![0..1].ToUpper() + targetPlan[1..];
 
         if (hasActiveSub && business.SubscriptionEndsAt.HasValue && business.SubscriptionEndsAt > DateTime.UtcNow)
@@ -78,8 +128,6 @@ public class SubscriptionController : BizPilotBaseController
                 $"Plan change scheduled. You'll keep your current features until {business.SubscriptionEndsAt.Value:dd MMM yyyy}, then switch to {targetLabel}."));
         }
 
-        // No active billing period — switch immediately. Keep SubscribedPlan set (even for Starter)
-        // so the user is recognized as a subscriber who downgraded, not a new user needing a trial.
         business.Plan = targetPlan;
         business.SubscribedPlan = targetPlan;
         business.PendingPlanChange = null;
@@ -89,41 +137,26 @@ public class SubscriptionController : BizPilotBaseController
         return Ok(ApiResponse<object>.Ok(null!, $"Plan changed to {targetLabel}."));
     }
 
-    /// <summary>
-    /// Paystack webhook endpoint. Paystack POSTs JSON events here whenever a subscription is created, charged, or cancelled.
-    ///
-    /// Security:
-    ///   - [AllowAnonymous] because Paystack doesn't have a JWT, but the signature check below verifies authenticity.
-    ///   - HMAC-SHA512 signature verification with the Paystack secret key ensures the event came from Paystack.
-    ///   - Body size limited to 128KB (Paystack events are small; this blocks DoS via giant payloads).
-    ///   - Idempotency is handled inside PaystackService.HandleWebhookAsync (prevents replay attacks).
-    /// </summary>
+    /// <summary>Paystack webhook (NGN payments)</summary>
     [AllowAnonymous]
     [HttpPost("webhook")]
     [RequestSizeLimit(128 * 1024)]
-    public async Task<IActionResult> Webhook()
+    public async Task<IActionResult> PaystackWebhook()
     {
         var secret = _config["Paystack:SecretKey"];
         if (string.IsNullOrEmpty(secret)) return StatusCode(500);
 
-        // Paystack sends the signature in this header. Missing header = not a legitimate Paystack request.
         if (!Request.Headers.TryGetValue("x-paystack-signature", out var signature))
             return Unauthorized();
 
-        // Read the raw body (body buffering was enabled in Program.cs so we can read it after ASP.NET Core already did).
         Request.Body.Position = 0;
         string body;
         using (var reader = new StreamReader(Request.Body))
-        {
             body = await reader.ReadToEndAsync();
-        }
 
-        // Paystack signs the raw request body with your secret key using HMAC-SHA512.
-        // We recompute the signature with the same secret and compare.
         using var hmac = new HMACSHA512(Encoding.UTF8.GetBytes(secret));
         var hash = BitConverter.ToString(hmac.ComputeHash(Encoding.UTF8.GetBytes(body))).Replace("-", "").ToLower();
 
-        // Constant-time comparison prevents timing attacks that could leak the expected signature byte-by-byte.
         var hashBytes = Encoding.UTF8.GetBytes(hash);
         var sigBytes = Encoding.UTF8.GetBytes(signature.ToString().ToLower());
         if (hashBytes.Length != sigBytes.Length || !CryptographicOperations.FixedTimeEquals(hashBytes, sigBytes))
@@ -131,7 +164,27 @@ public class SubscriptionController : BizPilotBaseController
 
         using var payload = JsonDocument.Parse(body);
         await _paystack.HandleWebhookAsync(payload.RootElement);
+        return Ok();
+    }
 
+    /// <summary>Flutterwave webhook (non-NGN payments)</summary>
+    [AllowAnonymous]
+    [HttpPost("webhook/flutterwave")]
+    [RequestSizeLimit(128 * 1024)]
+    public async Task<IActionResult> FlutterwaveWebhook()
+    {
+        // Flutterwave sends a secret hash in this header for verification
+        var hash = Request.Headers["verif-hash"].ToString();
+        if (!_flutterwave.VerifyWebhook(hash))
+            return Unauthorized();
+
+        Request.Body.Position = 0;
+        string body;
+        using (var reader = new StreamReader(Request.Body))
+            body = await reader.ReadToEndAsync();
+
+        using var payload = JsonDocument.Parse(body);
+        await _flutterwave.HandleWebhookAsync(payload.RootElement);
         return Ok();
     }
 }
@@ -139,6 +192,8 @@ public class SubscriptionController : BizPilotBaseController
 public class InitializeSubscriptionRequest
 {
     public string Plan { get; set; } = string.Empty;
+    public string? Currency { get; set; }
+    public string? BillingCycle { get; set; }
 }
 
 public class ChangePlanRequest
