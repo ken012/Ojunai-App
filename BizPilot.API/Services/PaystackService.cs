@@ -161,6 +161,17 @@ public class PaystackService
         // dashboard to keep showing "active subscription" for a sub the user wants gone.
         business.PaystackSubscriptionCode = null;
         business.PaystackPlanCode = null;
+        business.SubscriptionStatus = "cancelled";
+
+        _db.BillingEvents.Add(new BillingEvent
+        {
+            BusinessId = business.Id,
+            EventType = "subscription.cancelled",
+            Provider = "paystack",
+            Plan = business.Plan,
+            Status = "cancelled",
+            CreatedAtUtc = DateTime.UtcNow
+        });
 
         // If there's no future billing end date, revert to starter immediately.
         // If there IS a future end date, keep access until then (the TrialRevertJobService
@@ -198,9 +209,21 @@ public class PaystackService
         business.PaystackPlanCode = planCode;
         business.Plan = plan;
         business.SubscribedPlan = plan;
+        business.SubscriptionStatus = "active";
         business.TrialEndsAt = null;
         if (nextPayment != null && DateTime.TryParse(nextPayment, out var next))
             business.SubscriptionEndsAt = next;
+
+        _db.BillingEvents.Add(new BillingEvent
+        {
+            BusinessId = business.Id,
+            EventType = "subscription.created",
+            Provider = "paystack",
+            Plan = plan,
+            SubscriptionId = subscriptionCode,
+            Status = "active",
+            CreatedAtUtc = DateTime.UtcNow
+        });
 
         await _db.SaveChangesAsync();
         _logger.LogInformation("Subscription activated: {Business} → {Plan}", business.Name, plan);
@@ -223,14 +246,15 @@ public class PaystackService
         {
             // Verify amount matches expected plan price
             var expectedPrice = PlanLimits.Get(plan).PricePerMonth;
+            decimal? chargedNaira = null;
             if (data.TryGetProperty("amount", out var amountEl))
             {
                 var chargedKobo = amountEl.GetInt64();
-                var chargedNaira = chargedKobo / 100m;
-                if (chargedNaira < expectedPrice)
+                chargedNaira = chargedKobo / 100m;
+                if (Math.Abs(chargedNaira.Value - expectedPrice) > 1)
                 {
-                    _logger.LogWarning("Paystack charge amount mismatch for {Business}: charged ₦{Charged}, expected ₦{Expected}",
-                        business.Name, chargedNaira, expectedPrice);
+                    _logger.LogWarning("Paystack charge amount mismatch for {Business}: charged {cs}{Charged}, expected {cs}{Expected}",
+                        business.Name, BillingConfig.Symbol(business.Currency), chargedNaira, BillingConfig.Symbol(business.Currency), expectedPrice);
                     return;
                 }
             }
@@ -239,14 +263,31 @@ public class PaystackService
             business.SubscribedPlan = plan;
             business.PaymentMethod = "card";
             business.IsAutoRenew = true;
+            business.SubscriptionStatus = "active";
             business.TrialEndsAt = null;
-            business.SubscriptionEndsAt = DateTime.UtcNow.AddDays(32);
+            var baseDate = (business.SubscriptionEndsAt.HasValue && business.SubscriptionEndsAt > DateTime.UtcNow)
+                ? business.SubscriptionEndsAt.Value
+                : DateTime.UtcNow;
+            business.SubscriptionEndsAt = baseDate.AddDays(32);
 
             // Store customer code if not yet stored
             if (string.IsNullOrEmpty(business.PaystackCustomerCode) && data.TryGetProperty("customer", out var cust))
             {
                 business.PaystackCustomerCode = cust.GetProperty("customer_code").GetString();
             }
+
+            _db.BillingEvents.Add(new BillingEvent
+            {
+                BusinessId = business.Id,
+                EventType = "payment.success",
+                Provider = "paystack",
+                Plan = plan,
+                Amount = chargedNaira,
+                Currency = business.Currency,
+                PaymentMethod = "card",
+                Status = "success",
+                CreatedAtUtc = DateTime.UtcNow
+            });
 
             await _db.SaveChangesAsync();
             _logger.LogInformation("Payment confirmed: {Business} → {Plan}", business.Name, plan);
@@ -263,6 +304,19 @@ public class PaystackService
         // The TrialRevertJobService will handle the actual downgrade
         business.PaystackSubscriptionCode = null;
         business.PaystackPlanCode = null;
+        business.SubscriptionStatus = "cancelled";
+
+        _db.BillingEvents.Add(new BillingEvent
+        {
+            BusinessId = business.Id,
+            EventType = "subscription.cancelled",
+            Provider = "paystack",
+            Plan = business.Plan,
+            SubscriptionId = subscriptionCode,
+            Status = "cancelled",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
         await _db.SaveChangesAsync();
 
         _logger.LogInformation("Subscription cancelled: {Business}, access until {EndsAt}", business.Name, business.SubscriptionEndsAt);
@@ -278,7 +332,41 @@ public class PaystackService
         if (business == null) return;
 
         _logger.LogWarning("Payment failed for {Business} on {Plan}", business.Name, business.Plan);
-        // Paystack retries automatically. We just log it. If all retries fail, subscription.disable fires.
+
+        business.SubscriptionStatus = "past_due";
+        _db.BillingEvents.Add(new BillingEvent
+        {
+            BusinessId = business.Id,
+            EventType = "payment.failed",
+            Provider = "paystack",
+            Plan = business.Plan,
+            Status = "failed",
+            SubscriptionId = subscriptionCode,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+
+        // Send WhatsApp notification about failed payment
+        try
+        {
+            var owner = await _db.Users.FirstOrDefaultAsync(u =>
+                u.BusinessId == business.Id && u.Role == UserRole.Owner && u.IsActive);
+            if (owner != null)
+            {
+                var planLabel = (business.Plan ?? "starter")[0..1].ToUpper() + (business.Plan ?? "starter")[1..];
+                var whatsApp = _serviceProvider.GetRequiredService<IWhatsAppService>();
+                await whatsApp.SendMessageAsync(
+                    $"whatsapp:{owner.PhoneNumber}",
+                    $"⚠️ *Payment Failed*\n\n" +
+                    $"Your card payment for BizPilot could not be processed. " +
+                    $"Please update your payment method at app.bizpilot-ai.com/settings to keep your {planLabel} plan active.",
+                    business.Id, owner.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send payment-failed WhatsApp for {Business}", business.Name);
+        }
     }
 
     private async Task<string> GetOrCreatePlanAsync(string planName, decimal amount)
@@ -389,7 +477,7 @@ public class PaystackService
             await whatsApp.SendMessageAsync(
                 $"whatsapp:{owner.PhoneNumber}",
                 $"✅ *Payment successful!*\n\n" +
-                $"Your *{planLabel}* plan is now active at ₦{planConfig.PricePerMonth:N0}/month.\n\n" +
+                $"Your *{planLabel}* plan is now active at {BillingConfig.FormatPrice(planConfig.PricePerMonth, "NGN")}/month.\n\n" +
                 $"Next renewal: {renewDate}\n\n" +
                 $"Say *my plan* to see your features, or *help* for commands.",
                 business.Id, owner.Id);

@@ -41,6 +41,8 @@ function getCategoryClass(category: string) {
   return CATEGORY_COLORS[category] ?? "bg-slate-100 text-slate-700";
 }
 
+const currencySymbol = (() => { try { const b = JSON.parse(localStorage.getItem("bp_business") || "{}"); const meta: Record<string, string> = { NGN: "\u20A6", GHS: "GH\u20B5", USD: "$", GBP: "\u00A3", KES: "KSh", ZAR: "R", TZS: "TSh", UGX: "USh", RWF: "RF", XAF: "FCFA", XOF: "CFA", EGP: "E\u00A3", ETB: "Br" }; return meta[b.currency?.toUpperCase()] ?? b.currency ?? "\u20A6"; } catch { return "\u20A6"; } })();
+
 export default function ExpensesPage() {
   const [page, setPage] = useState(1);
   const [adding, setAdding] = useState(false);
@@ -237,7 +239,7 @@ function AddExpenseDialog({ open, onClose }: { open: boolean; onClose: () => voi
             <Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="e.g. Transport, Fuel, Rent" />
           </div>
           <div>
-            <Label>Amount (₦)</Label>
+            <Label>Amount ({currencySymbol})</Label>
             <Input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="5000" />
           </div>
           <div>
@@ -321,7 +323,7 @@ function EditExpenseDialog({
             <Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
           </div>
           <div>
-            <Label>Amount (₦)</Label>
+            <Label>Amount ({currencySymbol})</Label>
             <Input
               type="number"
               value={form.amount}

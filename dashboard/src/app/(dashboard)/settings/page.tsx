@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getStoredUser, getStoredBusiness } from "@/lib/auth";
 import { api } from "@/lib/api";
@@ -74,11 +75,29 @@ const TWILIO_WHATSAPP_NUMBER = "14155238886";
 const TWILIO_JOIN_CODE = "join knife-wait";
 const TWILIO_WA_LINK = `https://wa.me/${TWILIO_WHATSAPP_NUMBER}?text=${encodeURIComponent(TWILIO_JOIN_CODE)}`;
 
-export default function SettingsPage() {
+export default function SettingsPageWrapper() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsPage />
+    </Suspense>
+  );
+}
+
+function SettingsPage() {
   const [user, setUser] = useState<ReturnType<typeof getStoredUser>>(null);
   const [business, setBusiness] = useState<ReturnType<typeof getStoredBusiness>>(null);
   const [editing, setEditing] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const searchParams = useSearchParams();
+  const [showSuccess, setShowSuccess] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("subscribed") === "true") {
+      setShowSuccess(true);
+      window.history.replaceState({}, "", "/settings");
+      setTimeout(() => setShowSuccess(false), 8000);
+    }
+  }, [searchParams]);
 
   const cs = CURRENCY_META[(business?.currency ?? "NGN") as SupportedCurrency]?.symbol ?? business?.currency ?? "₦";
 
@@ -95,6 +114,15 @@ export default function SettingsPage() {
         <h2 className="text-2xl font-bold text-slate-900">Settings</h2>
         <p className="text-slate-500 text-sm mt-0.5">Account and business information</p>
       </div>
+
+      {showSuccess && (
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 flex items-center justify-between">
+          <p className="text-sm text-green-800 font-medium">Payment successful! Your plan is now active.</p>
+          <button onClick={() => setShowSuccess(false)} className="text-green-600 hover:text-green-800">
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {/* Business */}
       <Card>
@@ -679,6 +707,7 @@ type PlanStatus = {
   subscriptionEndsAt: string | null;
   isAutoRenew: boolean;
   paymentMethod: string | null;
+  subscriptionStatus: string;
 };
 
 function PlanCard({ business }: { business: BusinessShape | null }) {
@@ -693,6 +722,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
   const [subscribing, setSubscribing] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [subError, setSubError] = useState<string | null>(null);
+  const [failedVerify, setFailedVerify] = useState<{transactionId?: string; txRef?: string} | null>(null);
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
   const [selectedCurrency, setSelectedCurrency] = useState<SupportedCurrency>(getDefaultCurrency());
 
@@ -743,7 +773,20 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
       }
 
       // Flutterwave Inline JS checkout
-      await loadFlutterwaveScript();
+      if (!result.publicKey) {
+        setSubError("Payment gateway not configured. Please contact support.");
+        setSubscribing(null);
+        return;
+      }
+
+      try {
+        await loadFlutterwaveScript();
+      } catch {
+        setSubError("Failed to load payment widget. Please refresh and try again.");
+        setSubscribing(null);
+        return;
+      }
+
       const win = window as unknown as { FlutterwaveCheckout?: (config: Record<string, unknown>) => void };
       if (!win.FlutterwaveCheckout) {
         setSubError("Failed to load payment widget. Please refresh and try again.");
@@ -751,11 +794,19 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
         return;
       }
 
+      // Safety timeout — if modal doesn't open or callback never fires
+      const timeout = setTimeout(() => {
+        setSubError("Payment timed out. Please try again.");
+        setSubscribing(null);
+      }, 30000);
+
       win.FlutterwaveCheckout({
         public_key: result.publicKey,
         tx_ref: result.txRef,
         amount: result.amount,
         currency: result.currency,
+        payment_plan: result.paymentPlanId ?? undefined,
+        redirect_url: result.callbackUrl,
         customer: { email: result.email },
         customizations: {
           title: "BizPilot AI",
@@ -763,6 +814,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
           logo: "https://app.bizpilot-ai.com/favicon.ico",
         },
         callback: async (response: { transaction_id?: string; tx_ref?: string }) => {
+          clearTimeout(timeout);
           try {
             await api.post("/subscription/verify-flutterwave", {
               transactionId: response.transaction_id?.toString(),
@@ -770,12 +822,16 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
             });
             qc.invalidateQueries({ queryKey: ["plan-status"] });
           } catch {
-            setSubError("Payment received but verification failed. Please contact support.");
+            setFailedVerify({ transactionId: response.transaction_id?.toString(), txRef: response.tx_ref });
+            setSubError("Payment received but verification failed.");
           } finally {
             setSubscribing(null);
           }
         },
-        onclose: () => setSubscribing(null),
+        onclose: () => {
+          clearTimeout(timeout);
+          setSubscribing(null);
+        },
       });
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { errors?: string[] } } };
@@ -785,7 +841,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
   }
 
   async function handleCancel() {
-    if (!confirm("Cancel your subscription? You'll keep access until the end of your billing period.")) return;
+    if (!confirm("Cancel auto-renewal? You'll keep access until the end of your billing period.")) return;
     setCancelling(true);
     setSubError(null);
     try {
@@ -933,6 +989,25 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
         </ul>
 
         {subError && <p className="text-xs text-red-500">{subError}</p>}
+        {failedVerify && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-full mt-1"
+            onClick={async () => {
+              try {
+                await api.post("/subscription/verify-flutterwave", failedVerify);
+                setFailedVerify(null);
+                setSubError(null);
+                qc.invalidateQueries({ queryKey: ["plan-status"] });
+              } catch {
+                setSubError("Verification still failing. Please contact support.");
+              }
+            }}
+          >
+            Retry verification
+          </Button>
+        )}
 
         {isBillable && !isSubscriber && (
           <div className="pt-3 space-y-3">
@@ -973,6 +1048,11 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
                 </a>
               </div>
             )}
+            <p className="text-xs text-slate-400 text-center mt-2">
+              Card payments auto-renew. Mobile money requires manual renewal.{" "}
+              <a href="/terms" className="underline hover:text-slate-600">Terms</a> &{" "}
+              <a href="/privacy" className="underline hover:text-slate-600">Privacy</a>.
+            </p>
           </div>
         )}
 
@@ -1039,6 +1119,11 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
                 </div>
               </>
             )}
+            <p className="text-xs text-slate-400 text-center mt-2">
+              Card payments auto-renew. Mobile money requires manual renewal.{" "}
+              <a href="/terms" className="underline hover:text-slate-600">Terms</a> &{" "}
+              <a href="/privacy" className="underline hover:text-slate-600">Privacy</a>.
+            </p>
           </div>
         )}
 
@@ -1046,7 +1131,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
         {isBillable && hasActiveSub && !isAutoRenew && isExpiringSoon && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
             <p className="text-sm text-amber-800">
-              Your plan expires in {daysUntilExpiry} day{daysUntilExpiry !== 1 ? "s" : ""}.
+              Your plan {daysUntilExpiry === 0 ? "expires today" : `expires in ${daysUntilExpiry} day${daysUntilExpiry !== 1 ? "s" : ""}`}.
               Renew now to keep your {details.label} features.
             </p>
             <Button
@@ -1056,6 +1141,11 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
             >
               {subscribing === plan ? "Redirecting..." : `Renew ${details.label} — ${btnPrice(plan)}`}
             </Button>
+            {billingCycle === "monthly" && (
+              <p className="text-xs text-slate-500 mt-1">
+                Switch to annual and save {discount}% — renew once a year instead of every month.
+              </p>
+            )}
           </div>
         )}
 
@@ -1066,17 +1156,15 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
               disabled={cancelling}
               className="text-xs text-red-500 hover:underline"
             >
-              {cancelling ? "Cancelling..." : "Cancel subscription"}
+              {cancelling ? "Cancelling..." : "Cancel renewal"}
             </button>
             {planStatus?.subscriptionEndsAt && (
               <p className="text-xs text-slate-400 mt-1">
                 {isAutoRenew
-                  ? `Auto-renews ${new Date(planStatus.subscriptionEndsAt).toLocaleDateString()}`
-                  : `Expires ${new Date(planStatus.subscriptionEndsAt).toLocaleDateString()}`}
-                {paymentMethod && paymentMethod !== "card" && (
-                  <span className="ml-1">
-                    · Paid via {paymentMethod === "mobilemoney" ? "mobile money" : paymentMethod.replace("_", " ")}
-                  </span>
+                  ? `Auto-renews ${new Date(planStatus.subscriptionEndsAt).toLocaleDateString()}. Your card will be charged automatically.`
+                  : `Expires ${new Date(planStatus.subscriptionEndsAt).toLocaleDateString()}.`}
+                {!isAutoRenew && paymentMethod && paymentMethod !== "card" && (
+                  <span> Renew via {paymentMethod === "mobilemoney" ? "mobile money" : paymentMethod.replace("_", " ")} before this date.</span>
                 )}
               </p>
             )}

@@ -23,6 +23,7 @@ public class AppDbContext : DbContext
     public DbSet<PaystackEventLog> PaystackEventLogs => Set<PaystackEventLog>();
     public DbSet<ImportJob> ImportJobs => Set<ImportJob>();
     public DbSet<PendingAction> PendingActions => Set<PendingAction>();
+    public DbSet<BillingEvent> BillingEvents => Set<BillingEvent>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -236,6 +237,23 @@ public class AppDbContext : DbContext
             e.Property(x => x.Intent).HasMaxLength(100).IsRequired();
             e.Property(x => x.AwaitingField).HasMaxLength(100).IsRequired();
             e.Property(x => x.QuestionText).HasMaxLength(2000);
+        });
+
+        mb.Entity<BillingEvent>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.BusinessId, x.CreatedAtUtc });
+            e.Property(x => x.EventType).HasMaxLength(100).IsRequired();
+            e.Property(x => x.Provider).HasMaxLength(50).IsRequired();
+            e.Property(x => x.Plan).HasMaxLength(50);
+            e.Property(x => x.BillingCycle).HasMaxLength(20);
+            e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.Property(x => x.Currency).HasMaxLength(10);
+            e.Property(x => x.TransactionRef).HasMaxLength(200);
+            e.Property(x => x.SubscriptionId).HasMaxLength(200);
+            e.Property(x => x.PaymentMethod).HasMaxLength(50);
+            e.Property(x => x.Status).HasMaxLength(50);
+            e.Property(x => x.ErrorDetails).HasMaxLength(2000);
         });
     }
 }

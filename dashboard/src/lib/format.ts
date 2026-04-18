@@ -27,7 +27,7 @@ function getBusinessCurrency(): string {
 
 export function formatNaira(amount: number): string {
   const currency = getBusinessCurrency();
-  return new Intl.NumberFormat("en-NG", {
+  return new Intl.NumberFormat("en", {
     style: "currency",
     currency,
     minimumFractionDigits: 0,
@@ -37,7 +37,7 @@ export function formatNaira(amount: number): string {
 
 export function formatDate(dateStr: string): string {
   const tz = getBusinessTimezone();
-  return new Date(dateStr).toLocaleDateString("en-NG", {
+  return new Date(dateStr).toLocaleDateString("en", {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -47,7 +47,7 @@ export function formatDate(dateStr: string): string {
 
 export function formatDateTime(dateStr: string): string {
   const tz = getBusinessTimezone();
-  return new Date(dateStr).toLocaleString("en-NG", {
+  return new Date(dateStr).toLocaleString("en", {
     day: "numeric",
     month: "short",
     hour: "2-digit",
@@ -58,7 +58,7 @@ export function formatDateTime(dateStr: string): string {
 
 export function formatShortDate(dateStr: string): string {
   const tz = getBusinessTimezone();
-  return new Date(dateStr).toLocaleDateString("en-NG", {
+  return new Date(dateStr).toLocaleDateString("en", {
     day: "numeric",
     month: "short",
     timeZone: tz,

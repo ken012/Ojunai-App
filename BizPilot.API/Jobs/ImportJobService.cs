@@ -101,23 +101,25 @@ public class ImportJobService
 
             var errors = new List<string>();
             var user = await _db.Users.FindAsync(job.UserId);
+            var business = await _db.Businesses.FindAsync(job.BusinessId);
+            var cs = BillingConfig.Symbol(business?.Currency);
 
             switch (job.Type)
             {
                 case ImportJobType.Inventory:
-                    await ProcessInventoryRowsAsync(job, rows, user, errors);
+                    await ProcessInventoryRowsAsync(job, rows, user, errors, cs);
                     break;
                 case ImportJobType.Sales:
-                    await ProcessSalesRowsAsync(job, rows, user, errors);
+                    await ProcessSalesRowsAsync(job, rows, user, errors, cs);
                     break;
                 case ImportJobType.Expenses:
-                    await ProcessExpensesRowsAsync(job, rows, user, errors);
+                    await ProcessExpensesRowsAsync(job, rows, user, errors, cs);
                     break;
                 case ImportJobType.Contacts:
                     await ProcessContactsRowsAsync(job, rows, errors);
                     break;
                 case ImportJobType.ContactsWithLedger:
-                    await ProcessContactsWithLedgerRowsAsync(job, rows, user, errors);
+                    await ProcessContactsWithLedgerRowsAsync(job, rows, user, errors, cs);
                     break;
             }
 
@@ -147,7 +149,7 @@ public class ImportJobService
         }
     }
 
-    private async Task ProcessInventoryRowsAsync(ImportJob job, List<Dictionary<string, string>> rows, User? user, List<string> errors)
+    private async Task ProcessInventoryRowsAsync(ImportJob job, List<Dictionary<string, string>> rows, User? user, List<string> errors, string cs)
     {
         for (int i = 0; i < rows.Count; i++)
         {
@@ -164,8 +166,8 @@ public class ImportJobService
                 var unit = row.GetValueOrDefault("unit") ?? UnitInferrer.Infer(name!);
                 var costPrice = CsvParser.ParseDecimal(row.GetValueOrDefault("costprice"));
                 var sellingPrice = CsvParser.ParseDecimal(row.GetValueOrDefault("sellingprice"));
-                if (costPrice.HasValue && costPrice.Value > 100_000_000) { errors.Add($"Row {rowNum}: Cost price ₦{costPrice.Value:N0} for '{name}' seems unusually large"); continue; }
-                if (sellingPrice.HasValue && sellingPrice.Value > 100_000_000) { errors.Add($"Row {rowNum}: Selling price ₦{sellingPrice.Value:N0} for '{name}' seems unusually large"); continue; }
+                if (costPrice.HasValue && costPrice.Value > 100_000_000) { errors.Add($"Row {rowNum}: Cost price {cs}{costPrice.Value:N0} for '{name}' seems unusually large"); continue; }
+                if (sellingPrice.HasValue && sellingPrice.Value > 100_000_000) { errors.Add($"Row {rowNum}: Selling price {cs}{sellingPrice.Value:N0} for '{name}' seems unusually large"); continue; }
                 var csvCategory = row.GetValueOrDefault("category");
                 var csvSubcategory = row.GetValueOrDefault("subcategory");
                 var csvThreshold = CsvParser.ParseDecimal(row.GetValueOrDefault("threshold"));
@@ -209,7 +211,7 @@ public class ImportJobService
                     {
                         Category = "Inventory",
                         Amount = qty.Value * expenseCost.Value,
-                        Notes = $"Import: {qty.Value:0.##} {unit} of {name} @ ₦{expenseCost.Value:N0}"
+                        Notes = $"Import: {qty.Value:0.##} {unit} of {name} @ {cs}{expenseCost.Value:N0}"
                     }, EntrySource.Import, user?.Id, user?.FullName);
                 }
 
@@ -228,7 +230,7 @@ public class ImportJobService
         await _db.SaveChangesAsync();
     }
 
-    private async Task ProcessSalesRowsAsync(ImportJob job, List<Dictionary<string, string>> rows, User? user, List<string> errors)
+    private async Task ProcessSalesRowsAsync(ImportJob job, List<Dictionary<string, string>> rows, User? user, List<string> errors, string cs)
     {
         for (int i = 0; i < rows.Count; i++)
         {
@@ -248,7 +250,7 @@ public class ImportJobService
 
                 var unitPrice = CsvParser.ParseDecimal(row.GetValueOrDefault("unitprice"));
                 if (!unitPrice.HasValue || unitPrice.Value <= 0) { errors.Add($"Row {rowNum}: UnitPrice is required for '{name}'. Should be a positive number."); continue; }
-                if (unitPrice.Value > 100_000_000) { errors.Add($"Row {rowNum}: UnitPrice ₦{unitPrice.Value:N0} for '{name}' seems unusually large"); continue; }
+                if (unitPrice.Value > 100_000_000) { errors.Add($"Row {rowNum}: UnitPrice {cs}{unitPrice.Value:N0} for '{name}' seems unusually large"); continue; }
 
                 var customerName = row.GetValueOrDefault("customername");
                 if (customerName != null && customerName.Length > 200) { errors.Add($"Row {rowNum}: Customer name too long (max 200 characters)"); continue; }
@@ -304,7 +306,7 @@ public class ImportJobService
         await _db.SaveChangesAsync();
     }
 
-    private async Task ProcessExpensesRowsAsync(ImportJob job, List<Dictionary<string, string>> rows, User? user, List<string> errors)
+    private async Task ProcessExpensesRowsAsync(ImportJob job, List<Dictionary<string, string>> rows, User? user, List<string> errors, string cs)
     {
         for (int i = 0; i < rows.Count; i++)
         {
@@ -316,7 +318,7 @@ public class ImportJobService
                 if (category.Length > 100) { errors.Add($"Row {rowNum}: Category too long (max 100 characters): '{category[..30]}...'"); continue; }
 
                 var amount = CsvParser.ParseDecimal(row.GetValueOrDefault("amount"));
-                if (!ValidateAmount(amount, rowNum, $"category '{category}'", errors)) continue;
+                if (!ValidateAmount(amount, rowNum, $"category '{category}'", errors, cs)) continue;
 
                 await _expenses.CreateAsync(job.BusinessId, new CreateExpenseRequest
                 {
@@ -377,7 +379,7 @@ public class ImportJobService
         return true;
     }
 
-    private static bool ValidateAmount(decimal? amount, int rowNum, string context, List<string> errors)
+    private static bool ValidateAmount(decimal? amount, int rowNum, string context, List<string> errors, string cs = "₦")
     {
         if (!amount.HasValue || amount.Value <= 0)
         {
@@ -386,7 +388,7 @@ public class ImportJobService
         }
         if (amount.Value > 100_000_000)
         {
-            errors.Add($"Row {rowNum}: Amount ₦{amount.Value:N0} for {context} seems unusually large (over ₦100M). Check your CSV data.");
+            errors.Add($"Row {rowNum}: Amount {cs}{amount.Value:N0} for {context} seems unusually large (over {cs}100M). Check your CSV data.");
             return false;
         }
         return true;
@@ -475,7 +477,7 @@ public class ImportJobService
         await _db.SaveChangesAsync();
     }
 
-    private async Task ProcessContactsWithLedgerRowsAsync(ImportJob job, List<Dictionary<string, string>> rows, User? user, List<string> errors)
+    private async Task ProcessContactsWithLedgerRowsAsync(ImportJob job, List<Dictionary<string, string>> rows, User? user, List<string> errors, string cs)
     {
         for (int i = 0; i < rows.Count; i++)
         {
@@ -487,7 +489,7 @@ public class ImportJobService
                 if (!ValidateName(name, rowNum, "Contact Name", errors)) continue;
 
                 var amount = CsvParser.ParseDecimal(row.GetValueOrDefault("amount"));
-                if (!ValidateAmount(amount, rowNum, $"'{name}'", errors)) continue;
+                if (!ValidateAmount(amount, rowNum, $"'{name}'", errors, cs)) continue;
 
                 var ledgerTypeStr = row.GetValueOrDefault("ledgertype") ?? "receivable";
                 if (!ValidLedgerTypes.Contains(ledgerTypeStr))

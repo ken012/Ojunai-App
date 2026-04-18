@@ -79,6 +79,8 @@ export default function DashboardPage() {
   const { data: planStatus } = usePlanStatus();
   const hasCharts = planStatus?.hasMonthlyCharts ?? true;
 
+  const currencySymbol = (() => { try { const b = JSON.parse(localStorage.getItem("bp_business") || "{}"); const meta: Record<string, string> = { NGN: "\u20A6", GHS: "GH\u20B5", USD: "$", GBP: "\u00A3", KES: "KSh", ZAR: "R", TZS: "TSh", UGX: "USh", RWF: "RF", XAF: "FCFA", XOF: "CFA", EGP: "E\u00A3", ETB: "Br" }; return meta[b.currency?.toUpperCase()] ?? b.currency ?? "\u20A6"; } catch { return "\u20A6"; } })();
+
   const toggleExpand = (key: string) => setExpanded(expanded === key ? null : key);
 
   const { data: overview, isLoading: loadingOverview } = useQuery({
@@ -143,6 +145,53 @@ export default function DashboardPage() {
         <h2 className="text-2xl font-bold text-slate-900">Overview</h2>
         <p className="text-slate-500 text-sm mt-0.5">Today&apos;s business snapshot</p>
       </div>
+
+      {/* Payment failed banner */}
+      {planStatus?.subscriptionStatus === "past_due" && (
+        <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+          <p className="text-sm text-red-800">
+            Your last payment failed. Update your payment method to keep your {planStatus.plan.charAt(0).toUpperCase() + planStatus.plan.slice(1)} plan.
+          </p>
+          <a href="/settings" className="text-sm font-semibold text-red-700 hover:text-red-900 whitespace-nowrap ml-4">
+            Update now &rarr;
+          </a>
+        </div>
+      )}
+
+      {/* Grace period banner */}
+      {planStatus?.subscriptionStatus === "grace" && (
+        <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+          <p className="text-sm text-red-800">
+            Your subscription has expired. You have a few days of grace before access is restricted.
+          </p>
+          <a href="/settings" className="text-sm font-semibold text-red-700 hover:text-red-900 whitespace-nowrap ml-4">
+            Renew now &rarr;
+          </a>
+        </div>
+      )}
+
+      {/* Subscription expiry banner */}
+      {planStatus && !planStatus.isAutoRenew && planStatus.subscriptionEndsAt && (() => {
+        const days = Math.max(0, Math.ceil((new Date(planStatus.subscriptionEndsAt!).getTime() - Date.now()) / 86400000));
+        if (days > 7 || !planStatus.hasActiveSubscription) return null;
+        const label = planStatus.plan.charAt(0).toUpperCase() + planStatus.plan.slice(1);
+        const urgent = days <= 3;
+        return (
+          <div className={`flex items-center justify-between rounded-lg border px-4 py-3 ${
+            urgent ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"
+          }`}>
+            <p className={`text-sm ${urgent ? "text-red-800" : "text-amber-800"}`}>
+              {urgent ? "⚠️ " : ""}Your <span className="font-semibold">{label}</span> plan {days === 0 ? "expires today" : `expires in ${days} day${days !== 1 ? "s" : ""}`}.
+              {urgent ? " Renew now to avoid losing access." : ""}
+            </p>
+            <a href="/settings" className={`text-sm font-semibold whitespace-nowrap ml-4 ${
+              urgent ? "text-red-700 hover:text-red-900" : "text-amber-700 hover:text-amber-900"
+            }`}>
+              Renew now &rarr;
+            </a>
+          </div>
+        );
+      })()}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -300,17 +349,17 @@ export default function DashboardPage() {
                   dataKey="date"
                   tick={{ fontSize: 10, fill: "#94a3b8" }}
                   tickFormatter={(v) =>
-                    new Date(v).toLocaleDateString("en-NG", { day: "numeric", month: "short" })
+                    new Date(v).toLocaleDateString("en", { day: "numeric", month: "short" })
                   }
                 />
                 <YAxis
                   tick={{ fontSize: 10, fill: "#94a3b8" }}
-                  tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`}
+                  tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`}
                 />
                 <Tooltip
                   formatter={(v) => [formatNaira(Number(v)), "Sales"]}
                   labelFormatter={(l) =>
-                    new Date(l).toLocaleDateString("en-NG", { weekday: "short", day: "numeric", month: "short" })
+                    new Date(l).toLocaleDateString("en", { weekday: "short", day: "numeric", month: "short" })
                   }
                 />
                 <Area
@@ -345,12 +394,12 @@ export default function DashboardPage() {
                   dataKey="date"
                   tick={{ fontSize: 10, fill: "#94a3b8" }}
                   tickFormatter={(v) =>
-                    new Date(v).toLocaleDateString("en-NG", { day: "numeric", month: "short" })
+                    new Date(v).toLocaleDateString("en", { day: "numeric", month: "short" })
                   }
                 />
                 <YAxis
                   tick={{ fontSize: 10, fill: "#94a3b8" }}
-                  tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`}
+                  tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`}
                 />
                 <Tooltip
                   formatter={(v) => [formatNaira(Number(v)), "Expenses"]}
@@ -391,17 +440,17 @@ export default function DashboardPage() {
                     dataKey="date"
                     tick={{ fontSize: 10, fill: "#94a3b8" }}
                     tickFormatter={(v) =>
-                      new Date(v).toLocaleDateString("en-NG", { day: "numeric", month: "short" })
+                      new Date(v).toLocaleDateString("en", { day: "numeric", month: "short" })
                     }
                   />
                   <YAxis
                     tick={{ fontSize: 10, fill: "#94a3b8" }}
-                    tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`}
+                    tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`}
                   />
                   <Tooltip
                     formatter={(v) => formatNaira(Number(v))}
                     labelFormatter={(l) =>
-                      new Date(l).toLocaleDateString("en-NG", { weekday: "short", day: "numeric", month: "short" })
+                      new Date(l).toLocaleDateString("en", { weekday: "short", day: "numeric", month: "short" })
                     }
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -430,7 +479,7 @@ export default function DashboardPage() {
                       <XAxis
                         type="number"
                         tick={{ fontSize: 10, fill: "#94a3b8" }}
-                        tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`}
+                        tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`}
                       />
                       <YAxis
                         type="category"
@@ -462,7 +511,7 @@ export default function DashboardPage() {
                       <XAxis
                         type="number"
                         tick={{ fontSize: 10, fill: "#94a3b8" }}
-                        tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`}
+                        tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`}
                       />
                       <YAxis
                         type="category"
@@ -579,7 +628,7 @@ export default function DashboardPage() {
                     <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: "#475569" }} />
                     <YAxis
                       tick={{ fontSize: 10, fill: "#94a3b8" }}
-                      tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`}
+                      tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`}
                     />
                     <Tooltip formatter={(v) => formatNaira(Number(v))} />
                     <Bar dataKey="amount" radius={[4, 4, 0, 0]}>

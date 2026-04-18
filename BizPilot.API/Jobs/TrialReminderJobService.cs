@@ -31,6 +31,10 @@ public class TrialReminderJobService
         {
             try
             {
+                var tz = TimeZoneInfo.FindSystemTimeZoneById(biz.Timezone ?? "Africa/Lagos");
+                var localHour = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz).Hour;
+                if (localHour != 10) continue; // Only send at 10 AM local time
+
                 var trial = PlanGuard.GetTrialStatus(biz);
                 if (trial is not (TrialStatus.Active or TrialStatus.Expired)) continue;
 

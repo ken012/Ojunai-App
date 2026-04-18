@@ -60,13 +60,6 @@ builder.Services.AddHttpClient("Paystack", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
-builder.Services.AddTransient<FlutterwaveAuthHandler>();
-builder.Services.AddHttpClient("Flutterwave", client =>
-{
-    client.BaseAddress = new Uri(config["Flutterwave:ApiBaseUrl"] ?? "https://developersandbox-api.flutterwave.com");
-    client.Timeout = TimeSpan.FromSeconds(30);
-}).AddHttpMessageHandler<FlutterwaveAuthHandler>();
-
 
 // ── Application Services ──────────────────────────────────────────────────────
 builder.Services.AddScoped<PaystackService>();
@@ -90,6 +83,7 @@ builder.Services.AddScoped<TrialReminderJobService>();
 builder.Services.AddScoped<TrialRevertJobService>();
 builder.Services.AddScoped<RenewalReminderJobService>();
 builder.Services.AddScoped<ImportJobService>();
+builder.Services.AddScoped<PaymentReconciliationJobService>();
 
 // ── Hangfire ──────────────────────────────────────────────────────────────────
 builder.Services.AddHangfire(hf => hf
@@ -144,7 +138,7 @@ builder.Services.AddSwaggerGen(c =>
     {
         Title   = "BizPilot AI API",
         Version = "v1",
-        Description = "WhatsApp-first AI business operator for Nigerian SMEs"
+        Description = "WhatsApp-first AI business operator for African SMEs"
     });
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
@@ -267,26 +261,21 @@ using (var scope = app.Services.CreateScope())
 
 // ── Hangfire Recurring Jobs ───────────────────────────────────────────────────
 var lagosZone  = TimeZoneInfo.FindSystemTimeZoneById("Africa/Lagos");
-var dailyCron  = config["Hangfire:DailySummaryCron"]  ?? "0 20 * * *";
-var weeklyCron = config["Hangfire:WeeklySummaryCron"] ?? "0 8 * * 1";
 
 RecurringJob.AddOrUpdate<SummaryJobService>(
     "daily-summary",
     svc => svc.RunDailySummaryAsync(),
-    dailyCron,
-    new RecurringJobOptions { TimeZone = lagosZone });
+    "0 * * * *");
 
 RecurringJob.AddOrUpdate<SummaryJobService>(
     "weekly-summary",
     svc => svc.RunWeeklySummaryAsync(),
-    weeklyCron,
-    new RecurringJobOptions { TimeZone = lagosZone });
+    "0 * * * *");
 
 RecurringJob.AddOrUpdate<TrialReminderJobService>(
     "trial-reminders",
     svc => svc.SendTrialRemindersAsync(),
-    "0 10 * * *",
-    new RecurringJobOptions { TimeZone = lagosZone });
+    "0 * * * *");
 
 RecurringJob.AddOrUpdate<TrialRevertJobService>(
     "trial-revert",
@@ -298,5 +287,10 @@ RecurringJob.AddOrUpdate<RenewalReminderJobService>(
     "renewal-reminders",
     svc => svc.SendRenewalRemindersAsync(),
     "0 * * * *");
+
+RecurringJob.AddOrUpdate<PaymentReconciliationJobService>(
+    "payment-reconciliation",
+    svc => svc.ReconcileAsync(),
+    "0 6 * * *");
 
 app.Run();

@@ -186,13 +186,12 @@ public class PlanGuard
                 && b.PendingPlanChange != null
                 && b.SubscriptionEndsAt.HasValue
                 && b.SubscriptionEndsAt.Value < now
-                && string.IsNullOrEmpty(b.PaystackSubscriptionCode))
+                && string.IsNullOrEmpty(b.PaystackSubscriptionCode)
+                && string.IsNullOrEmpty(b.FlutterwaveSubscriptionId))
             .ToListAsync();
 
         foreach (var biz in pendingChanges)
         {
-            // Keep SubscribedPlan set to the new plan (even Starter) so the user stays recognized
-            // as a subscriber who changed plans, not a new user. Prevents trial UI from re-appearing.
             biz.Plan = biz.PendingPlanChange!;
             biz.SubscribedPlan = biz.PendingPlanChange;
             biz.PendingPlanChange = null;
@@ -202,6 +201,52 @@ public class PlanGuard
 
         if (pendingChanges.Count > 0)
             await _db.SaveChangesAsync();
+
+        // Downgrade expired manual (non-auto-renew) subscriptions with no pending change
+        // Grace period: keep access for GracePeriodDays after SubscriptionEndsAt
+        var expiredManual = await _db.Businesses
+            .Where(b => b.IsActive
+                && !b.IsAutoRenew
+                && b.SubscriptionEndsAt.HasValue
+                && b.SubscriptionEndsAt.Value.AddDays(GracePeriodDays) < now
+                && b.PendingPlanChange == null
+                && b.Plan != "starter"
+                && string.IsNullOrEmpty(b.PaystackSubscriptionCode)
+                && string.IsNullOrEmpty(b.FlutterwaveSubscriptionId))
+            .ToListAsync();
+
+        foreach (var biz in expiredManual)
+        {
+            biz.Plan = "starter";
+            biz.SubscribedPlan = "starter";
+            biz.SubscriptionStatus = "expired";
+            biz.SubscriptionEndsAt = null;
+
+            _db.BillingEvents.Add(new BillingEvent
+            {
+                BusinessId = biz.Id,
+                EventType = "subscription.expired",
+                Provider = biz.BillingProvider ?? "unknown",
+                Plan = biz.Plan,
+                Status = "expired",
+                CreatedAtUtc = DateTime.UtcNow
+            });
+        }
+
+        if (expiredManual.Count > 0)
+            await _db.SaveChangesAsync();
+    }
+
+    public static string GetSubscriptionStatus(Business business)
+    {
+        if (string.IsNullOrEmpty(business.SubscribedPlan) || business.SubscribedPlan == "starter")
+            return business.SubscriptionStatus ?? "none";
+
+        var now = DateTime.UtcNow;
+        if (!business.SubscriptionEndsAt.HasValue) return "active";
+        if (business.SubscriptionEndsAt.Value > now) return "active";
+        if (business.SubscriptionEndsAt.Value.AddDays(GracePeriodDays) > now) return "grace";
+        return "expired";
     }
 
     public async Task<PlanConfig> GetEffectivePlanAsync(Guid businessId)

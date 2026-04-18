@@ -1,3 +1,4 @@
+using BizPilot.API.Common;
 using BizPilot.API.Data;
 using BizPilot.API.Models;
 using BizPilot.API.Services.Interfaces;
@@ -68,6 +69,11 @@ public class SummaryJobService
         {
             try
             {
+                var tz = TimeZoneInfo.FindSystemTimeZoneById(business.Timezone ?? "Africa/Lagos");
+                var localHour = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz).Hour;
+                if (localHour != 20) continue; // Only send at 8 PM local time
+
+                var cs = BillingConfig.Symbol(business.Currency);
                 if (!business.AlertDailySummary) continue;
 
                 var summary = await _reports.GetDailySummaryAsync(business.Id, null);
@@ -98,8 +104,8 @@ public class SummaryJobService
                 var receivableLine = "";
                 if (overdueContacts.Count > 0)
                 {
-                    var topDebtors = string.Join(", ", overdueContacts.OrderByDescending(c => c.Net).Take(3).Select(c => $"{c.Name} (₦{c.Net:N0})"));
-                    receivableLine = $"\n💰 {overdueContacts.Count} customer{(overdueContacts.Count != 1 ? "s" : "")} owe you ₦{summary.OutstandingReceivables:N0}: {topDebtors}";
+                    var topDebtors = string.Join(", ", overdueContacts.OrderByDescending(c => c.Net).Take(3).Select(c => $"{c.Name} ({cs}{c.Net:N0})"));
+                    receivableLine = $"\n💰 {overdueContacts.Count} customer{(overdueContacts.Count != 1 ? "s" : "")} owe you {cs}{summary.OutstandingReceivables:N0}: {topDebtors}";
                 }
 
                 // #2 Overdue receivables (7+ days)
@@ -128,7 +134,7 @@ public class SummaryJobService
 
                 if (overdueDebtors.Count > 0)
                 {
-                    var lines = overdueDebtors.Select(d => $"{d.Name} (₦{d.Owed:N0}, {d.Days} days)");
+                    var lines = overdueDebtors.Select(d => $"{d.Name} ({cs}{d.Owed:N0}, {d.Days} days)");
                     overdueLine = $"\n⏰ Overdue debts: {string.Join(", ", lines)}";
                 }
 
@@ -187,14 +193,15 @@ public class SummaryJobService
 
                 if (overduePayables.Count > 0)
                 {
-                    var lines = overduePayables.Select(d => $"{d.Name} (₦{d.Owed:N0}, {d.Days} days)");
+                    var lines = overduePayables.Select(d => $"{d.Name} ({cs}{d.Owed:N0}, {d.Days} days)");
                     payableLine = $"\n💳 You owe: {string.Join(", ", lines)}";
                 }
 
-                var message = $"📊 *Daily Summary — {DateTime.UtcNow:MMM d, yyyy}*\n" +
-                              $"🛒 Sales: ₦{summary.TotalSales:N0} ({summary.SaleCount} transactions)\n" +
-                              $"💸 Expenses: ₦{summary.TotalExpenses:N0}\n" +
-                              $"{netEmoji} Net: ₦{net:N0}" +
+                var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+                var message = $"📊 *Daily Summary — {localNow:MMM d, yyyy}*\n" +
+                              $"🛒 Sales: {cs}{summary.TotalSales:N0} ({summary.SaleCount} transactions)\n" +
+                              $"💸 Expenses: {cs}{summary.TotalExpenses:N0}\n" +
+                              $"{netEmoji} Net: {cs}{net:N0}" +
                               lowStockLine + receivableLine + overdueLine + payableLine + noSalesLine + staffLine +
                               "\n\nReply with any question about your business!";
 
@@ -219,12 +226,17 @@ public class SummaryJobService
         {
             try
             {
+                var tz = TimeZoneInfo.FindSystemTimeZoneById(business.Timezone ?? "Africa/Lagos");
+                var localTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+                if (localTime.Hour != 8 || localTime.DayOfWeek != DayOfWeek.Monday) continue;
+
+                var cs = BillingConfig.Symbol(business.Currency);
                 var summary = await _reports.GetWeeklySummaryAsync(business.Id, null);
                 var owner = business.Users.FirstOrDefault(u => u.Role == UserRole.Owner && u.IsActive);
                 if (owner == null) continue;
 
                 var topLine = summary.TopProducts.Count > 0
-                    ? $"\n🏆 Top seller: {summary.TopProducts[0].ProductName} (₦{summary.TopProducts[0].TotalRevenue:N0})"
+                    ? $"\n🏆 Top seller: {summary.TopProducts[0].ProductName} ({cs}{summary.TopProducts[0].TotalRevenue:N0})"
                     : "";
 
                 // #3 Best seller change — compare this week's #1 to last week's #1
@@ -248,13 +260,13 @@ public class SummaryJobService
                     : "";
 
                 var debtorLine = summary.TopDebtors.Count > 0
-                    ? $"\n💰 Outstanding: ₦{summary.TopDebtors.Sum(d => d.TotalReceivable):N0} receivable"
+                    ? $"\n💰 Outstanding: {cs}{summary.TopDebtors.Sum(d => d.TotalReceivable):N0} receivable"
                     : "";
 
                 var message = $"📊 *Weekly Summary ({summary.WeekStart} – {summary.WeekEnd})*\n" +
-                              $"Sales: ₦{summary.TotalSales:N0}\n" +
-                              $"Expenses: ₦{summary.TotalExpenses:N0}\n" +
-                              $"Est. Profit: ₦{summary.EstimatedProfit:N0}" +
+                              $"Sales: {cs}{summary.TotalSales:N0}\n" +
+                              $"Expenses: {cs}{summary.TotalExpenses:N0}\n" +
+                              $"Est. Profit: {cs}{summary.EstimatedProfit:N0}" +
                               topLine + bestSellerChangeLine + lowStockLine + debtorLine +
                               "\n\nReply with any question about your business!";
 

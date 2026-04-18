@@ -22,6 +22,9 @@ export type PlanStatus = {
   isBillable: boolean;
   hasActiveSubscription: boolean;
   subscriptionEndsAt: string | null;
+  isAutoRenew: boolean;
+  paymentMethod: string | null;
+  subscriptionStatus: string;
 };
 
 export function usePlanStatus() {

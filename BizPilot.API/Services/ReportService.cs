@@ -1,3 +1,4 @@
+using BizPilot.API.Common;
 using BizPilot.API.Data;
 using BizPilot.API.DTOs.Dashboard;
 using BizPilot.API.DTOs.Ledger;
@@ -411,6 +412,8 @@ public partial class ReportService : IReportService
     public async Task<PaginatedActivityResult> GetActivityFeedAsync(
         Guid businessId, string? type, int page, int pageSize, string? search, DateTime? startDate, DateTime? endDate)
     {
+        var business = await _db.Businesses.FindAsync(businessId);
+        var cs = BillingConfig.Symbol(business?.Currency);
         var activities = new List<ActivityFeedDto>();
 
         // Helper: generate a short human-readable reference ID from a GUID
@@ -439,7 +442,7 @@ public partial class ReportService : IReportService
                     Id = s.Id,
                     RefId = MakeRef(s.Id, "SL"),
                     Type = s.IsDeleted ? "sale_voided" : "sale",
-                    Description = $"Sold {itemSummary} for ₦{s.TotalAmount:N0}"
+                    Description = $"Sold {itemSummary} for {cs}{s.TotalAmount:N0}"
                         + (s.Contact != null ? $" to {s.Contact.Name}" : "")
                         + (s.PaymentStatus != PaymentStatus.Paid ? $" ({s.PaymentStatus})" : "")
                         + (s.IsDeleted ? " [VOIDED]" : ""),
@@ -460,7 +463,7 @@ public partial class ReportService : IReportService
                         Id = s.Id,
                         RefId = MakeRef(s.Id, "SL"),
                         Type = "void_event",
-                        Description = $"Sale voided: {itemSummary} (₦{s.TotalAmount:N0})"
+                        Description = $"Sale voided: {itemSummary} ({cs}{s.TotalAmount:N0})"
                             + (s.Contact != null ? $" — {s.Contact.Name}" : "")
                             + $" — stock returned",
                         Amount = s.TotalAmount,
@@ -555,19 +558,19 @@ public partial class ReportService : IReportService
                     {
                         case LedgerEntryType.Receivable:
                             activityType = "debt_recorded";
-                            description = $"{contactName} owes you ₦{e.Amount:N0}";
+                            description = $"{contactName} owes you {cs}{e.Amount:N0}";
                             break;
                         case LedgerEntryType.ReceivablePayment:
                             activityType = "payment_received";
-                            description = $"{contactName} paid ₦{e.Amount:N0}";
+                            description = $"{contactName} paid {cs}{e.Amount:N0}";
                             break;
                         case LedgerEntryType.Payable:
                             activityType = "debt_recorded";
-                            description = $"You owe {contactName} ₦{e.Amount:N0}";
+                            description = $"You owe {contactName} {cs}{e.Amount:N0}";
                             break;
                         case LedgerEntryType.PayablePayment:
                             activityType = "payment_made";
-                            description = $"You paid {contactName} ₦{e.Amount:N0}";
+                            description = $"You paid {contactName} {cs}{e.Amount:N0}";
                             break;
                         default:
                             activityType = "ledger";

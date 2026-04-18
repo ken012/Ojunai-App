@@ -109,6 +109,17 @@ public static class BillingConfig
     public static BillingProvider GetProvider(string currency)
         => currency.ToUpper() == "NGN" ? BillingProvider.Paystack : BillingProvider.Flutterwave;
 
+    /// <summary>Get the currency symbol for a currency code. Covers all supported African currencies.</summary>
+    public static string Symbol(string? currency) => (currency?.ToUpper() ?? "NGN") switch
+    {
+        "NGN" => "₦", "GHS" => "GH₵", "USD" => "$", "GBP" => "£", "KES" => "KSh",
+        "ZAR" => "R", "TZS" => "TSh", "UGX" => "USh", "RWF" => "RF", "XAF" => "FCFA",
+        "XOF" => "CFA", "EGP" => "E£", "ETB" => "Br", "CDF" => "FC", "AOA" => "Kz",
+        "MZN" => "MT", "ZMW" => "ZK", "BWP" => "P", "NAD" => "N$", "MWK" => "MK",
+        "EUR" => "€", "CAD" => "C$", "SLE" => "Le", "LRD" => "L$", "GMD" => "D",
+        var c => c ?? "₦"
+    };
+
     /// <summary>Format a price with the correct currency symbol.</summary>
     public static string FormatPrice(decimal amount, string currency)
     {

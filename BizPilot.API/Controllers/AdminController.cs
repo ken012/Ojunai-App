@@ -120,6 +120,74 @@ public class AdminController : ControllerBase
     }
 
     // ═════════════════════════════════════════════════════════════════════════════
+    // BILLING ADMIN — subscription overview and event audit log
+    // ═════════════════════════════════════════════════════════════════════════════
+
+    [HttpGet("billing-overview")]
+    public async Task<IActionResult> BillingOverview([FromQuery] string key)
+    {
+        var auth = ValidateAdminKey(key);
+        if (auth != null) return auth;
+
+        var now = DateTime.UtcNow;
+        var businesses = await _db.Businesses
+            .Where(b => b.IsActive && b.SubscribedPlan != null && b.SubscribedPlan != "starter")
+            .ToListAsync();
+
+        var result = new
+        {
+            totalActiveSubscribers = businesses.Count(b => b.SubscriptionEndsAt > now || !string.IsNullOrEmpty(b.PaystackSubscriptionCode) || !string.IsNullOrEmpty(b.FlutterwaveSubscriptionId)),
+            byPlan = businesses.GroupBy(b => b.Plan).Select(g => new { plan = g.Key, count = g.Count() }),
+            byProvider = businesses.GroupBy(b => b.BillingProvider).Select(g => new { provider = g.Key, count = g.Count() }),
+            byCurrency = businesses.GroupBy(b => b.BillingCurrency).Select(g => new { currency = g.Key, count = g.Count() }),
+            byCycle = businesses.GroupBy(b => b.BillingCycle).Select(g => new { cycle = g.Key, count = g.Count() }),
+            autoRenew = businesses.Count(b => b.IsAutoRenew),
+            manualRenew = businesses.Count(b => !b.IsAutoRenew),
+            expiringIn7Days = businesses.Count(b => b.SubscriptionEndsAt.HasValue && b.SubscriptionEndsAt > now && b.SubscriptionEndsAt < now.AddDays(7)),
+            inGrace = businesses.Count(b => b.SubscriptionStatus == "grace" || (b.SubscriptionEndsAt.HasValue && b.SubscriptionEndsAt < now && b.SubscriptionEndsAt.Value.AddDays(3) > now)),
+            pastDue = businesses.Count(b => b.SubscriptionStatus == "past_due"),
+        };
+
+        return Ok(result);
+    }
+
+    [HttpGet("billing-events")]
+    public async Task<IActionResult> BillingEvents(
+        [FromQuery] string key,
+        [FromQuery] Guid? businessId = null,
+        [FromQuery] string? eventType = null,
+        [FromQuery] int days = 7,
+        [FromQuery] int limit = 50)
+    {
+        var auth = ValidateAdminKey(key);
+        if (auth != null) return auth;
+
+        var since = DateTime.UtcNow.AddDays(-days);
+        var query = _db.BillingEvents
+            .Where(e => e.CreatedAtUtc >= since)
+            .AsQueryable();
+
+        if (businessId.HasValue)
+            query = query.Where(e => e.BusinessId == businessId.Value);
+        if (!string.IsNullOrEmpty(eventType))
+            query = query.Where(e => e.EventType == eventType);
+
+        var events = await query
+            .OrderByDescending(e => e.CreatedAtUtc)
+            .Take(limit)
+            .Select(e => new
+            {
+                e.Id, e.BusinessId, e.EventType, e.Provider, e.Plan,
+                e.BillingCycle, e.Amount, e.Currency, e.TransactionRef,
+                e.SubscriptionId, e.PaymentMethod, e.Status, e.ErrorDetails,
+                e.CreatedAtUtc
+            })
+            .ToListAsync();
+
+        return Ok(new { count = events.Count, data = events });
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════
     // TELEMETRY — production observability over MessageLogs
     //
     // These endpoints surface the signals from the principles doc: misparse rate, retry patterns,

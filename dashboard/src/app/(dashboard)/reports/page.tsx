@@ -57,6 +57,8 @@ export default function ReportsPage() {
   const { data: planStatus } = usePlanStatus();
   const hasAdvanced = planStatus?.hasAdvancedReports ?? true;
 
+  const currencySymbol = (() => { try { const b = JSON.parse(localStorage.getItem("bp_business") || "{}"); const meta: Record<string, string> = { NGN: "\u20A6", GHS: "GH\u20B5", USD: "$", GBP: "\u00A3", KES: "KSh", ZAR: "R", TZS: "TSh", UGX: "USh", RWF: "RF", XAF: "FCFA", XOF: "CFA", EGP: "E\u00A3", ETB: "Br" }; return meta[b.currency?.toUpperCase()] ?? b.currency ?? "\u20A6"; } catch { return "\u20A6"; } })();
+
   return (
     <div className="space-y-6">
       <div>
@@ -74,7 +76,7 @@ export default function ReportsPage() {
         </TabsList>
 
         <TabsContent value="overview"><OverviewTab hasAdvanced={hasAdvanced} /></TabsContent>
-        <TabsContent value="financial"><FinancialTab hasAdvanced={hasAdvanced} /></TabsContent>
+        <TabsContent value="financial"><FinancialTab hasAdvanced={hasAdvanced} currencySymbol={currencySymbol} /></TabsContent>
         <TabsContent value="customers"><CustomersTab hasAdvanced={hasAdvanced} /></TabsContent>
         <TabsContent value="inventory"><InventoryTab hasAdvanced={hasAdvanced} /></TabsContent>
         <TabsContent value="debts"><DebtsTab hasAdvanced={hasAdvanced} /></TabsContent>
@@ -326,7 +328,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
 
 // ───────── Financial tab ─────────
 
-function FinancialTab({ hasAdvanced }: { hasAdvanced: boolean }) {
+function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; currencySymbol: string }) {
   const { data: pnl } = useQuery({
     queryKey: ["monthly-pnl"],
     queryFn: async () => (await api.get<{ data: MonthlyPnlDto }>("/reports/monthly-pnl")).data.data!,
@@ -374,7 +376,7 @@ function FinancialTab({ hasAdvanced }: { hasAdvanced: boolean }) {
           <CardContent>
             {pnl ? (
               <>
-                <p className="text-xs text-slate-400 mb-3">{new Date(pnl.month).toLocaleString("en-NG", { month: "long", year: "numeric" })}</p>
+                <p className="text-xs text-slate-400 mb-3">{new Date(pnl.month).toLocaleString("en", { month: "long", year: "numeric" })}</p>
                 <div className="space-y-1">
                   <div className="flex justify-between items-center py-2 border-b border-slate-100">
                     <span className="text-sm text-slate-500">Revenue</span>
@@ -457,14 +459,14 @@ function FinancialTab({ hasAdvanced }: { hasAdvanced: boolean }) {
           {trend && trend.points.length > 0 ? (
             <ResponsiveContainer width="100%" height={260}>
               <LineChart data={trend.points.map(p => ({
-                month: new Date(p.month).toLocaleString("en-NG", { month: "short", year: "2-digit" }),
+                month: new Date(p.month).toLocaleString("en", { month: "short", year: "2-digit" }),
                 Revenue: p.revenue,
                 Expenses: p.expenses,
                 Profit: p.profit
               }))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} />
                 <Tooltip formatter={(v) => formatNaira(Number(v))} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Line type="monotone" dataKey="Revenue" stroke="#10b981" strokeWidth={2} dot={false} />
@@ -489,12 +491,12 @@ function FinancialTab({ hasAdvanced }: { hasAdvanced: boolean }) {
             {avgTxn && avgTxn.points.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={avgTxn.points.map(p => ({
-                  month: new Date(p.month).toLocaleString("en-NG", { month: "short" }),
+                  month: new Date(p.month).toLocaleString("en", { month: "short" }),
                   Average: p.averageValue
                 }))}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} />
                   <Tooltip formatter={(v) => formatNaira(Number(v))} />
                   <Line type="monotone" dataKey="Average" stroke="#10b981" strokeWidth={2} />
                 </LineChart>
@@ -515,12 +517,12 @@ function FinancialTab({ hasAdvanced }: { hasAdvanced: boolean }) {
             {payments && payments.months.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={payments.months.map(m => ({
-                  month: new Date(m.month).toLocaleString("en-NG", { month: "short" }),
+                  month: new Date(m.month).toLocaleString("en", { month: "short" }),
                   Cash: m.cash, Transfer: m.transfer, POS: m.pos, Credit: m.credit, Other: m.other
                 }))}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} />
                   <Tooltip formatter={(v) => formatNaira(Number(v))} />
                   <Legend wrapperStyle={{ fontSize: 10 }} />
                   <Bar dataKey="Cash" stackId="a" fill="#10b981" />
@@ -771,7 +773,7 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
             {retention && retention.months.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={retention.months.map(m => ({
-                  month: new Date(m.month).toLocaleString("en-NG", { month: "short" }),
+                  month: new Date(m.month).toLocaleString("en", { month: "short" }),
                   New: m.newCustomers,
                   Returning: m.returningCustomers
                 }))}>

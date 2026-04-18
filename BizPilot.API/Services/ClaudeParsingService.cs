@@ -198,14 +198,14 @@ Supported intents:
 - get_staff_list: {} — list all staff members and their roles
 - add_staff: {fullName, phoneNumber, role?} — add a new staff member. Role defaults to "Sales". Valid roles: Admin, Sales, Bookkeeper, Viewer.
   Triggers: "add staff Mary +2348012345678", "add Mary as sales staff", "register new staff", "add team member"
-  User: "Add staff Mary 08012345678" → {fullName:"Mary", phoneNumber:"08012345678", role:"Sales"}
-  User: "Add Fatou as bookkeeper, number is 09034567890" → {fullName:"Fatou", phoneNumber:"09034567890", role:"Bookkeeper"}
+  User: "Add staff Mary +2348012345678" → {fullName:"Mary", phoneNumber:"+2348012345678", role:"Sales"}
+  User: "Add Fatou as bookkeeper, number is +233501234567" → {fullName:"Fatou", phoneNumber:"+233501234567", role:"Bookkeeper"}
 - create_contact: {contactName, phoneNumber?, contactType?} — add a new customer or supplier contact.
   contactType: "Customer" (default), "Supplier", or "Both".
-  Triggers: "add contact Ada", "new customer Kofi 08012345678", "add supplier Market Mama", "save contact"
+  Triggers: "add contact Ada", "new customer Kofi +2348012345678", "add supplier Market Mama", "save contact"
   User: "Add contact Ama Mensah" → {contactName:"Ama Mensah", contactType:"Customer"}
-  User: "Add supplier Market Mama, phone 09012345678" → {contactName:"Market Mama", phoneNumber:"09012345678", contactType:"Supplier"}
-  User: "Save Kofi's number 08098765432" → {contactName:"Kofi", phoneNumber:"08098765432"}
+  User: "Add supplier Market Mama, phone +233241234567" → {contactName:"Market Mama", phoneNumber:"+233241234567", contactType:"Supplier"}
+  User: "Save Kofi's number +254712345678" → {contactName:"Kofi", phoneNumber:"+254712345678"}
   NOTE: Do NOT use this for "add staff" — staff use the add_staff intent. Contacts are customers/suppliers, not team members.
 - get_staff_sales: {staffName} — what a specific staff member sold today
 - get_product_staff: {productName} — which STAFF MEMBERS recorded sales of a specific product today. Triggers: "who sold rice today", "which staff sold perfume"
@@ -269,8 +269,8 @@ GLOBAL RULES
 ═══════════════════════════════════════════════════
 - NEVER guess or hallucinate values. If a required field is truly missing, set needsClarification=true.
 - Match product and contact names case-insensitively against context. Also fuzzy-match common typos (e.g. "condtnr" → "conditioner").
-- African informal English and Pidgin are common: "I don sell", "customer wan pay", "who owe me", "how market today", "oya check stock", "abeg", "wetin dey inside", "na how much", "e don remain small". Users may also write in French-influenced English (West Africa) or Swahili-influenced English (East Africa).
-- Amount shorthand: "5k"=5000, "2.5k"=2500, "200k"=200000, "1m"=1000000, "500 naira"=500.
+- African informal English and Pidgin are common: "I don sell", "customer wan pay", "who owe me", "how market today", "oya check stock", "abeg", "wetin dey inside", "na how much", "e don remain small". Users may also write in French-influenced English (West Africa), Swahili-influenced English (East Africa), or South African English. Understand regional variations across the continent.
+- Amount shorthand: "5k"=5000, "2.5k"=2500, "200k"=200000, "1m"=1000000, "500"=500.
 - Shorthand notation: "x5"=5, "5pcs"=5 pieces, "3dz"=36, "a dozen"=12, "@ 2k"=at 2000 each, "shampoo x 5 @ 2k"=5 shampoo at 2000.
 - Quantities can be decimal: "half bag"=0.5, "two and half"=2.5, "1 and half"=1.5, "quarter"=0.25.
 - "Sold 2 dozen eggs" → quantity=24 (dozen=12). "A carton of milk" → use unit:"carton", quantity:1.
@@ -389,7 +389,7 @@ Example (bare-number price follow-up):
   → emit create_sale: {items:[{productName:"face primer",sellAllProduct:"face primer", unitPrice:6000}]}  with sellAllProduct flag and the new price; confidence 0.95
 
 Example (yes on proposed action):
-  Assistant: "Record 5 bags of rice at 5000 each — total ₦25,000?"
+  Assistant: "Record 5 bags of rice at 5000 each — total 25,000?"
   User: "yes"
   → emit create_sale with that exact payload, confidence 0.95
 
@@ -912,8 +912,8 @@ Triggers: "customer returned X", "returned X", "refund", "brought it back", "X w
 ▸ Customer-related queries beyond owed amounts
 - "Show all customers" / "Find Ada" → not directly supported. Set needsClarification: "I can show outstanding balances. Try 'who owes me' or 'Ada balance'."
 
-▸ Pidgin / Nigerian greetings
-- "How far?", "Boss", "Madam", "Good morning ma", "How market?" → greet.
+▸ Pidgin / African greetings
+- "How far?", "Boss", "Madam", "Good morning ma", "How market?", "Habari", "Mambo" → greet.
 - "Wetin I get?" / "How my market?" → could be get_today_sales OR get_all_stock — default to greet.
 
 ▸ Profit timeframes

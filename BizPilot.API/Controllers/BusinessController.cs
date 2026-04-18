@@ -80,6 +80,7 @@ public class BusinessController : BizPilotBaseController
             PendingPlanChange = biz.PendingPlanChange,
             IsAutoRenew = biz.IsAutoRenew,
             PaymentMethod = biz.PaymentMethod,
+            SubscriptionStatus = PlanGuard.GetSubscriptionStatus(biz),
         }));
     }
 
@@ -314,6 +315,7 @@ public class PlanStatusDto
     public string? PendingPlanChange { get; set; }
     public bool IsAutoRenew { get; set; }
     public string? PaymentMethod { get; set; }
+    public string SubscriptionStatus { get; set; } = "none";
 }
 
 public class StartTrialRequest

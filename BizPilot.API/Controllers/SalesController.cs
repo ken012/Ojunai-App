@@ -70,7 +70,8 @@ public class SalesController : BizPilotBaseController
         // Large sale
         if (business.AlertLargeSale && business.LargeSaleThreshold > 0 && saleAmount >= business.LargeSaleThreshold)
         {
-            alerts.Add($"💰 *Big sale!* ₦{saleAmount:N0} just recorded from dashboard");
+            var cs = BillingConfig.Symbol(business.Currency);
+            alerts.Add($"💰 *Big sale!* {cs}{saleAmount:N0} just recorded from dashboard");
         }
 
         if (alerts.Count > 0)

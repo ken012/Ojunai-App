@@ -34,6 +34,9 @@ public class WhatsAppService : IWhatsAppService
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(Guid, Guid), DateTime> _alertedLowStock = new();
     private static readonly TimeSpan LowStockAlertCooldown = TimeSpan.FromMinutes(60);
 
+    private string _cs = "{_cs}";
+    private TimeZoneInfo _tz = TimeZoneInfo.Utc;
+
     /// <summary>
     /// Returns an error message safe to show to end users over WhatsApp. Business-logic exceptions
     /// (our own InvalidOperationException/KeyNotFoundException/ArgumentException) carry meaningful
@@ -386,6 +389,9 @@ public class WhatsAppService : IWhatsAppService
             .Select(c => new ContactContext(c.Name, c.Type.ToString()))
             .ToListAsync();
 
+        _cs = BillingConfig.Symbol(user.Business.Currency);
+        _tz = TimeZoneInfo.FindSystemTimeZoneById(user.Business.Timezone ?? "Africa/Lagos");
+
         var context = new BusinessContext
         {
             BusinessName = user.Business.Name,
@@ -610,7 +616,7 @@ public class WhatsAppService : IWhatsAppService
                 var timeSince = DateTime.UtcNow - recentSale.CreatedAtUtc;
                 if (timeSince.TotalMinutes < 2 && _alertedSales.TryAdd(recentSale.Id, DateTime.UtcNow))
                 {
-                    alerts.Add($"💰 *Big sale!* ₦{recentSale.TotalAmount:N0} just recorded");
+                    alerts.Add($"💰 *Big sale!* {_cs}{recentSale.TotalAmount:N0} just recorded");
                 }
             }
 
@@ -846,7 +852,7 @@ public class WhatsAppService : IWhatsAppService
                     if (price <= 0) { if (isBatch) { skipped.Add($"{product.Name} (no price for calc)"); continue; } return $"Can't calculate quantity — no selling price set for {product.Name}."; }
                     qty = Math.Floor(itemTotalAmount.Value / price);
                     unitPrice = price;
-                    if (qty <= 0) { if (isBatch) { skipped.Add($"{product.Name} (amount too low)"); continue; } return $"₦{itemTotalAmount.Value:N0} isn't enough for 1 {product.Unit} of {product.Name} (₦{price:N0} each)."; }
+                    if (qty <= 0) { if (isBatch) { skipped.Add($"{product.Name} (amount too low)"); continue; } return $"{_cs}{itemTotalAmount.Value:N0} isn't enough for 1 {product.Unit} of {product.Name} ({_cs}{price:N0} each)."; }
                 }
 
                 if (qty <= 0) { if (isBatch) { skipped.Add($"{productName} (invalid qty)"); continue; } return $"Please provide a valid quantity for {productName}."; }
@@ -889,7 +895,7 @@ public class WhatsAppService : IWhatsAppService
             PaymentMethod = ba.GetStringOrNull("paymentMethod")
         }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
 
-        var lines = sale.Items.Select(i => $"• {i.Quantity} {i.Unit} of {i.ProductName} @ ₦{i.UnitPrice:N0} = ₦{i.TotalPrice:N0}");
+        var lines = sale.Items.Select(i => $"• {i.Quantity} {i.Unit} of {i.ProductName} @ {_cs}{i.UnitPrice:N0} = {_cs}{i.TotalPrice:N0}");
         var debtNote = "";
 
         // Auto-create receivable for credit sales
@@ -902,14 +908,14 @@ public class WhatsAppService : IWhatsAppService
                 Notes = $"Credit sale"
             }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
             var cName = ba.GetStringOrNull("contactName") ?? "Customer";
-            debtNote = $"\n💰 {cName} now owes you ₦{sale.TotalAmount:N0}";
+            debtNote = $"\n💰 {cName} now owes you {_cs}{sale.TotalAmount:N0}";
         }
 
         var skippedNote = skipped.Count > 0
             ? $"\n\n⚠️ Skipped {skipped.Count} item{(skipped.Count != 1 ? "s" : "")}:\n{string.Join("\n", skipped.Select(s => $"• {s}"))}"
             : "";
 
-        return $"✅ Sale recorded!\n{string.Join("\n", lines)}\n\n*Total: ₦{sale.TotalAmount:N0}* ({sale.PaymentStatus}){debtNote}{skippedNote}";
+        return $"✅ Sale recorded!\n{string.Join("\n", lines)}\n\n*Total: {_cs}{sale.TotalAmount:N0}* ({sale.PaymentStatus}){debtNote}{skippedNote}";
     }
 
     private async Task<string> HandleCreateExpenseAsync(Guid businessId, JsonElement ba, User? recordedBy = null)
@@ -926,7 +932,7 @@ public class WhatsAppService : IWhatsAppService
             PaidTo = ba.GetStringOrNull("paidTo")
         }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
 
-        return $"✅ Expense recorded: ₦{expense.Amount:N0} for {expense.Category}" +
+        return $"✅ Expense recorded: {_cs}{expense.Amount:N0} for {expense.Category}" +
                (expense.PaidTo != null ? $" (paid to {expense.PaidTo})" : "");
     }
 
@@ -1030,7 +1036,7 @@ public class WhatsAppService : IWhatsAppService
                         {
                             Category = "Inventory",
                             Amount = purchaseTotal,
-                            Notes = $"Bought {qty.Value:0.##} {product.Unit} of {product.Name} @ ₦{effectiveCost.Value:N0}",
+                            Notes = $"Bought {qty.Value:0.##} {product.Unit} of {product.Name} @ {_cs}{effectiveCost.Value:N0}",
                         }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
                     }
 
@@ -1062,7 +1068,7 @@ public class WhatsAppService : IWhatsAppService
         if (created.Count > 0)
             sb.AppendLine($"\n🆕 New: {string.Join(", ", created)}");
         if (totalExpense > 0)
-            sb.AppendLine($"💸 Total expense: ₦{totalExpense:N0}");
+            sb.AppendLine($"💸 Total expense: {_cs}{totalExpense:N0}");
         if (failed.Count > 0)
             sb.AppendLine($"\n⚠️ Skipped: {string.Join(", ", failed)}");
 
@@ -1125,7 +1131,7 @@ public class WhatsAppService : IWhatsAppService
                 {
                     Category = "Inventory",
                     Amount = purchaseTotal,
-                    Notes = $"Bought {qty:0.##} {product.Unit} of {product.Name} @ ₦{effectiveCost.Value:N0}/{product.Unit}",
+                    Notes = $"Bought {qty:0.##} {product.Unit} of {product.Name} @ {_cs}{effectiveCost.Value:N0}/{product.Unit}",
                     PaidTo = paidTo
                 }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
             }
@@ -1140,7 +1146,7 @@ public class WhatsAppService : IWhatsAppService
 
         var createdNote = autoCreated ? $"\n🆕 Created new product: {product.Name} (unit: {product.Unit})" : "";
         var costNote = effectiveCost.HasValue && effectiveCost.Value > 0
-            ? $"\n💸 Recorded as expense: ₦{(qty * effectiveCost.Value):N0}" + (unitCost == null ? " (using stored cost price)" : "")
+            ? $"\n💸 Recorded as expense: {_cs}{(qty * effectiveCost.Value):N0}" + (unitCost == null ? " (using stored cost price)" : "")
             : "";
 
         // Auto-create payable if "pay later"
@@ -1156,11 +1162,11 @@ public class WhatsAppService : IWhatsAppService
             {
                 ContactId = contact.Id,
                 Amount = totalOwed,
-                Notes = totalOwed > 0 ? $"Credit purchase: {qty:0.##} {product.Unit} of {product.Name} @ ₦{payLaterCost!.Value:N0}" : $"PAY_LATER:{product.Name}:{qty:0.##}"
+                Notes = totalOwed > 0 ? $"Credit purchase: {qty:0.##} {product.Unit} of {product.Name} @ {_cs}{payLaterCost!.Value:N0}" : $"PAY_LATER:{product.Name}:{qty:0.##}"
             }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
 
             if (totalOwed > 0)
-                debtNote = $"\n💳 You owe *{sName}* ₦{totalOwed:N0}" + (unitCost == null ? " (using stored cost price)" : "");
+                debtNote = $"\n💳 You owe *{sName}* {_cs}{totalOwed:N0}" + (unitCost == null ? " (using stored cost price)" : "");
             else
                 debtNote = $"\n💳 Pay-later from *{sName}* — set a cost price to update the amount owed";
         }
@@ -1294,7 +1300,7 @@ public class WhatsAppService : IWhatsAppService
             ContactId = contact.Id, Amount = amount.Value, Notes = ba.GetStringOrNull("notes")
         }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
 
-        return $"✅ Recorded: {contactName} owes you ₦{amount.Value:N0}";
+        return $"✅ Recorded: {contactName} owes you {_cs}{amount.Value:N0}";
     }
 
     private async Task<string> HandleCreatePayableAsync(Guid businessId, JsonElement ba, User? recordedBy = null)
@@ -1314,7 +1320,7 @@ public class WhatsAppService : IWhatsAppService
             ContactId = contact.Id, Amount = amount.Value, Notes = ba.GetStringOrNull("notes")
         }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
 
-        return $"✅ Recorded: You owe {contactName} ₦{amount.Value:N0}";
+        return $"✅ Recorded: You owe {contactName} {_cs}{amount.Value:N0}";
     }
 
     private async Task<string> HandleRecordPaymentAsync(Guid businessId, JsonElement ba, string type, User? recordedBy = null)
@@ -1359,10 +1365,10 @@ public class WhatsAppService : IWhatsAppService
                 {
                     ContactId = c.Contact.Id, Amount = c.Outstanding, PaymentType = type
                 }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
-                cleared.Add($"• {c.Contact.Name}: ₦{c.Outstanding:N0}");
+                cleared.Add($"• {c.Contact.Name}: {_cs}{c.Outstanding:N0}");
             }
 
-            return $"✅ Cleared {cleared.Count} {type} balance{(cleared.Count != 1 ? "s" : "")}:\n{string.Join("\n", cleared)}\n\nAll balances now ₦0.";
+            return $"✅ Cleared {cleared.Count} {type} balance{(cleared.Count != 1 ? "s" : "")}:\n{string.Join("\n", cleared)}\n\nAll balances now {_cs}0.";
         }
 
         // Single contact — auto-lookup balance if clearAll or no amount
@@ -1386,7 +1392,7 @@ public class WhatsAppService : IWhatsAppService
 
             if (amount.Value <= 0) return "Payment amount must be greater than zero.";
             if (amount.Value > outstanding)
-                return $"⚠️ Payment of ₦{amount.Value:N0} exceeds the outstanding balance of ₦{outstanding:N0} for {contact.Name}. Please confirm the correct amount.";
+                return $"⚠️ Payment of {_cs}{amount.Value:N0} exceeds the outstanding balance of {_cs}{outstanding:N0} for {contact.Name}. Please confirm the correct amount.";
 
             var direction = type == "receivable" ? $"{contact.Name} paid you" : $"You paid {contact.Name}";
 
@@ -1396,8 +1402,8 @@ public class WhatsAppService : IWhatsAppService
             }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
 
             var remaining = outstanding - amount.Value;
-            var suffix = remaining > 0 ? $"\nRemaining balance: ₦{remaining:N0}" : "\nBalance fully cleared ✅";
-            return $"✅ Payment recorded: {direction} ₦{amount.Value:N0}{suffix}";
+            var suffix = remaining > 0 ? $"\nRemaining balance: {_cs}{remaining:N0}" : "\nBalance fully cleared ✅";
+            return $"✅ Payment recorded: {direction} {_cs}{amount.Value:N0}{suffix}";
         }
 
         return "Please specify who paid or whose debt to clear. E.g. \"Sara paid 20k\" or \"Clear Sara's debt\".";
@@ -1437,7 +1443,7 @@ public class WhatsAppService : IWhatsAppService
         _db.Products.Add(product);
         await _db.SaveChangesAsync();
 
-        var priceInfo = sellingPrice.HasValue ? $" at ₦{sellingPrice.Value:N0}/{unit}" : "";
+        var priceInfo = sellingPrice.HasValue ? $" at {_cs}{sellingPrice.Value:N0}/{unit}" : "";
         var stockInfo = initialStock > 0 ? $"\nOpening stock: {initialStock} {unit}" : "";
         return $"✅ Product created: *{name}*{priceInfo}{stockInfo}\n\nYou can now record sales and restock via WhatsApp.";
     }
@@ -1468,10 +1474,10 @@ public class WhatsAppService : IWhatsAppService
         await _db.SaveChangesAsync();
 
         var parts = new List<string>();
-        if (sellingPrice.HasValue) parts.Add($"selling price → ₦{sellingPrice.Value:N0}");
-        if (costPrice.HasValue) parts.Add($"cost price → ₦{costPrice.Value:N0}");
+        if (sellingPrice.HasValue) parts.Add($"selling price → {_cs}{sellingPrice.Value:N0}");
+        if (costPrice.HasValue) parts.Add($"cost price → {_cs}{costPrice.Value:N0}");
 
-        // Check for ₦0 pay-later payables that need updating
+        // Check for {_cs}0 pay-later payables that need updating
         var payLaterNote = "";
         if (costPrice.HasValue && costPrice.Value > 0)
         {
@@ -1489,8 +1495,8 @@ public class WhatsAppService : IWhatsAppService
                 if (noteParts.Length >= 3 && decimal.TryParse(noteParts[2], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var qty))
                 {
                     entry.Amount = qty * costPrice.Value;
-                    entry.Notes = $"Credit purchase: {qty:0.##} {product.Unit} of {product.Name} @ ₦{costPrice.Value:N0}";
-                    payLaterNote += $"\n💳 Updated payable: ₦{entry.Amount:N0} owed";
+                    entry.Notes = $"Credit purchase: {qty:0.##} {product.Unit} of {product.Name} @ {_cs}{costPrice.Value:N0}";
+                    payLaterNote += $"\n💳 Updated payable: {_cs}{entry.Amount:N0} owed";
                 }
             }
             if (zeroPaylaters.Count > 0) await _db.SaveChangesAsync();
@@ -1506,10 +1512,10 @@ public class WhatsAppService : IWhatsAppService
         var netEmoji = net >= 0 ? "📈" : "📉";
 
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"📊 *Daily Summary — {DateTime.UtcNow:MMM d, yyyy}*");
-        sb.AppendLine($"🛒 Sales: ₦{summary.TotalSales:N0} ({summary.SaleCount} transactions)");
-        sb.AppendLine($"💸 Expenses: ₦{summary.TotalExpenses:N0}");
-        sb.AppendLine($"{netEmoji} Net: ₦{net:N0}");
+        sb.AppendLine($"📊 *Daily Summary — {TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _tz):MMM d, yyyy}*");
+        sb.AppendLine($"🛒 Sales: {_cs}{summary.TotalSales:N0} ({summary.SaleCount} transactions)");
+        sb.AppendLine($"💸 Expenses: {_cs}{summary.TotalExpenses:N0}");
+        sb.AppendLine($"{netEmoji} Net: {_cs}{net:N0}");
 
         // Low stock
         if (summary.LowStockCount > 0)
@@ -1517,11 +1523,11 @@ public class WhatsAppService : IWhatsAppService
 
         // Outstanding receivables
         if (summary.OutstandingReceivables > 0)
-            sb.AppendLine($"💰 Outstanding receivables: ₦{summary.OutstandingReceivables:N0}");
+            sb.AppendLine($"💰 Outstanding receivables: {_cs}{summary.OutstandingReceivables:N0}");
 
         // Outstanding payables
         if (summary.OutstandingPayables > 0)
-            sb.AppendLine($"💳 Outstanding payables: ₦{summary.OutstandingPayables:N0}");
+            sb.AppendLine($"💳 Outstanding payables: {_cs}{summary.OutstandingPayables:N0}");
 
         // No sales warning
         if (summary.SaleCount == 0)
@@ -1538,7 +1544,7 @@ public class WhatsAppService : IWhatsAppService
             .FirstOrDefaultAsync();
 
         if (topProduct != null)
-            sb.AppendLine($"🏆 Top today: {topProduct.Name} (₦{topProduct.Rev:N0})");
+            sb.AppendLine($"🏆 Top today: {topProduct.Name} ({_cs}{topProduct.Rev:N0})");
 
         return sb.ToString().TrimEnd();
     }
@@ -1546,14 +1552,14 @@ public class WhatsAppService : IWhatsAppService
     private async Task<string> HandleGetTodaySalesAsync(Guid businessId)
     {
         var s = await _reports.GetDailySummaryAsync(businessId, null);
-        return $"📊 *Today's Sales*\nRevenue: ₦{s.TotalSales:N0} ({s.SaleCount} transactions)\nExpenses: ₦{s.TotalExpenses:N0}\nNet: ₦{s.NetCashIn:N0}";
+        return $"📊 *Today's Sales*\nRevenue: {_cs}{s.TotalSales:N0} ({s.SaleCount} transactions)\nExpenses: {_cs}{s.TotalExpenses:N0}\nNet: {_cs}{s.NetCashIn:N0}";
     }
 
     private async Task<string> HandleGetWeekSalesAsync(Guid businessId)
     {
         var s = await _reports.GetWeeklySummaryAsync(businessId, null);
-        var top = s.TopProducts.Count > 0 ? $"\n🏆 Top: {s.TopProducts[0].ProductName} (₦{s.TopProducts[0].TotalRevenue:N0})" : "";
-        return $"📊 *This Week ({s.WeekStart} – {s.WeekEnd})*\nSales: ₦{s.TotalSales:N0}\nExpenses: ₦{s.TotalExpenses:N0}\nEst. Profit: ₦{s.EstimatedProfit:N0}" + top;
+        var top = s.TopProducts.Count > 0 ? $"\n🏆 Top: {s.TopProducts[0].ProductName} ({_cs}{s.TopProducts[0].TotalRevenue:N0})" : "";
+        return $"📊 *This Week ({s.WeekStart} – {s.WeekEnd})*\nSales: {_cs}{s.TotalSales:N0}\nExpenses: {_cs}{s.TotalExpenses:N0}\nEst. Profit: {_cs}{s.EstimatedProfit:N0}" + top;
     }
 
     private async Task<string> HandleGetAllStockAsync(Guid businessId, JsonElement ba)
@@ -1582,8 +1588,8 @@ public class WhatsAppService : IWhatsAppService
             if (showPrices)
             {
                 var prices = new List<string>();
-                if (p.SellingPrice.HasValue) prices.Add($"Sell: ₦{p.SellingPrice.Value:N0}");
-                if (p.CostPrice.HasValue) prices.Add($"Cost: ₦{p.CostPrice.Value:N0}");
+                if (p.SellingPrice.HasValue) prices.Add($"Sell: {_cs}{p.SellingPrice.Value:N0}");
+                if (p.CostPrice.HasValue) prices.Add($"Cost: {_cs}{p.CostPrice.Value:N0}");
                 if (prices.Count > 0) priceStr = $" — {string.Join(" | ", prices)}";
             }
             return $"• {p.Name}: {p.CurrentStock:0.##} {p.Unit}{holdStr}{flag}{priceStr}";
@@ -1600,7 +1606,7 @@ public class WhatsAppService : IWhatsAppService
         if (items.Count == 0) return "✅ All products have sufficient stock.";
         var lines = items.Select(p =>
         {
-            var priceStr = p.SellingPrice.HasValue ? $" — ₦{p.SellingPrice.Value:N0}" : "";
+            var priceStr = p.SellingPrice.HasValue ? $" — {_cs}{p.SellingPrice.Value:N0}" : "";
             return $"• {p.Name}: {p.CurrentStock:0.##} {p.Unit} (min: {p.LowStockThreshold:0.##}){priceStr}";
         });
         return $"⚠️ *Low Stock* ({items.Count} items)\n{string.Join("\n", lines)}";
@@ -1620,11 +1626,11 @@ public class WhatsAppService : IWhatsAppService
         var lines = balances
             .OrderByDescending(b => type == "receivable" ? b.TotalReceivable : b.TotalPayable)
             .Select(b => type == "receivable"
-                ? $"• {b.ContactName}: ₦{b.TotalReceivable:N0}"
-                : $"• {b.ContactName}: ₦{b.TotalPayable:N0}");
+                ? $"• {b.ContactName}: {_cs}{b.TotalReceivable:N0}"
+                : $"• {b.ContactName}: {_cs}{b.TotalPayable:N0}");
 
         var countNote = balances.Count > 1 ? $" ({balances.Count} contacts)" : "";
-        return $"{title}{countNote}\n{string.Join("\n", lines)}\n\n*Total: ₦{total:N0}*";
+        return $"{title}{countNote}\n{string.Join("\n", lines)}\n\n*Total: {_cs}{total:N0}*";
     }
 
     private async Task<string> HandleGetContactBalanceAsync(Guid businessId, JsonElement ba)
@@ -1648,15 +1654,15 @@ public class WhatsAppService : IWhatsAppService
         if (receivable <= 0 && payable <= 0) return $"{contactName} has no outstanding balance.";
 
         var parts = new List<string>();
-        if (receivable > 0) parts.Add($"owes you ₦{receivable:N0}");
-        if (payable > 0) parts.Add($"you owe ₦{payable:N0}");
+        if (receivable > 0) parts.Add($"owes you {_cs}{receivable:N0}");
+        if (payable > 0) parts.Add($"you owe {_cs}{payable:N0}");
         return $"💼 {contactName}: {string.Join(", ", parts)}";
     }
 
     private async Task<string> HandleGetProfitEstimateAsync(Guid businessId)
     {
         var pos = await _reports.GetCashPositionAsync(businessId);
-        return $"📈 *This Month*\nSales: ₦{pos.TotalSalesThisMonth:N0}\nExpenses: ₦{pos.TotalExpensesThisMonth:N0}\nEst. Cash In: ₦{pos.EstimatedCashIn:N0}\nReceivables: ₦{pos.OutstandingReceivables:N0}\nPayables: ₦{pos.OutstandingPayables:N0}\n*Net: ₦{pos.NetPosition:N0}*";
+        return $"📈 *This Month*\nSales: {_cs}{pos.TotalSalesThisMonth:N0}\nExpenses: {_cs}{pos.TotalExpensesThisMonth:N0}\nEst. Cash In: {_cs}{pos.EstimatedCashIn:N0}\nReceivables: {_cs}{pos.OutstandingReceivables:N0}\nPayables: {_cs}{pos.OutstandingPayables:N0}\n*Net: {_cs}{pos.NetPosition:N0}*";
     }
 
     private async Task<string> HandleGetProductSalesTodayAsync(Guid businessId, JsonElement ba)
@@ -1679,7 +1685,7 @@ public class WhatsAppService : IWhatsAppService
         var totalRev = saleItems.Sum(i => i.TotalPrice);
         var unit = saleItems.First().Product.Unit;
 
-        return $"📊 *{productName}* today: {totalQty:0.##} {unit} sold — ₦{totalRev:N0}";
+        return $"📊 *{productName}* today: {totalQty:0.##} {unit} sold — {_cs}{totalRev:N0}";
     }
 
     private async Task<string> HandleAddStaffAsync(Guid businessId, JsonElement ba)
@@ -1690,7 +1696,7 @@ public class WhatsAppService : IWhatsAppService
         var fullName = ba.GetStringOrNull("fullName");
         var phoneNumber = ba.GetStringOrNull("phoneNumber");
         if (string.IsNullOrEmpty(fullName) || string.IsNullOrEmpty(phoneNumber))
-            return "Please provide the staff member's name and phone number.\nExample: \"Add staff Mary 08012345678\"";
+            return "Please provide the staff member's name and phone number.\nExample: \"Add staff Mary +2348012345678\" or \"Add staff Ama +233241234567\"";
 
         var normalizedPhone = NormalizePhone(phoneNumber);
         if (string.IsNullOrEmpty(normalizedPhone))
@@ -1818,7 +1824,7 @@ public class WhatsAppService : IWhatsAppService
             .ToList();
 
         var unit = saleItems.First().Product.Unit;
-        var lines = grouped.Select(s => $"• {s.Staff}: {s.Qty:0.##} {unit} — ₦{s.Rev:N0}");
+        var lines = grouped.Select(s => $"• {s.Staff}: {s.Qty:0.##} {unit} — {_cs}{s.Rev:N0}");
 
         return $"👥 *Who sold {productName} today*\n{string.Join("\n", lines)}";
     }
@@ -1850,11 +1856,11 @@ public class WhatsAppService : IWhatsAppService
             var customer = i.Sale.Contact?.Name ?? "Walk-in customer";
             var staff = i.Sale.RecordedByName ?? "Unknown";
             var status = i.Sale.PaymentStatus != PaymentStatus.Paid ? $" ({i.Sale.PaymentStatus})" : "";
-            var time = i.Sale.CreatedAtUtc.ToString("HH:mm");
-            return $"• {customer}: {i.Quantity:0.##} {unit} @ ₦{i.UnitPrice:N0} = ₦{i.TotalPrice:N0}{status} — by {staff} at {time}";
+            var time = TimeZoneInfo.ConvertTimeFromUtc(i.Sale.CreatedAtUtc, _tz).ToString("HH:mm");
+            return $"• {customer}: {i.Quantity:0.##} {unit} @ {_cs}{i.UnitPrice:N0} = {_cs}{i.TotalPrice:N0}{status} — by {staff} at {time}";
         });
 
-        return $"🛒 *Who bought {actualName} today* ({totalQty:0.##} {unit} total — ₦{totalRev:N0})\n{string.Join("\n", lines)}";
+        return $"🛒 *Who bought {actualName} today* ({totalQty:0.##} {unit} total — {_cs}{totalRev:N0})\n{string.Join("\n", lines)}";
     }
 
     private async Task<string> HandleGetSpecificStockAsync(Guid businessId, JsonElement ba)
@@ -1883,8 +1889,8 @@ public class WhatsAppService : IWhatsAppService
         var lines = matched.Select(p =>
         {
             var prices = new List<string>();
-            if (p.SellingPrice.HasValue) prices.Add($"Sell: ₦{p.SellingPrice.Value:N0}");
-            if (p.CostPrice.HasValue) prices.Add($"Cost: ₦{p.CostPrice.Value:N0}");
+            if (p.SellingPrice.HasValue) prices.Add($"Sell: {_cs}{p.SellingPrice.Value:N0}");
+            if (p.CostPrice.HasValue) prices.Add($"Cost: {_cs}{p.CostPrice.Value:N0}");
             var priceStr = prices.Count > 0 ? $" — {string.Join(" | ", prices)}" : "";
             var flag = p.CurrentStock <= p.LowStockThreshold ? " ⚠️" : "";
             return $"• {p.Name}: {p.CurrentStock:0.##} {p.Unit}{flag}{priceStr}";
@@ -1914,9 +1920,9 @@ public class WhatsAppService : IWhatsAppService
             .OrderByDescending(p => p.Rev).ToList();
 
         var total = grouped.Sum(p => p.Rev);
-        var lines = grouped.Select(p => $"• {p.Name}: {p.Qty:0.##} {p.Unit} — ₦{p.Rev:N0}");
+        var lines = grouped.Select(p => $"• {p.Name}: {p.Qty:0.##} {p.Unit} — {_cs}{p.Rev:N0}");
 
-        return $"📊 *{staffName}'s sales today*\n{string.Join("\n", lines)}\n\n*Total: ₦{total:N0}*";
+        return $"📊 *{staffName}'s sales today*\n{string.Join("\n", lines)}\n\n*Total: {_cs}{total:N0}*";
     }
 
     // ─── Corrections + Returns ─────────────────────────────────────────────────
@@ -1965,7 +1971,7 @@ public class WhatsAppService : IWhatsAppService
 
         var diff = oldQty - newQty.Value;
         return $"✅ Corrected! Previous sale of {oldQty:0.##} voided.\n" +
-               $"• {newQty.Value:0.##} {product.Unit} of {product.Name} @ ₦{unitPrice:N0} = ₦{newSale.TotalAmount:N0}\n" +
+               $"• {newQty.Value:0.##} {product.Unit} of {product.Name} @ {_cs}{unitPrice:N0} = {_cs}{newSale.TotalAmount:N0}\n" +
                (diff > 0 ? $"Stock restored: {diff:0.##} {product.Unit} returned to inventory." : $"Stock adjusted: {Math.Abs(diff):0.##} {product.Unit} additional removed.");
     }
 
@@ -1990,7 +1996,7 @@ public class WhatsAppService : IWhatsAppService
         }, recordedBy?.Id, recordedBy?.FullName);
 
         var refundAmount = product.SellingPrice.HasValue ? qty.Value * product.SellingPrice.Value : 0;
-        var refundNote = refundAmount > 0 ? $"\nRefund amount: ₦{refundAmount:N0}" : "";
+        var refundNote = refundAmount > 0 ? $"\nRefund amount: {_cs}{refundAmount:N0}" : "";
 
         return $"✅ Return processed:\n• {qty.Value:0.##} {product.Unit} of {product.Name} returned to stock\nNew stock: {(product.CurrentStock + qty.Value):0.##} {product.Unit}{refundNote}";
     }
@@ -2083,11 +2089,11 @@ public class WhatsAppService : IWhatsAppService
 
         var lines = sales.Select(s =>
         {
-            var time = s.CreatedAtUtc.ToString("h:mm tt");
+            var time = TimeZoneInfo.ConvertTimeFromUtc(s.CreatedAtUtc, _tz).ToString("h:mm tt");
             var items = string.Join(", ", s.Items.Select(i => $"{i.Quantity:0.##} {i.Product.Unit} {i.Product.Name}"));
             var buyer = s.Contact?.Name ?? "Walk-in";
             var staff = s.RecordedByName ?? "—";
-            return $"• {time} — {items} → {buyer} — ₦{s.TotalAmount:N0} ({s.PaymentStatus}) [by {staff}]";
+            return $"• {time} — {items} → {buyer} — {_cs}{s.TotalAmount:N0} ({s.PaymentStatus}) [by {staff}]";
         });
 
         return $"📋 *Today's Transactions*\n{string.Join("\n", lines)}";
@@ -2152,14 +2158,14 @@ public class WhatsAppService : IWhatsAppService
         {
             sb.AppendLine("\n📈 Most profitable:");
             foreach (var p in profitable)
-                sb.AppendLine($"• {p.Name}: ₦{p.Profit:N0} profit ({p.Margin:0.#}% margin)");
+                sb.AppendLine($"• {p.Name}: {_cs}{p.Profit:N0} profit ({p.Margin:0.#}% margin)");
         }
 
         if (losing.Count > 0)
         {
             sb.AppendLine("\n📉 Losing money:");
             foreach (var p in losing)
-                sb.AppendLine($"• {p.Name}: ₦{Math.Abs(p.Profit):N0} loss");
+                sb.AppendLine($"• {p.Name}: {_cs}{Math.Abs(p.Profit):N0} loss");
         }
 
         return sb.ToString().TrimEnd();
@@ -2236,7 +2242,7 @@ public class WhatsAppService : IWhatsAppService
             : allSold.OrderByDescending(p => p.TotalRevenue).Take(count).ToList();
 
         var lines = sorted.Select((p, i) =>
-            $"{i + 1}. {p.Name}: {p.TotalQty:0.##} {p.Unit} sold — ₦{p.TotalRevenue:N0}");
+            $"{i + 1}. {p.Name}: {p.TotalQty:0.##} {p.Unit} sold — {_cs}{p.TotalRevenue:N0}");
 
         var title = isBottom ? "📉 *Least Selling Products (Last 30 Days)*" : "🏆 *Top Products (Last 30 Days)*";
         return $"{title}\n{string.Join("\n", lines)}";
@@ -2267,9 +2273,9 @@ public class WhatsAppService : IWhatsAppService
 
         var grandTotal = grouped.Sum(p => p.TotalRevenue);
         var lines = grouped.Select(p =>
-            $"• {p.Name}: {p.TotalQty:0.##} {p.Unit} sold — ₦{p.TotalRevenue:N0}");
+            $"• {p.Name}: {p.TotalQty:0.##} {p.Unit} sold — {_cs}{p.TotalRevenue:N0}");
 
-        return $"🛒 *Products Sold Today*\n{string.Join("\n", lines)}\n\n*Total: ₦{grandTotal:N0}*";
+        return $"🛒 *Products Sold Today*\n{string.Join("\n", lines)}\n\n*Total: {_cs}{grandTotal:N0}*";
     }
 
     private async Task<string> HandleHoldStockAsync(Guid businessId, JsonElement ba)
@@ -2323,7 +2329,7 @@ public class WhatsAppService : IWhatsAppService
             try
             {
                 var sale = await _holds.ConvertToSaleAsync(businessId, match.Id);
-                return $"✅ Hold converted to sale!\n• {match.Quantity:0.##} {match.Unit} of {match.ProductName} sold to {match.ContactName}\n*Total: ₦{sale.TotalAmount:N0}*";
+                return $"✅ Hold converted to sale!\n• {match.Quantity:0.##} {match.Unit} of {match.ProductName} sold to {match.ContactName}\n*Total: {_cs}{sale.TotalAmount:N0}*";
             }
             catch (Exception ex)
             {
@@ -2387,7 +2393,7 @@ public class WhatsAppService : IWhatsAppService
         }
 
         if (replacements.Count == 0)
-            return $"What would you like to change about the last expense (₦{lastExpense.Amount:N0} {lastExpense.Category})? " +
+            return $"What would you like to change about the last expense ({_cs}{lastExpense.Amount:N0} {lastExpense.Category})? " +
                    "For example: \"Change amount to 25,000\" or \"Change category to Transport\".";
 
         // Void the original expense
@@ -2405,16 +2411,16 @@ public class WhatsAppService : IWhatsAppService
                 Category = cat,
                 Amount = amt,
                 PaidTo = paidTo,
-                Notes = $"{notes ?? cat} (corrected from {oldRef}: ₦{lastExpense.Amount:N0} {lastExpense.Category})"
+                Notes = $"{notes ?? cat} (corrected from {oldRef}: {_cs}{lastExpense.Amount:N0} {lastExpense.Category})"
             }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
 
             var paidToNote = !string.IsNullOrEmpty(paidTo) ? $" to {paidTo}" : "";
-            results.Add($"₦{amt:N0} for {cat}{paidToNote}");
+            results.Add($"{_cs}{amt:N0} for {cat}{paidToNote}");
         }
 
         await _db.SaveChangesAsync();
 
-        return $"✅ Corrected! Original expense voided (₦{lastExpense.Amount:N0} {lastExpense.Category}).\n" +
+        return $"✅ Corrected! Original expense voided ({_cs}{lastExpense.Amount:N0} {lastExpense.Category}).\n" +
                $"Replacement{(results.Count > 1 ? "s" : "")}:\n" +
                string.Join("\n", results.Select((r, i) => $"• {r}"));
     }
@@ -2431,9 +2437,9 @@ public class WhatsAppService : IWhatsAppService
         if (expenses.Count == 0) return "No expenses recorded today.";
 
         var lines = expenses.Select(e =>
-            $"• {e.Category} — ₦{e.Amount:N0}" + (e.Notes != null ? $" ({e.Notes})" : ""));
+            $"• {e.Category} — {_cs}{e.Amount:N0}" + (e.Notes != null ? $" ({e.Notes})" : ""));
         var total = expenses.Sum(e => e.Amount);
-        return $"💸 *Today's Expenses* ({expenses.Count} items)\n{string.Join("\n", lines)}\n\n*Total: ₦{total:N0}*";
+        return $"💸 *Today's Expenses* ({expenses.Count} items)\n{string.Join("\n", lines)}\n\n*Total: {_cs}{total:N0}*";
     }
 
     private async Task<string> HandleGetRecentExpensesAsync(Guid businessId)
@@ -2449,11 +2455,11 @@ public class WhatsAppService : IWhatsAppService
 
         var lines = expenses.Select(e =>
         {
-            var date = e.CreatedAtUtc.ToString("MMM d");
-            return $"• {date} — {e.Category} — ₦{e.Amount:N0}" + (e.PaidTo != null ? $" (to {e.PaidTo})" : "");
+            var date = TimeZoneInfo.ConvertTimeFromUtc(e.CreatedAtUtc, _tz).ToString("MMM d");
+            return $"• {date} — {e.Category} — {_cs}{e.Amount:N0}" + (e.PaidTo != null ? $" (to {e.PaidTo})" : "");
         });
         var total = expenses.Sum(e => e.Amount);
-        return $"💸 *Recent Expenses* (last 7 days)\n{string.Join("\n", lines)}\n\n*Total: ₦{total:N0}*";
+        return $"💸 *Recent Expenses* (last 7 days)\n{string.Join("\n", lines)}\n\n*Total: {_cs}{total:N0}*";
     }
 
     private async Task<string> HandleUpdateLowStockThresholdAsync(Guid businessId, JsonElement ba)
@@ -2533,7 +2539,7 @@ public class WhatsAppService : IWhatsAppService
     private static string HandleHelp() =>
         "📖 *More commands:*\n\n" +
         "🔒 *Holds:* \"Hold 5 rice for Ama\" / \"What's on hold?\"\n" +
-        "👥 *Staff:* \"Add staff Mary 08012345678 as Admin\" / \"Who are my staff?\" / \"What did Mary sell?\"\n" +
+        "👥 *Staff:* \"Add staff Mary +2348012345678 as Admin\" / \"Who are my staff?\" / \"What did Mary sell?\"\n" +
         "    _Say *roles* to see what each role can do_\n" +
         "🔮 *Insights:* \"When will I run out?\" / \"Most profitable product?\" / \"Stock value\"\n" +
         "💰 *Debts:* \"Clear Ama's debt\" / \"Clear all debts\"\n" +
@@ -2552,7 +2558,7 @@ public class WhatsAppService : IWhatsAppService
         "🛒 *Sales* — Record sales, view stock, view own sales reports. Cannot manage staff or see full reports.\n\n" +
         "📒 *Bookkeeper* — Record expenses, manage debts, view all reports & stock. Cannot record sales.\n\n" +
         "👁️ *Viewer* — View-only. Can see reports and stock levels but cannot record anything.\n\n" +
-        "To add staff with a role:\n\"Add staff Mary 08012345678 as Bookkeeper\"";
+        "To add staff with a role:\n\"Add staff Mary +2348012345678 as Bookkeeper\"";
 
     private static string HandleShowReports() =>
         "📊 *Available Reports*\n\n" +
@@ -2733,13 +2739,13 @@ public class WhatsAppService : IWhatsAppService
                 ContactId = contact.Id,
                 EntryType = paymentType,
                 Amount = outstanding,
-                Notes = $"Debt cleared (adjusted from ₦{outstanding:N0} to ₦0)",
+                Notes = $"Debt cleared (adjusted from {_cs}{outstanding:N0} to {_cs}0)",
                 Source = EntrySource.WhatsApp,
                 RecordedByUserId = recordedBy?.Id,
                 RecordedByName = recordedBy?.FullName
             });
             await _db.SaveChangesAsync();
-            return $"✅ Cleared {contact.Name}'s {typeLabel} balance (was ₦{outstanding:N0}).";
+            return $"✅ Cleared {contact.Name}'s {typeLabel} balance (was {_cs}{outstanding:N0}).";
         }
 
         // Compute CURRENT outstanding balance (sum of all entries), not just the latest entry's amount.
@@ -2758,7 +2764,7 @@ public class WhatsAppService : IWhatsAppService
                            - allEntries.Where(e => e.EntryType == payType).Sum(e => e.Amount);
 
         var delta = newAmount.Value - currentBalance;
-        if (delta == 0) return $"{contact.Name}'s {typeLabel} is already ₦{currentBalance:N0}.";
+        if (delta == 0) return $"{contact.Name}'s {typeLabel} is already {_cs}{currentBalance:N0}.";
 
         var adjustmentType = delta > 0 ? debtType : payType;
 
@@ -2768,7 +2774,7 @@ public class WhatsAppService : IWhatsAppService
             ContactId = contact.Id,
             EntryType = adjustmentType,
             Amount = Math.Abs(delta),
-            Notes = $"Adjusted: ₦{currentBalance:N0} → ₦{newAmount.Value:N0}",
+            Notes = $"Adjusted: {_cs}{currentBalance:N0} → {_cs}{newAmount.Value:N0}",
             Source = "Adjustment",
             RecordedByUserId = recordedBy?.Id,
             RecordedByName = recordedBy?.FullName
@@ -2777,7 +2783,7 @@ public class WhatsAppService : IWhatsAppService
 
         var direction = latestEntry.EntryType == LedgerEntryType.Receivable
             ? $"{contact.Name} owes you" : $"You owe {contact.Name}";
-        return $"✅ Adjusted: {direction} ₦{newAmount.Value:N0} (was ₦{currentBalance:N0})";
+        return $"✅ Adjusted: {direction} {_cs}{newAmount.Value:N0} (was {_cs}{currentBalance:N0})";
     }
 
     private async Task<string> HandleCreateContactAsync(Guid businessId, JsonElement ba)
@@ -3026,7 +3032,7 @@ public class WhatsAppService : IWhatsAppService
                         ContactId = cId.Value, Amount = lastSale.TotalAmount, Notes = "Credit sale (updated)"
                     }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
                     var cName = lastSale.Contact?.Name ?? ba.GetStringOrNull("contactName") ?? "Customer";
-                    changes.Add($"{cName} now owes ₦{lastSale.TotalAmount:N0}");
+                    changes.Add($"{cName} now owes {_cs}{lastSale.TotalAmount:N0}");
                 }
             }
         }
@@ -3083,14 +3089,14 @@ public class WhatsAppService : IWhatsAppService
         {
             var sale = (Sale)most.Entity;
             await _sales.VoidAsync(businessId, sale.Id, recordedBy?.Id, recordedBy?.FullName);
-            return $"✅ Last sale (₦{sale.TotalAmount:N0}) has been voided. Stock restored.";
+            return $"✅ Last sale ({_cs}{sale.TotalAmount:N0}) has been voided. Stock restored.";
         }
 
         if (most.Type == "expense")
         {
             var expense = (Expense)most.Entity;
             await _expenses.DeleteAsync(businessId, expense.Id);
-            return $"✅ Last expense (₦{expense.Amount:N0} — {expense.Category}) has been deleted.";
+            return $"✅ Last expense ({_cs}{expense.Amount:N0} — {expense.Category}) has been deleted.";
         }
 
         if (most.Type == "inventory")
@@ -3192,15 +3198,15 @@ public class WhatsAppService : IWhatsAppService
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("📊 *This Week vs Last Week*\n");
         sb.AppendLine($"*Sales*");
-        sb.AppendLine($"This week: ₦{thisWeekSales:N0}");
-        sb.AppendLine($"Last week: ₦{lastWeekSales:N0}");
+        sb.AppendLine($"This week: {_cs}{thisWeekSales:N0}");
+        sb.AppendLine($"Last week: {_cs}{lastWeekSales:N0}");
         sb.AppendLine($"{salesArrow} {(salesChange >= 0 ? "+" : "")}{salesChange:0.#}%\n");
         sb.AppendLine($"*Expenses*");
-        sb.AppendLine($"This week: ₦{thisWeekExpenses:N0}");
-        sb.AppendLine($"Last week: ₦{lastWeekExpenses:N0}\n");
+        sb.AppendLine($"This week: {_cs}{thisWeekExpenses:N0}");
+        sb.AppendLine($"Last week: {_cs}{lastWeekExpenses:N0}\n");
         sb.AppendLine($"*Net*");
-        sb.AppendLine($"This week: ₦{thisNet:N0}");
-        sb.AppendLine($"Last week: ₦{lastNet:N0}");
+        sb.AppendLine($"This week: {_cs}{thisNet:N0}");
+        sb.AppendLine($"Last week: {_cs}{lastNet:N0}");
 
         return sb.ToString().TrimEnd();
     }
@@ -3231,7 +3237,7 @@ public class WhatsAppService : IWhatsAppService
         var totalQty = saleItems.Sum(i => i.Quantity);
 
         var emoji = profit > 0 ? "✅" : "❌";
-        return $"{emoji} *{product.Name} — 30 Day Profit*\n\nSold: {totalQty:0.##} {product.Unit}\nRevenue: ₦{revenue:N0}\nCost: ₦{cost:N0}\nProfit: ₦{profit:N0}\nMargin: {margin:0.#}%";
+        return $"{emoji} *{product.Name} — 30 Day Profit*\n\nSold: {totalQty:0.##} {product.Unit}\nRevenue: {_cs}{revenue:N0}\nCost: {_cs}{cost:N0}\nProfit: {_cs}{profit:N0}\nMargin: {margin:0.#}%";
     }
 
     // ─── Plan Queries ───────────────────────────────────────────────────────────
@@ -3268,7 +3274,7 @@ public class WhatsAppService : IWhatsAppService
         else if (Common.PlanGuard.IsSubscriber(biz))
             sb.AppendLine("✅ Active subscription");
 
-        if (plan.PricePerMonth > 0) sb.AppendLine($"💰 ₦{plan.PricePerMonth:N0}/month");
+        if (plan.PricePerMonth > 0) sb.AppendLine($"💰 {_cs}{plan.PricePerMonth:N0}/month");
         sb.AppendLine($"\n*Features:*");
         sb.AppendLine($"• {(plan.MaxProducts < 0 ? "Unlimited" : plan.MaxProducts.ToString())} products");
         sb.AppendLine($"• {(plan.MaxMessagesPerMonth < 0 ? "Unlimited" : plan.MaxMessagesPerMonth.ToString())} messages/month");
@@ -3297,19 +3303,19 @@ public class WhatsAppService : IWhatsAppService
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("📊 *BizPilot Plans*\n");
 
-        sb.AppendLine("*Starter* — ₦3,500/month");
+        sb.AppendLine("*Starter* — {_cs}3,500/month");
         sb.AppendLine("30 products, 150 messages, 1 user");
         sb.AppendLine("WhatsApp bot, daily summaries, basic dashboard\n");
 
-        sb.AppendLine("*Shop* — ₦7,500/month");
+        sb.AppendLine("*Shop* — {_cs}7,500/month");
         sb.AppendLine("Unlimited products, 850 messages, 4 users");
         sb.AppendLine("Everything in Starter + ledger, stock holds\n");
 
-        sb.AppendLine("*Pro* — ₦12,500/month");
+        sb.AppendLine("*Pro* — {_cs}12,500/month");
         sb.AppendLine("Unlimited products & messages, 11 users");
         sb.AppendLine("Everything in Shop + CSV import, advanced reports\n");
 
-        sb.AppendLine("*Business* — ₦30,000/month");
+        sb.AppendLine("*Business* — {_cs}30,000/month");
         sb.AppendLine("Unlimited everything + multi-branch, API access\n");
 
         sb.AppendLine("Say *subscribe to [plan]* to get started, or manage at app.bizpilot-ai.com/settings");
@@ -3347,7 +3353,7 @@ public class WhatsAppService : IWhatsAppService
             if (!confirmed)
             {
                 var endsAt = business.SubscriptionEndsAt?.ToString("dd MMM yyyy") ?? "end of billing period";
-                return $"You want to switch from *{business.SubscribedPlan![0..1].ToUpper() + business.SubscribedPlan[1..]}* to *{planLabel}* (₦{planConfig.PricePerMonth:N0}/month).\n\n" +
+                return $"You want to switch from *{business.SubscribedPlan![0..1].ToUpper() + business.SubscribedPlan[1..]}* to *{planLabel}* ({_cs}{planConfig.PricePerMonth:N0}/month).\n\n" +
                        $"Your current plan will stay active until *{endsAt}*, then you'll be switched to {planLabel}.\n\n" +
                        $"Reply *yes* to confirm, or *no* to keep your current plan.";
             }
@@ -3356,14 +3362,14 @@ public class WhatsAppService : IWhatsAppService
             await _db.SaveChangesAsync();
 
             var switchDate = business.SubscriptionEndsAt?.ToString("dd MMM yyyy") ?? "end of your billing period";
-            return $"✅ Plan change scheduled.\n\nYou'll keep your current features until *{switchDate}*, then switch to *{planLabel}* (₦{planConfig.PricePerMonth:N0}/month).\n\nTo cancel this change, say *cancel plan change*.";
+            return $"✅ Plan change scheduled.\n\nYou'll keep your current features until *{switchDate}*, then switch to *{planLabel}* ({_cs}{planConfig.PricePerMonth:N0}/month).\n\nTo cancel this change, say *cancel plan change*.";
         }
 
         // Upgrade or new subscription — go to payment
         if (!confirmed)
         {
             var action = hasActiveSub ? "upgrade" : "subscribe";
-            return $"You're about to {action} to *{planLabel}* at *₦{planConfig.PricePerMonth:N0}/month*.\n\n" +
+            return $"You're about to {action} to *{planLabel}* at *{_cs}{planConfig.PricePerMonth:N0}/month*.\n\n" +
                    $"Reply *yes* to proceed with payment, or *no* to cancel.";
         }
 
@@ -3387,7 +3393,7 @@ public class WhatsAppService : IWhatsAppService
             business.PendingPlanChange = null;
             await _db.SaveChangesAsync();
 
-            return $"💳 *Subscribe to {planLabel}* — ₦{planConfig.PricePerMonth:N0}/month\n\n" +
+            return $"💳 *Subscribe to {planLabel}* — {_cs}{planConfig.PricePerMonth:N0}/month\n\n" +
                    $"Complete your payment here:\n{url}\n\n" +
                    $"Your plan will activate immediately after payment.";
         }
@@ -3471,10 +3477,10 @@ public class WhatsAppService : IWhatsAppService
 
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"📦 *Inventory Value* ({products.Count} products in stock)\n");
-        if (totalCostValue > 0) sb.AppendLine($"Cost value: ₦{totalCostValue:N0}");
-        if (totalSellValue > 0) sb.AppendLine($"Selling value: ₦{totalSellValue:N0}");
+        if (totalCostValue > 0) sb.AppendLine($"Cost value: {_cs}{totalCostValue:N0}");
+        if (totalSellValue > 0) sb.AppendLine($"Selling value: {_cs}{totalSellValue:N0}");
         if (totalCostValue > 0 && totalSellValue > 0)
-            sb.AppendLine($"Potential profit: ₦{(totalSellValue - totalCostValue):N0}");
+            sb.AppendLine($"Potential profit: {_cs}{(totalSellValue - totalCostValue):N0}");
         if (noCost > 0) sb.AppendLine($"\n⚠️ {noCost} product{(noCost != 1 ? "s" : "")} missing cost price");
         if (noSell > 0) sb.AppendLine($"⚠️ {noSell} product{(noSell != 1 ? "s" : "")} missing selling price");
 
@@ -3515,9 +3521,9 @@ public class WhatsAppService : IWhatsAppService
             PaymentMethod = lastSale.PaymentMethod
         }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
 
-        var lines = sale.Items.Select(i => $"• {i.Quantity} {i.Unit} of {i.ProductName} @ ₦{i.UnitPrice:N0} = ₦{i.TotalPrice:N0}");
+        var lines = sale.Items.Select(i => $"• {i.Quantity} {i.Unit} of {i.ProductName} @ {_cs}{i.UnitPrice:N0} = {_cs}{i.TotalPrice:N0}");
         var skippedNote = skipped.Count > 0 ? $"\n\n⚠️ Skipped: {string.Join(", ", skipped)}" : "";
-        return $"✅ Sale repeated!\n{string.Join("\n", lines)}\n\n*Total: ₦{sale.TotalAmount:N0}* ({sale.PaymentStatus}){skippedNote}";
+        return $"✅ Sale repeated!\n{string.Join("\n", lines)}\n\n*Total: {_cs}{sale.TotalAmount:N0}* ({sale.PaymentStatus}){skippedNote}";
     }
 
     // ─── Add to Last Sale ──────────────────────────────────────────────────────
@@ -3580,7 +3586,7 @@ public class WhatsAppService : IWhatsAppService
             await _db.SaveChangesAsync();
             await tx.CommitAsync();
 
-            return $"✅ Added {qty.Value:0.##} {product.Unit} of {product.Name} @ ₦{unitPrice:N0} to last sale.\nNew total: ₦{lastSale.TotalAmount:N0}";
+            return $"✅ Added {qty.Value:0.##} {product.Unit} of {product.Name} @ {_cs}{unitPrice:N0} to last sale.\nNew total: {_cs}{lastSale.TotalAmount:N0}";
         }
         catch (DbUpdateConcurrencyException)
         {

@@ -38,7 +38,7 @@ export default function GetStartedPage() {
           <p className="text-sm text-muted-foreground mt-1">
             Reply with something like:
           </p>
-          <pre className="bg-muted p-3 rounded mt-2 text-sm">Sold 5 bags of rice for ₦25000</pre>
+          <pre className="bg-muted p-3 rounded mt-2 text-sm">Sold 5 bags of rice for 25000</pre>
           <p className="text-sm text-muted-foreground mt-2">
             You will get a confirmation message back within seconds.
           </p>

@@ -187,6 +187,8 @@ public class LedgerService : ILedgerService
         }
 
         var adjustmentType = delta > 0 ? debtType : payType;
+        var business = await _db.Businesses.FindAsync(businessId);
+        var cs = BillingConfig.Symbol(business?.Currency);
 
         var adjustmentEntry = new LedgerEntry
         {
@@ -194,7 +196,7 @@ public class LedgerService : ILedgerService
             ContactId = entry.ContactId,
             EntryType = adjustmentType,
             Amount = Math.Abs(delta),
-            Notes = $"Adjusted {entry.Contact.Name}: ₦{currentBalance:N0} → ₦{request.Amount:N0}",
+            Notes = $"Adjusted {entry.Contact.Name}: {cs}{currentBalance:N0} → {cs}{request.Amount:N0}",
             Source = "Adjustment",
             RecordedByUserId = entry.RecordedByUserId,
             RecordedByName = entry.RecordedByName
@@ -224,13 +226,16 @@ public class LedgerService : ILedgerService
             _ => entry.EntryType
         };
 
+        var business = await _db.Businesses.FindAsync(businessId);
+        var cs = BillingConfig.Symbol(business?.Currency);
+
         _db.LedgerEntries.Add(new LedgerEntry
         {
             BusinessId = businessId,
             ContactId = entry.ContactId,
             EntryType = reversalType,
             Amount = entry.Amount,
-            Notes = $"Deleted: {entry.Notes ?? entry.EntryType.ToString()} (₦{entry.Amount:N0})",
+            Notes = $"Deleted: {entry.Notes ?? entry.EntryType.ToString()} ({cs}{entry.Amount:N0})",
             Source = "Adjustment",
             RecordedByUserId = entry.RecordedByUserId,
             RecordedByName = entry.RecordedByName

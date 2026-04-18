@@ -177,6 +177,8 @@ public class SalesService : ISalesService
                 .Where(i => products.ContainsKey(i.ProductId))
                 .Select(i => $"{i.Quantity:0.##} {products[i.ProductId].Unit} {products[i.ProductId].Name}"));
             var customerNote = sale.Contact != null ? $" to {sale.Contact.Name}" : "";
+            var business = await _db.Businesses.FindAsync(businessId);
+            var cs = BillingConfig.Symbol(business?.Currency);
 
             foreach (var item in sale.Items)
             {
@@ -189,7 +191,7 @@ public class SalesService : ISalesService
                         ProductId = item.ProductId,
                         Type = InventoryTransactionType.Adjustment,
                         Quantity = item.Quantity,
-                        Notes = $"Voided sale: {item.Quantity:0.##} {product.Unit} {product.Name} (₦{item.TotalPrice:N0}) returned to stock",
+                        Notes = $"Voided sale: {item.Quantity:0.##} {product.Unit} {product.Name} ({cs}{item.TotalPrice:N0}) returned to stock",
                         RecordedByUserId = voidedByUserId ?? sale.RecordedByUserId,
                         RecordedByName = voidedByName ?? sale.RecordedByName
                     });
@@ -205,7 +207,7 @@ public class SalesService : ISalesService
                     ContactId = sale.ContactId.Value,
                     EntryType = LedgerEntryType.ReceivablePayment,
                     Amount = sale.TotalAmount,
-                    Notes = $"Voided sale{customerNote}: {saleSummary} (₦{sale.TotalAmount:N0}) — receivable reversed",
+                    Notes = $"Voided sale{customerNote}: {saleSummary} ({cs}{sale.TotalAmount:N0}) — receivable reversed",
                     Source = "Adjustment",
                     RecordedByUserId = voidedByUserId,
                     RecordedByName = voidedByName

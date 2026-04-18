@@ -80,9 +80,14 @@ public class SubscriptionController : BizPilotBaseController
         var amount = BillingConfig.GetPrice(plan, billingCycle, currency)
             ?? 0m;
 
-        var txRef = $"bizpilot-{BusinessId:N}-{DateTime.UtcNow.Ticks}";
-        var publicKey = _config["Flutterwave:PublicKey"] ?? "";
+        var txRef = $"bizpilot-{BusinessId:N}-{plan}-{cycle}-{DateTime.UtcNow.Ticks}";
+        var publicKey = _config["Flutterwave:PublicKey"];
+        if (string.IsNullOrEmpty(publicKey))
+            return StatusCode(500, ApiResponse<object>.Fail("Payment gateway not configured. Please contact support."));
         var callbackUrl = _config["Flutterwave:CallbackUrl"] ?? "https://app.bizpilot-ai.com/settings";
+
+        // Create a payment plan for auto-renewing card subscriptions
+        var paymentPlanId = await _flutterwave.GetOrCreatePaymentPlanAsync(plan, billingCycle, currency, amount);
 
         return Ok(ApiResponse<object>.Ok(new
         {
@@ -97,6 +102,7 @@ public class SubscriptionController : BizPilotBaseController
             billingCycle = cycle,
             callbackUrl,
             businessName = business.Name,
+            paymentPlanId,
         }, "Ready for checkout."));
     }
 

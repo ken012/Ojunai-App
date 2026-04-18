@@ -76,7 +76,7 @@ public class OnboardingService
 
             if (lower is "2" or "staff" or "invited")
             {
-                await Send(from, "Ask your business owner to add you by sending this message on their WhatsApp:\n\n*add staff [your name] [your phone number]*\n\nExample: \"add staff Mary 08012345678\"\n\nOnce added, you can start recording sales and checking stock right here on WhatsApp.");
+                await Send(from, "Ask your business owner to add you by sending this message on their WhatsApp:\n\n*add staff [your name] [your phone number]*\n\nExample: \"add staff Mary +2348012345678\"\n\nOnce added, you can start recording sales and checking stock right here on WhatsApp.");
                 return "onboarding:staff_inquiry";
             }
 
