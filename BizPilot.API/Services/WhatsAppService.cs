@@ -2639,7 +2639,7 @@ public class WhatsAppService : IWhatsAppService
             EntryType = adjustmentType,
             Amount = Math.Abs(delta),
             Notes = $"Adjusted: ₦{oldAmount:N0} → ₦{newAmount.Value:N0}",
-            Source = EntrySource.WhatsApp,
+            Source = "Adjustment",
             RecordedByUserId = recordedBy?.Id,
             RecordedByName = recordedBy?.FullName
         });

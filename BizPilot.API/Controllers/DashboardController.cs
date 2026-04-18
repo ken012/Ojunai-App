@@ -42,10 +42,11 @@ public class DashboardController : BizPilotBaseController
 
     [HttpGet("activity")]
     [RequirePermission(Permission.ViewOwnReports)]
-    public async Task<ActionResult<ApiResponse<List<ActivityFeedDto>>>> GetActivityFeed(
-        [FromQuery] string? type = null, [FromQuery] int limit = 50, [FromQuery] int offset = 0)
+    public async Task<ActionResult<ApiResponse<PaginatedActivityResult>>> GetActivityFeed(
+        [FromQuery] string? type = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 50,
+        [FromQuery] string? search = null, [FromQuery] DateTime? startDate = null, [FromQuery] DateTime? endDate = null)
     {
-        var result = await _reports.GetActivityFeedAsync(BusinessId, type, Math.Min(limit, 100), offset);
-        return Ok(ApiResponse<List<ActivityFeedDto>>.Ok(result));
+        var result = await _reports.GetActivityFeedAsync(BusinessId, type, Math.Max(1, page), Math.Clamp(pageSize, 10, 100), search, startDate, endDate);
+        return Ok(ApiResponse<PaginatedActivityResult>.Ok(result));
     }
 }

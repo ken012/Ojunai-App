@@ -172,6 +172,12 @@ public class SalesService : ISalesService
                 .Where(p => productIds.Contains(p.Id) && p.BusinessId == businessId)
                 .ToDictionaryAsync(p => p.Id);
 
+            // Build a readable summary of what was in the sale for audit notes
+            var saleSummary = string.Join(", ", sale.Items
+                .Where(i => products.ContainsKey(i.ProductId))
+                .Select(i => $"{i.Quantity:0.##} {products[i.ProductId].Unit} {products[i.ProductId].Name}"));
+            var customerNote = sale.Contact != null ? $" to {sale.Contact.Name}" : "";
+
             foreach (var item in sale.Items)
             {
                 if (products.TryGetValue(item.ProductId, out var product))
@@ -183,7 +189,7 @@ public class SalesService : ISalesService
                         ProductId = item.ProductId,
                         Type = InventoryTransactionType.Adjustment,
                         Quantity = item.Quantity,
-                        Notes = $"Voided sale {sale.Id}",
+                        Notes = $"Voided sale: {item.Quantity:0.##} {product.Unit} {product.Name} (₦{item.TotalPrice:N0}) returned to stock",
                         RecordedByUserId = voidedByUserId ?? sale.RecordedByUserId,
                         RecordedByName = voidedByName ?? sale.RecordedByName
                     });
@@ -199,8 +205,8 @@ public class SalesService : ISalesService
                     ContactId = sale.ContactId.Value,
                     EntryType = LedgerEntryType.ReceivablePayment,
                     Amount = sale.TotalAmount,
-                    Notes = $"Voided sale {sale.Id} — reversed receivable",
-                    Source = "Void",
+                    Notes = $"Voided sale{customerNote}: {saleSummary} (₦{sale.TotalAmount:N0}) — receivable reversed",
+                    Source = "Adjustment",
                     RecordedByUserId = voidedByUserId,
                     RecordedByName = voidedByName
                 });

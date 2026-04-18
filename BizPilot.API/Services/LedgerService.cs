@@ -187,7 +187,7 @@ public class LedgerService : ILedgerService
             EntryType = adjustmentType,
             Amount = Math.Abs(delta),
             Notes = $"Adjusted {entry.Contact.Name}: ₦{oldAmount:N0} → ₦{request.Amount:N0}",
-            Source = "Manual",
+            Source = "Adjustment",
             RecordedByUserId = entry.RecordedByUserId,
             RecordedByName = entry.RecordedByName
         };
@@ -223,7 +223,7 @@ public class LedgerService : ILedgerService
             EntryType = reversalType,
             Amount = entry.Amount,
             Notes = $"Deleted: {entry.Notes ?? entry.EntryType.ToString()} (₦{entry.Amount:N0})",
-            Source = "Manual",
+            Source = "Adjustment",
             RecordedByUserId = entry.RecordedByUserId,
             RecordedByName = entry.RecordedByName
         });

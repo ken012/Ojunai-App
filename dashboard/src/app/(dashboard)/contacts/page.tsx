@@ -630,7 +630,8 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
     } catch { /* silent */ }
   }
 
-  const typeLabel = (t: string) => {
+  const typeLabel = (t: string, source?: string) => {
+    if (source === "Adjustment") return "Debt adjusted";
     switch (t) {
       case "Receivable": return "Debt owed to you";
       case "ReceivablePayment": return "Payment received";
@@ -640,7 +641,8 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
     }
   };
 
-  const typeColor = (t: string) => {
+  const typeColor = (t: string, source?: string) => {
+    if (source === "Adjustment") return "text-amber-600";
     if (t === "Receivable") return "text-sky-600";
     if (t === "Payable") return "text-orange-500";
     if (t.includes("Payment")) return "text-emerald-600";
@@ -681,11 +683,11 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
                 ) : (
                   <>
                     <div className="flex items-center justify-between">
-                      <span className={`text-sm font-medium ${typeColor(e.entryType)}`}>
-                        {typeLabel(e.entryType)}
+                      <span className={`text-sm font-medium ${typeColor(e.entryType, e.source)}`}>
+                        {typeLabel(e.entryType, e.source)}
                       </span>
                       <div className="flex items-center gap-2">
-                        <span className={`text-sm font-semibold ${typeColor(e.entryType)}`}>
+                        <span className={`text-sm font-semibold ${typeColor(e.entryType, e.source)}`}>
                           {e.entryType.includes("Payment") ? "-" : "+"}{formatNaira(e.amount)}
                         </span>
                         {canManage && (

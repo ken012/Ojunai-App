@@ -408,58 +408,93 @@ public partial class ReportService : IReportService
         };
     }
 
-    public async Task<List<ActivityFeedDto>> GetActivityFeedAsync(Guid businessId, string? type, int limit, int offset)
+    public async Task<PaginatedActivityResult> GetActivityFeedAsync(
+        Guid businessId, string? type, int page, int pageSize, string? search, DateTime? startDate, DateTime? endDate)
     {
         var activities = new List<ActivityFeedDto>();
 
-        // Sales
-        if (type == null || type == "sale")
+        // Helper: generate a short human-readable reference ID from a GUID
+        static string MakeRef(Guid id, string prefix) => $"{prefix}-{id.ToString("N")[..8].ToUpper()}";
+
+        // Sales — IgnoreQueryFilters so voided sales appear too (with their own entry type)
+        if (type == null || type == "sale" || type == "sale_voided")
         {
-            var sales = await _db.Sales
+            var salesRaw = await _db.Sales
+                .IgnoreQueryFilters()
                 .Include(s => s.Items).ThenInclude(i => i.Product)
                 .Include(s => s.Contact)
                 .Where(s => s.BusinessId == businessId)
                 .OrderByDescending(s => s.CreatedAtUtc)
-                .Take(limit * 2) // over-fetch before merge sort
-                .Select(s => new ActivityFeedDto
+                .ToListAsync();
+
+            foreach (var s in salesRaw)
+            {
+                var itemSummary = s.Items.Count > 0
+                    ? string.Join(", ", s.Items.Select(i => $"{i.Quantity:0.##} {i.Product.Unit} {i.Product.Name}"))
+                    : "items";
+
+                // Original sale entry — always shown
+                activities.Add(new ActivityFeedDto
                 {
                     Id = s.Id,
-                    Type = "sale",
-                    Description = s.Items.Count > 0
-                        ? string.Join(", ", s.Items.Select(i => $"{i.Quantity:0.##} {i.Product.Unit} {i.Product.Name}"))
-                        : "Sale recorded",
+                    RefId = MakeRef(s.Id, "SL"),
+                    Type = s.IsDeleted ? "sale_voided" : "sale",
+                    Description = $"Sold {itemSummary} for ₦{s.TotalAmount:N0}"
+                        + (s.Contact != null ? $" to {s.Contact.Name}" : "")
+                        + (s.PaymentStatus != PaymentStatus.Paid ? $" ({s.PaymentStatus})" : "")
+                        + (s.IsDeleted ? " [VOIDED]" : ""),
                     Amount = s.TotalAmount,
-                    ContactName = s.Contact != null ? s.Contact.Name : null,
+                    ContactName = s.Contact?.Name,
                     RecordedBy = s.RecordedByName,
                     Source = s.Source,
                     PaymentStatus = s.PaymentStatus.ToString(),
                     PaymentMethod = s.PaymentMethod,
                     CreatedAtUtc = s.CreatedAtUtc
-                })
-                .ToListAsync();
-            activities.AddRange(sales);
+                });
+
+                // Void event — separate entry at the void timestamp so it shows at the top of the feed
+                if (s.IsDeleted && s.DeletedAtUtc.HasValue)
+                {
+                    activities.Add(new ActivityFeedDto
+                    {
+                        Id = s.Id,
+                        RefId = MakeRef(s.Id, "SL"),
+                        Type = "void_event",
+                        Description = $"Sale voided: {itemSummary} (₦{s.TotalAmount:N0})"
+                            + (s.Contact != null ? $" — {s.Contact.Name}" : "")
+                            + $" — stock returned",
+                        Amount = s.TotalAmount,
+                        ContactName = s.Contact?.Name,
+                        RecordedBy = s.RecordedByName,
+                        Source = "Void",
+                        Details = $"Original sale {MakeRef(s.Id, "SL")} from {s.CreatedAtUtc:dd MMM yyyy HH:mm}",
+                        CreatedAtUtc = s.DeletedAtUtc.Value
+                    });
+                }
+            }
         }
 
         // Expenses
         if (type == null || type == "expense")
         {
             var expenses = await _db.Expenses
+                .IgnoreQueryFilters()
                 .Where(e => e.BusinessId == businessId)
                 .OrderByDescending(e => e.CreatedAtUtc)
-                .Take(limit * 2)
-                .Select(e => new ActivityFeedDto
-                {
-                    Id = e.Id,
-                    Type = "expense",
-                    Description = e.Category + (e.Notes != null ? $" — {e.Notes}" : ""),
-                    Amount = e.Amount,
-                    ContactName = e.PaidTo,
-                    RecordedBy = e.RecordedByName,
-                    Source = e.Source,
-                    CreatedAtUtc = e.CreatedAtUtc
-                })
                 .ToListAsync();
-            activities.AddRange(expenses);
+
+            activities.AddRange(expenses.Select(e => new ActivityFeedDto
+            {
+                Id = e.Id,
+                RefId = MakeRef(e.Id, "EX"),
+                Type = e.IsDeleted ? "expense_voided" : "expense",
+                Description = $"Expense: {e.Category}" + (e.Notes != null ? $" — {e.Notes}" : "") + (e.IsDeleted ? " [VOIDED]" : ""),
+                Amount = e.Amount,
+                ContactName = e.PaidTo,
+                RecordedBy = e.RecordedByName,
+                Source = e.Source,
+                CreatedAtUtc = e.CreatedAtUtc
+            }));
         }
 
         // Inventory transactions
@@ -469,50 +504,128 @@ public partial class ReportService : IReportService
                 .Include(t => t.Product)
                 .Where(t => t.BusinessId == businessId)
                 .OrderByDescending(t => t.CreatedAtUtc)
-                .Take(limit * 2)
-                .Select(t => new ActivityFeedDto
-                {
-                    Id = t.Id,
-                    Type = "inventory",
-                    Description = $"{t.Type}: {t.Quantity:0.##} {t.Product.Unit} {t.Product.Name}",
-                    Amount = t.UnitCost.HasValue ? t.Quantity * t.UnitCost.Value : null,
-                    RecordedBy = t.RecordedByName,
-                    Details = t.Notes,
-                    CreatedAtUtc = t.CreatedAtUtc
-                })
                 .ToListAsync();
-            activities.AddRange(inventory);
+
+            activities.AddRange(inventory.Select(t => new ActivityFeedDto
+            {
+                Id = t.Id,
+                RefId = MakeRef(t.Id, "INV"),
+                Type = "inventory",
+                Description = t.Type == InventoryTransactionType.StockIn
+                    ? $"Restocked {t.Quantity:0.##} {t.Product.Unit} of {t.Product.Name}"
+                    : t.Type == InventoryTransactionType.StockOut
+                    ? $"Removed {t.Quantity:0.##} {t.Product.Unit} of {t.Product.Name}"
+                    : t.Type == InventoryTransactionType.Damaged
+                    ? $"Marked {t.Quantity:0.##} {t.Product.Unit} of {t.Product.Name} as damaged"
+                    : $"Adjusted {t.Product.Name} stock by {t.Quantity:0.##} {t.Product.Unit}",
+                Amount = t.UnitCost.HasValue ? t.Quantity * t.UnitCost.Value : null,
+                RecordedBy = t.RecordedByName,
+                Source = t.RecordedByName != null ? "Staff" : null,
+                Details = t.Notes,
+                CreatedAtUtc = t.CreatedAtUtc
+            }));
         }
 
-        // Ledger entries (payments)
-        if (type == null || type == "payment")
+        // Ledger entries
+        if (type == null || type == "payment" || type == "adjustment")
         {
-            var ledger = await _db.LedgerEntries
+            var ledgerRaw = await _db.LedgerEntries
                 .Include(e => e.Contact)
                 .Where(e => e.BusinessId == businessId)
                 .OrderByDescending(e => e.CreatedAtUtc)
-                .Take(limit * 2)
-                .Select(e => new ActivityFeedDto
+                .ToListAsync();
+
+            foreach (var e in ledgerRaw)
+            {
+                var isAdjustment = e.Source == "Adjustment";
+                var contactName = e.Contact.Name;
+                string activityType;
+                string description;
+
+                if (isAdjustment)
+                {
+                    activityType = "adjustment";
+                    description = e.Notes?.StartsWith("Deleted:") == true
+                        ? $"Deleted ledger entry for {contactName}"
+                        : $"Adjusted debt for {contactName}";
+                }
+                else
+                {
+                    switch (e.EntryType)
+                    {
+                        case LedgerEntryType.Receivable:
+                            activityType = "debt_recorded";
+                            description = $"{contactName} owes you ₦{e.Amount:N0}";
+                            break;
+                        case LedgerEntryType.ReceivablePayment:
+                            activityType = "payment_received";
+                            description = $"{contactName} paid ₦{e.Amount:N0}";
+                            break;
+                        case LedgerEntryType.Payable:
+                            activityType = "debt_recorded";
+                            description = $"You owe {contactName} ₦{e.Amount:N0}";
+                            break;
+                        case LedgerEntryType.PayablePayment:
+                            activityType = "payment_made";
+                            description = $"You paid {contactName} ₦{e.Amount:N0}";
+                            break;
+                        default:
+                            activityType = "ledger";
+                            description = e.EntryType.ToString();
+                            break;
+                    }
+                }
+
+                activities.Add(new ActivityFeedDto
                 {
                     Id = e.Id,
-                    Type = e.EntryType == LedgerEntryType.ReceivablePayment || e.EntryType == LedgerEntryType.Receivable
-                        ? "payment_received" : "payment_made",
-                    Description = e.EntryType.ToString(),
+                    RefId = MakeRef(e.Id, "LDG"),
+                    Type = activityType,
+                    Description = description,
                     Amount = e.Amount,
-                    ContactName = e.Contact.Name,
+                    ContactName = contactName,
                     RecordedBy = e.RecordedByName,
+                    Source = e.Source,
                     Details = e.Notes,
                     CreatedAtUtc = e.CreatedAtUtc
-                })
-                .ToListAsync();
-            activities.AddRange(ledger);
+                });
+            }
         }
 
-        return activities
-            .OrderByDescending(a => a.CreatedAtUtc)
-            .Skip(offset)
-            .Take(limit)
-            .ToList();
+        // Apply date range filter
+        if (startDate.HasValue)
+            activities = activities.Where(a => a.CreatedAtUtc >= startDate.Value).ToList();
+        if (endDate.HasValue)
+            activities = activities.Where(a => a.CreatedAtUtc < endDate.Value.AddDays(1)).ToList();
+
+        // Apply search filter — searches description, details, contact name, recorded by, ref ID
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var q = search.ToLowerInvariant();
+            activities = activities.Where(a =>
+                (a.Description?.ToLower().Contains(q) == true) ||
+                (a.Details?.ToLower().Contains(q) == true) ||
+                (a.ContactName?.ToLower().Contains(q) == true) ||
+                (a.RecordedBy?.ToLower().Contains(q) == true) ||
+                (a.RefId?.ToLower().Contains(q) == true) ||
+                (a.Source?.ToLower().Contains(q) == true)
+            ).ToList();
+        }
+
+        // Sort and paginate
+        var sorted = activities.OrderByDescending(a => a.CreatedAtUtc).ToList();
+        var totalCount = sorted.Count;
+        var totalPages = (int)Math.Ceiling(totalCount / (double)pageSize);
+        var paged = sorted.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+        return new PaginatedActivityResult
+        {
+            Items = paged,
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = totalPages
+        };
     }
 
     private async Task<List<TrendPointDto>> BuildSalesTrendAsync(Guid businessId, DateTime from, DateTime to)

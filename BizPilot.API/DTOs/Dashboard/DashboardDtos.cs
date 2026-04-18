@@ -29,7 +29,8 @@ public class RecentActivityDto
 public class ActivityFeedDto
 {
     public Guid Id { get; set; }
-    public string Type { get; set; } = string.Empty; // sale, expense, inventory, payment_received, payment_made, hold
+    public string RefId { get; set; } = string.Empty;
+    public string Type { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public decimal? Amount { get; set; }
     public string? ContactName { get; set; }
@@ -37,8 +38,17 @@ public class ActivityFeedDto
     public string? Source { get; set; }
     public string? PaymentStatus { get; set; }
     public string? PaymentMethod { get; set; }
-    public string? Details { get; set; } // extra info like item list or category
+    public string? Details { get; set; }
     public DateTime CreatedAtUtc { get; set; }
+}
+
+public class PaginatedActivityResult
+{
+    public List<ActivityFeedDto> Items { get; set; } = new();
+    public int TotalCount { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
+    public int TotalPages { get; set; }
 }
 
 public class DashboardInsightsDto

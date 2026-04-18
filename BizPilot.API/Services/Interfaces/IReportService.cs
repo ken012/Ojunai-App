@@ -11,7 +11,7 @@ public interface IReportService
     Task<WeeklySummaryDto> GetWeeklySummaryAsync(Guid businessId, DateOnly? weekStart);
     Task<CashPositionDto> GetCashPositionAsync(Guid businessId);
     Task<DashboardInsightsDto> GetInsightsAsync(Guid businessId);
-    Task<List<ActivityFeedDto>> GetActivityFeedAsync(Guid businessId, string? type, int limit, int offset);
+    Task<PaginatedActivityResult> GetActivityFeedAsync(Guid businessId, string? type, int page, int pageSize, string? search, DateTime? startDate, DateTime? endDate);
     Task<List<DeadStockItemDto>> GetDeadStockAsync(Guid businessId);
     Task<List<StockoutPredictionDto>> GetStockoutPredictionsAsync(Guid businessId);
     Task<List<ProductProfitDto>> GetProfitByProductAsync(Guid businessId);

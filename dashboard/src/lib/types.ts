@@ -166,6 +166,7 @@ export interface StockHoldDto {
 
 export interface ActivityFeedDto {
   id: string;
+  refId: string;
   type: string;
   description: string;
   amount?: number;
@@ -176,6 +177,14 @@ export interface ActivityFeedDto {
   paymentMethod?: string;
   details?: string;
   createdAtUtc: string;
+}
+
+export interface PaginatedActivityResult {
+  items: ActivityFeedDto[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 export interface RecentActivityDto {
