@@ -603,7 +603,12 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
 
   function startEdit(entry: LedgerEntryDto) {
     setEditingEntry(entry);
-    setEditAmount(entry.amount.toString());
+    // Pre-fill with the CURRENT outstanding balance (not the original entry's amount)
+    // so the user sees the real current state and types the new target.
+    const currentBalance = entry.entryType.includes("Receivable") || entry.entryType === "Receivable"
+      ? (contact?.outstandingReceivable ?? entry.amount)
+      : (contact?.outstandingPayable ?? entry.amount);
+    setEditAmount(currentBalance.toString());
     setEditNotes(entry.notes ?? "");
   }
 
@@ -657,6 +662,27 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
         <DialogHeader>
           <DialogTitle>Ledger — {contact?.name}</DialogTitle>
         </DialogHeader>
+        {contact && (contact.outstandingReceivable > 0 || contact.outstandingPayable > 0) && (
+          <div className="flex gap-3 mb-2">
+            {contact.outstandingReceivable > 0 && (
+              <div className="flex-1 rounded-lg bg-sky-50 border border-sky-200 px-3 py-2">
+                <p className="text-[10px] text-sky-500 uppercase tracking-wide">They owe you</p>
+                <p className="text-lg font-bold text-sky-700">{formatNaira(contact.outstandingReceivable)}</p>
+              </div>
+            )}
+            {contact.outstandingPayable > 0 && (
+              <div className="flex-1 rounded-lg bg-orange-50 border border-orange-200 px-3 py-2">
+                <p className="text-[10px] text-orange-500 uppercase tracking-wide">You owe them</p>
+                <p className="text-lg font-bold text-orange-700">{formatNaira(contact.outstandingPayable)}</p>
+              </div>
+            )}
+          </div>
+        )}
+        {contact && contact.outstandingReceivable === 0 && contact.outstandingPayable === 0 && (
+          <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 mb-2">
+            <p className="text-sm font-medium text-emerald-700">Fully settled — no outstanding balance</p>
+          </div>
+        )}
         <div className="max-h-[400px] overflow-y-auto space-y-2">
           {isLoading ? (
             <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16" />)}</div>
@@ -665,8 +691,9 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
               <div key={e.id} className="border rounded-lg px-3 py-2">
                 {editingEntry?.id === e.id ? (
                   <div className="space-y-2">
+                    <p className="text-xs text-slate-500">Set the new total outstanding balance:</p>
                     <div>
-                      <Label className="text-xs">Amount</Label>
+                      <Label className="text-xs">New balance amount</Label>
                       <Input type="number" value={editAmount} onChange={(ev) => setEditAmount(ev.target.value)} />
                     </div>
                     <div>
