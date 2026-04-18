@@ -259,6 +259,7 @@ Supported intents:
 - cancel_plan_change: {} — cancel a pending plan downgrade
 - show_reports: {} — show all available report commands
 - help: {} — show advanced commands
+- show_roles: {} — show staff roles and what each role can do. Triggers: "roles", "what roles are there", "staff roles", "what can each role do", "role permissions"
 - unknown: {}
 
 ═══════════════════════════════════════════════════

@@ -740,6 +740,7 @@ public class WhatsAppService : IWhatsAppService
             "cancel_plan_change" => await HandleCancelPlanChangeAsync(businessId),
             "greet" => HandleGreet(user.Business.Name),
             "help" => HandleHelp(),
+            "show_roles" => HandleShowRoles(),
             "show_reports" => HandleShowReports(),
             _ => HandleUnknown()
         };
@@ -2531,7 +2532,8 @@ public class WhatsAppService : IWhatsAppService
     private static string HandleHelp() =>
         "📖 *More commands:*\n\n" +
         "🔒 *Holds:* \"Hold 5 rice for Emeka\" / \"What's on hold?\"\n" +
-        "👥 *Staff:* \"Add staff Mary 08012345678\" / \"Who are my staff?\" / \"What did Mary sell?\"\n" +
+        "👥 *Staff:* \"Add staff Mary 08012345678 as Admin\" / \"Who are my staff?\" / \"What did Mary sell?\"\n" +
+        "    _Say *roles* to see what each role can do_\n" +
         "🔮 *Insights:* \"When will I run out?\" / \"Most profitable product?\" / \"Stock value\"\n" +
         "💰 *Debts:* \"Clear Ngozi's debt\" / \"Clear all debts\"\n" +
         "📊 *Reports:* \"Top 3 products\" / \"Least selling item\" / \"Dead stock\" / \"Compare weeks\"\n" +
@@ -2541,6 +2543,15 @@ public class WhatsAppService : IWhatsAppService
         "📋 *Plans:* \"What plan am I on?\" / \"Plans\"\n\n" +
         "💡 *Tip:* Do multiple things at once!\n" +
         "\"Bought 3 yam at 2k, sold 2 toothpaste at 5k, NEPA bill 10k\"";
+
+    private static string HandleShowRoles() =>
+        "👥 *Staff Roles*\n\n" +
+        "👑 *Owner* — Full access. Manage staff, settings, billing, all reports.\n\n" +
+        "🔑 *Admin* — Everything except billing & settings. Can manage staff, void sales, view all reports, record debts.\n\n" +
+        "🛒 *Sales* — Record sales, view stock, view own sales reports. Cannot manage staff or see full reports.\n\n" +
+        "📒 *Bookkeeper* — Record expenses, manage debts, view all reports & stock. Cannot record sales.\n\n" +
+        "👁️ *Viewer* — View-only. Can see reports and stock levels but cannot record anything.\n\n" +
+        "To add staff with a role:\n\"Add staff Mary 08012345678 as Bookkeeper\"";
 
     private static string HandleShowReports() =>
         "📊 *Available Reports*\n\n" +
