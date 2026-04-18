@@ -22,7 +22,7 @@ import { MessageSquare, Building2, User, Pencil, Bell, Tags, X, Plus, Users, Tra
 import { CATEGORY_NAMES } from "@/lib/categories";
 import { hasPermission, Permission } from "@/lib/permissions";
 
-const CURRENCIES = ["NGN", "USD", "GBP", "EUR", "CAD"];
+const CURRENCIES = ["NGN", "GHS", "USD", "GBP", "EUR", "CAD", "KES", "ZAR"];
 
 // Twilio sandbox — update if you move to a production WhatsApp sender
 const TWILIO_WHATSAPP_NUMBER = "14155238886";
