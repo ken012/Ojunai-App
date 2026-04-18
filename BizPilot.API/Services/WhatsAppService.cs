@@ -2621,14 +2621,33 @@ public class WhatsAppService : IWhatsAppService
             return $"✅ Cleared {contact.Name}'s {typeLabel} balance (was ₦{outstanding:N0}).";
         }
 
-        // Update the latest entry's amount
-        latestEntry.Amount = newAmount.Value;
-        latestEntry.Notes = $"{latestEntry.Notes ?? typeLabel} (edited: was ₦{oldAmount:N0})";
+        // Create an adjustment entry for the difference so it appears in the activity feed
+        var delta = newAmount.Value - oldAmount;
+        if (delta == 0) return $"{contact.Name}'s {typeLabel} is already ₦{oldAmount:N0}.";
+
+        var adjustmentType = delta > 0 ? latestEntry.EntryType : (latestEntry.EntryType switch
+        {
+            LedgerEntryType.Receivable => LedgerEntryType.ReceivablePayment,
+            LedgerEntryType.Payable => LedgerEntryType.PayablePayment,
+            _ => latestEntry.EntryType
+        });
+
+        _db.LedgerEntries.Add(new LedgerEntry
+        {
+            BusinessId = businessId,
+            ContactId = contact.Id,
+            EntryType = adjustmentType,
+            Amount = Math.Abs(delta),
+            Notes = $"Adjusted: ₦{oldAmount:N0} → ₦{newAmount.Value:N0}",
+            Source = EntrySource.WhatsApp,
+            RecordedByUserId = recordedBy?.Id,
+            RecordedByName = recordedBy?.FullName
+        });
         await _db.SaveChangesAsync();
 
         var direction = latestEntry.EntryType == LedgerEntryType.Receivable
             ? $"{contact.Name} owes you" : $"You owe {contact.Name}";
-        return $"✅ Updated: {direction} ₦{newAmount.Value:N0} (was ₦{oldAmount:N0})";
+        return $"✅ Adjusted: {direction} ₦{newAmount.Value:N0} (was ₦{oldAmount:N0})";
     }
 
     private async Task<string> HandleCreateContactAsync(Guid businessId, JsonElement ba)

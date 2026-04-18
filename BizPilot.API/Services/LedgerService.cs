@@ -156,18 +156,46 @@ public class LedgerService : ILedgerService
     public async Task<LedgerEntryDto> UpdateEntryAsync(Guid businessId, Guid entryId, UpdateLedgerEntryRequest request)
     {
         var entry = await _db.LedgerEntries
+            .Include(e => e.Contact)
             .FirstOrDefaultAsync(e => e.Id == entryId && e.BusinessId == businessId)
             ?? throw new KeyNotFoundException("Ledger entry not found.");
 
         var oldAmount = entry.Amount;
-        entry.Amount = request.Amount;
-        // Track the edit in notes so the activity feed shows what changed
-        var editNote = $"(edited: was ₦{oldAmount:N0})";
-        entry.Notes = string.IsNullOrEmpty(request.Notes)
-            ? editNote
-            : $"{request.Notes} {editNote}";
+        var delta = request.Amount - oldAmount;
+        if (delta == 0)
+        {
+            if (request.Notes != entry.Notes) { entry.Notes = request.Notes; await _db.SaveChangesAsync(); }
+            return await ToDtoAsync(entry);
+        }
+
+        // Create an adjustment entry for the difference instead of editing the original in place.
+        // This way a new line appears at the top of the activity feed with the current timestamp,
+        // and the balance math stays correct via sum of all entries.
+        var adjustmentType = delta > 0 ? entry.EntryType : (entry.EntryType switch
+        {
+            LedgerEntryType.Receivable => LedgerEntryType.ReceivablePayment,
+            LedgerEntryType.Payable => LedgerEntryType.PayablePayment,
+            LedgerEntryType.ReceivablePayment => LedgerEntryType.Receivable,
+            LedgerEntryType.PayablePayment => LedgerEntryType.Payable,
+            _ => entry.EntryType
+        });
+
+        var adjustmentEntry = new LedgerEntry
+        {
+            BusinessId = businessId,
+            ContactId = entry.ContactId,
+            EntryType = adjustmentType,
+            Amount = Math.Abs(delta),
+            Notes = $"Adjusted {entry.Contact.Name}: ₦{oldAmount:N0} → ₦{request.Amount:N0}",
+            Source = "Manual",
+            RecordedByUserId = entry.RecordedByUserId,
+            RecordedByName = entry.RecordedByName
+        };
+        _db.LedgerEntries.Add(adjustmentEntry);
+
+        if (request.Notes != null) entry.Notes = request.Notes;
         await _db.SaveChangesAsync();
-        return await ToDtoAsync(entry);
+        return await ToDtoAsync(adjustmentEntry);
     }
 
     public async Task DeleteEntryAsync(Guid businessId, Guid entryId)
