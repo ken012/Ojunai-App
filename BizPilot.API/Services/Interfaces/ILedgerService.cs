@@ -10,4 +10,6 @@ public interface ILedgerService
     Task<LedgerEntryDto> RecordPaymentAsync(Guid businessId, RecordPaymentRequest request, string source = "Manual", Guid? recordedByUserId = null, string? recordedByName = null);
     Task<List<OutstandingBalanceDto>> GetOutstandingBalancesAsync(Guid businessId, string? type);
     Task<List<LedgerEntryDto>> GetContactLedgerAsync(Guid businessId, Guid contactId);
+    Task<LedgerEntryDto> UpdateEntryAsync(Guid businessId, Guid entryId, UpdateLedgerEntryRequest request);
+    Task DeleteEntryAsync(Guid businessId, Guid entryId);
 }

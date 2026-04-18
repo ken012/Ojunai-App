@@ -153,6 +153,57 @@ public class LedgerService : ILedgerService
         }).ToList();
     }
 
+    public async Task<LedgerEntryDto> UpdateEntryAsync(Guid businessId, Guid entryId, UpdateLedgerEntryRequest request)
+    {
+        var entry = await _db.LedgerEntries
+            .FirstOrDefaultAsync(e => e.Id == entryId && e.BusinessId == businessId)
+            ?? throw new KeyNotFoundException("Ledger entry not found.");
+
+        var oldAmount = entry.Amount;
+        entry.Amount = request.Amount;
+        // Track the edit in notes so the activity feed shows what changed
+        var editNote = $"(edited: was ₦{oldAmount:N0})";
+        entry.Notes = string.IsNullOrEmpty(request.Notes)
+            ? editNote
+            : $"{request.Notes} {editNote}";
+        await _db.SaveChangesAsync();
+        return await ToDtoAsync(entry);
+    }
+
+    public async Task DeleteEntryAsync(Guid businessId, Guid entryId)
+    {
+        var entry = await _db.LedgerEntries
+            .FirstOrDefaultAsync(e => e.Id == entryId && e.BusinessId == businessId)
+            ?? throw new KeyNotFoundException("Ledger entry not found.");
+
+        // Create a reversal entry so the deletion is visible in the activity feed and
+        // the balance is properly zeroed. The reversal type cancels out the original:
+        // Receivable → ReceivablePayment, Payable → PayablePayment, and vice versa.
+        var reversalType = entry.EntryType switch
+        {
+            LedgerEntryType.Receivable => LedgerEntryType.ReceivablePayment,
+            LedgerEntryType.Payable => LedgerEntryType.PayablePayment,
+            LedgerEntryType.ReceivablePayment => LedgerEntryType.Receivable,
+            LedgerEntryType.PayablePayment => LedgerEntryType.Payable,
+            _ => entry.EntryType
+        };
+
+        _db.LedgerEntries.Add(new LedgerEntry
+        {
+            BusinessId = businessId,
+            ContactId = entry.ContactId,
+            EntryType = reversalType,
+            Amount = entry.Amount,
+            Notes = $"Deleted: {entry.Notes ?? entry.EntryType.ToString()} (₦{entry.Amount:N0})",
+            Source = "Manual",
+            RecordedByUserId = entry.RecordedByUserId,
+            RecordedByName = entry.RecordedByName
+        });
+
+        _db.LedgerEntries.Remove(entry);
+        await _db.SaveChangesAsync();
+    }
+
     private async Task EnsureContactExistsAsync(Guid businessId, Guid contactId)
     {
         var exists = await _db.Contacts.AnyAsync(c => c.Id == contactId && c.BusinessId == businessId);

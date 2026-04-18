@@ -586,6 +586,12 @@ function RecordPaymentDialog({ contact, open, onClose }: { contact: ContactDto |
 }
 
 function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto | null; open: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [editingEntry, setEditingEntry] = useState<LedgerEntryDto | null>(null);
+  const [editAmount, setEditAmount] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
   const { data: entries, isLoading } = useQuery({
     queryKey: ["contact-ledger", contact?.id],
     queryFn: async () => {
@@ -594,6 +600,35 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
     },
     enabled: open && !!contact,
   });
+
+  function startEdit(entry: LedgerEntryDto) {
+    setEditingEntry(entry);
+    setEditAmount(entry.amount.toString());
+    setEditNotes(entry.notes ?? "");
+  }
+
+  async function saveEdit() {
+    if (!editingEntry) return;
+    setSaving(true);
+    try {
+      await api.put(`/ledger/entries/${editingEntry.id}`, {
+        amount: Number(editAmount),
+        notes: editNotes || null,
+      });
+      qc.invalidateQueries({ queryKey: ["contact-ledger", contact?.id] });
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+      setEditingEntry(null);
+    } catch { /* silent */ } finally { setSaving(false); }
+  }
+
+  async function deleteEntry(entryId: string) {
+    if (!confirm("Delete this ledger entry? This cannot be undone.")) return;
+    try {
+      await api.delete(`/ledger/entries/${entryId}`);
+      qc.invalidateQueries({ queryKey: ["contact-ledger", contact?.id] });
+      qc.invalidateQueries({ queryKey: ["contacts"] });
+    } catch { /* silent */ }
+  }
 
   const typeLabel = (t: string) => {
     switch (t) {
@@ -612,8 +647,10 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
     return "text-slate-600";
   };
 
+  const canManage = hasPermission(Permission.ManageDebts);
+
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) { setEditingEntry(null); onClose(); } }}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Ledger — {contact?.name}</DialogTitle>
@@ -624,21 +661,54 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
           ) : entries && entries.length > 0 ? (
             entries.map((e) => (
               <div key={e.id} className="border rounded-lg px-3 py-2">
-                <div className="flex items-center justify-between">
-                  <span className={`text-sm font-medium ${typeColor(e.entryType)}`}>
-                    {typeLabel(e.entryType)}
-                  </span>
-                  <span className={`text-sm font-semibold ${typeColor(e.entryType)}`}>
-                    {e.entryType.includes("Payment") ? "-" : "+"}{formatNaira(e.amount)}
-                  </span>
-                </div>
-                {e.notes && (
-                  <p className="text-xs text-slate-600 mt-1">{e.notes}</p>
+                {editingEntry?.id === e.id ? (
+                  <div className="space-y-2">
+                    <div>
+                      <Label className="text-xs">Amount</Label>
+                      <Input type="number" value={editAmount} onChange={(ev) => setEditAmount(ev.target.value)} />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Notes</Label>
+                      <Input value={editNotes} onChange={(ev) => setEditNotes(ev.target.value)} />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={saveEdit} disabled={saving || !editAmount}>
+                        {saving ? "Saving..." : "Save"}
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setEditingEntry(null)}>Cancel</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-sm font-medium ${typeColor(e.entryType)}`}>
+                        {typeLabel(e.entryType)}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm font-semibold ${typeColor(e.entryType)}`}>
+                          {e.entryType.includes("Payment") ? "-" : "+"}{formatNaira(e.amount)}
+                        </span>
+                        {canManage && (
+                          <div className="flex gap-0.5">
+                            <button onClick={() => startEdit(e)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700" title="Edit">
+                              <Pencil size={12} />
+                            </button>
+                            <button onClick={() => deleteEntry(e.id)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500" title="Delete">
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {e.notes && (
+                      <p className="text-xs text-slate-600 mt-1">{e.notes}</p>
+                    )}
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-slate-400">{formatDateTime(e.createdAtUtc)}</span>
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{e.source}</Badge>
+                    </div>
+                  </>
                 )}
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs text-slate-400">{formatDateTime(e.createdAtUtc)}</span>
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{e.source}</Badge>
-                </div>
               </div>
             ))
           ) : (
@@ -646,7 +716,7 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button variant="outline" onClick={() => { setEditingEntry(null); onClose(); }}>Close</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

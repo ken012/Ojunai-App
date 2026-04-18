@@ -38,6 +38,12 @@ public class LedgerEntryDto
     public DateTime CreatedAtUtc { get; set; }
 }
 
+public class UpdateLedgerEntryRequest
+{
+    [Range(0.01, 999999999)] public decimal Amount { get; set; }
+    [MaxLength(500)] public string? Notes { get; set; }
+}
+
 public class OutstandingBalanceDto
 {
     public Guid ContactId { get; set; }
