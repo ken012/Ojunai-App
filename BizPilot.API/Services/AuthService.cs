@@ -49,12 +49,17 @@ public class AuthService : IAuthService
             await _db.SaveChangesAsync();
         }
 
+        var inferred = Common.CountryLookup.InferFromPhone(normalizedPhone) ?? Common.CountryLookup.Default;
+
         var business = new Business
         {
             Name = request.BusinessName,
             BusinessType = request.BusinessType,
             State = request.State,
             City = request.City,
+            Country = inferred.Name,
+            Currency = inferred.Currency,
+            Timezone = inferred.Timezone,
             Plan = "starter",
             TrialEndsAt = DateTime.UtcNow.AddDays(30)
         };

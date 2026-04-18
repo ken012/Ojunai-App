@@ -390,6 +390,7 @@ public class WhatsAppService : IWhatsAppService
         {
             BusinessName = user.Business.Name,
             Currency = user.Business.Currency,
+            Timezone = user.Business.Timezone ?? "Africa/Lagos",
             Products = products,
             Contacts = contacts,
             TotalProducts = totalProducts

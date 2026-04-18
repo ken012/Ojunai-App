@@ -34,6 +34,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.Name).HasMaxLength(200).IsRequired();
             e.Property(x => x.Currency).HasMaxLength(10).HasDefaultValue("NGN");
             e.Property(x => x.Country).HasMaxLength(100).HasDefaultValue("Nigeria");
+            e.Property(x => x.Timezone).HasMaxLength(50).HasDefaultValue("Africa/Lagos");
         });
 
         mb.Entity<User>(e =>

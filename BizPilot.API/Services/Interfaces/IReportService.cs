@@ -24,7 +24,7 @@ public interface IReportService
     Task<ExpenseBreakdownDto> GetExpenseBreakdownAsync(Guid businessId, DateOnly? month);
     Task<List<InventoryTurnoverDto>> GetInventoryTurnoverAsync(Guid businessId);
     Task<TopCustomersReportDto> GetTopCustomersAsync(Guid businessId, int limit);
-    Task<SalesHeatmapDto> GetSalesHeatmapAsync(Guid businessId, int weeks);
+    Task<SalesHeatmapDto> GetSalesHeatmapAsync(Guid businessId, int weeks, string? timezone = null);
     Task<MonthlyTrendDto> GetMonthlyTrendAsync(Guid businessId, int months);
     Task<PaymentMethodSplitDto> GetPaymentMethodSplitAsync(Guid businessId, int months);
     Task<List<CustomerReliabilityDto>> GetCustomerReliabilityAsync(Guid businessId);

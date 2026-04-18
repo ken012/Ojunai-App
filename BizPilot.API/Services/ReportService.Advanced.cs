@@ -291,7 +291,7 @@ public partial class ReportService
 
     // ── Sales heatmap ────────────────────────────────────────────────────────
 
-    public async Task<SalesHeatmapDto> GetSalesHeatmapAsync(Guid businessId, int weeks)
+    public async Task<SalesHeatmapDto> GetSalesHeatmapAsync(Guid businessId, int weeks, string? timezone = null)
     {
         weeks = Math.Clamp(weeks, 1, 52);
         var cutoff = DateTime.UtcNow.AddDays(-weeks * 7);
@@ -301,11 +301,18 @@ public partial class ReportService
             .Select(s => new { s.CreatedAtUtc, s.TotalAmount })
             .ToListAsync();
 
-        // Group in Africa/Lagos local time so "peak at 6pm" matches what the shop owner actually experiences.
+        // Group in the business's local timezone so "peak at 6pm" matches what the owner actually experiences.
+        var tz = LagosZone;
+        if (!string.IsNullOrEmpty(timezone))
+        {
+            try { tz = TimeZoneInfo.FindSystemTimeZoneById(timezone); }
+            catch { /* fall back to Lagos if invalid */ }
+        }
+
         var cells = new Dictionary<(int Day, int Hour), (decimal Revenue, int Count)>();
         foreach (var s in sales)
         {
-            var local = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(s.CreatedAtUtc, DateTimeKind.Utc), LagosZone);
+            var local = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(s.CreatedAtUtc, DateTimeKind.Utc), tz);
             var key = ((int)local.DayOfWeek, local.Hour);
             var entry = cells.GetValueOrDefault(key);
             cells[key] = (entry.Revenue + s.TotalAmount, entry.Count + 1);

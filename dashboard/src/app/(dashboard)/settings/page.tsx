@@ -22,7 +22,41 @@ import { MessageSquare, Building2, User, Pencil, Bell, Tags, X, Plus, Users, Tra
 import { CATEGORY_NAMES } from "@/lib/categories";
 import { hasPermission, Permission } from "@/lib/permissions";
 
-const CURRENCIES = ["NGN", "GHS", "USD", "GBP", "EUR", "CAD", "KES", "ZAR"];
+const CURRENCIES = [
+  "NGN", "GHS", "KES", "ZAR", "TZS", "UGX", "RWF", "XAF", "XOF", "EGP", "ETB",
+  "CDF", "AOA", "MZN", "ZMW", "USD", "BWP", "NAD", "MWK", "SLE", "LRD", "GMD",
+  "GBP", "EUR", "CAD"
+];
+
+const COUNTRIES: Record<string, { currency: string }> = {
+  "Nigeria": { currency: "NGN" },
+  "Ghana": { currency: "GHS" },
+  "Kenya": { currency: "KES" },
+  "South Africa": { currency: "ZAR" },
+  "Tanzania": { currency: "TZS" },
+  "Uganda": { currency: "UGX" },
+  "Rwanda": { currency: "RWF" },
+  "Cameroon": { currency: "XAF" },
+  "Senegal": { currency: "XOF" },
+  "Ivory Coast": { currency: "XOF" },
+  "Egypt": { currency: "EGP" },
+  "Ethiopia": { currency: "ETB" },
+  "DR Congo": { currency: "CDF" },
+  "Angola": { currency: "AOA" },
+  "Mozambique": { currency: "MZN" },
+  "Zambia": { currency: "ZMW" },
+  "Zimbabwe": { currency: "USD" },
+  "Botswana": { currency: "BWP" },
+  "Namibia": { currency: "NAD" },
+  "Malawi": { currency: "MWK" },
+  "Benin": { currency: "XOF" },
+  "Togo": { currency: "XOF" },
+  "Sierra Leone": { currency: "SLE" },
+  "Liberia": { currency: "LRD" },
+  "Gambia": { currency: "GMD" },
+};
+
+const COUNTRY_NAMES = Object.keys(COUNTRIES).sort();
 
 // Twilio sandbox — update if you move to a production WhatsApp sender
 const TWILIO_WHATSAPP_NUMBER = "14155238886";
@@ -1014,11 +1048,24 @@ function EditBusinessDialog({
           </div>
           <div>
             <Label>Country</Label>
-            <Input
+            <select
+              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
               value={form.country}
-              onChange={(e) => setForm({ ...form, country: e.target.value })}
-              placeholder="e.g. Nigeria"
-            />
+              onChange={(e) => {
+                const country = e.target.value;
+                const info = COUNTRIES[country];
+                setForm({
+                  ...form,
+                  country,
+                  currency: info?.currency ?? form.currency,
+                });
+              }}
+            >
+              <option value="">Select country</option>
+              {COUNTRY_NAMES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
           </div>
           <div>
             <Label>Large Sale Alert Threshold</Label>

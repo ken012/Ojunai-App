@@ -27,6 +27,7 @@ public class BusinessDto
     public string? State { get; set; }
     public string? City { get; set; }
     public string? Country { get; set; }
+    public string Timezone { get; set; } = "Africa/Lagos";
     public string Plan { get; set; } = "starter";
     public string? SubscribedPlan { get; set; }
     public DateTime? TrialEndsAt { get; set; }

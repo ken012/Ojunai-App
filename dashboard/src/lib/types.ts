@@ -37,6 +37,7 @@ export interface BusinessDto {
   state?: string;
   city?: string;
   country?: string;
+  timezone?: string;
   largeSaleThreshold?: number;
   customCategories?: string[];
   alertLowStock?: boolean;

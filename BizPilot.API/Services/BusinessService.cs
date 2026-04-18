@@ -23,7 +23,18 @@ public class BusinessService : IBusinessService
         if (!string.IsNullOrWhiteSpace(request.Currency)) business.Currency = request.Currency.Trim().ToUpperInvariant();
         if (request.State != null) business.State = string.IsNullOrWhiteSpace(request.State) ? null : request.State.Trim();
         if (request.City != null) business.City = string.IsNullOrWhiteSpace(request.City) ? null : request.City.Trim();
-        if (!string.IsNullOrWhiteSpace(request.Country)) business.Country = request.Country.Trim();
+        if (!string.IsNullOrWhiteSpace(request.Country))
+        {
+            business.Country = request.Country.Trim();
+            // Auto-set timezone when country changes. Currency is only auto-set if the user didn't
+            // explicitly provide one in the same request (they might want GHS country but USD currency).
+            var countryInfo = Common.CountryLookup.GetByName(request.Country);
+            if (countryInfo != null)
+            {
+                business.Timezone = countryInfo.Timezone;
+                if (string.IsNullOrWhiteSpace(request.Currency)) business.Currency = countryInfo.Currency;
+            }
+        }
         if (request.LargeSaleThreshold.HasValue && request.LargeSaleThreshold.Value > 0) business.LargeSaleThreshold = request.LargeSaleThreshold.Value;
         if (request.CustomCategories != null) business.CustomCategories = JsonSerializer.Serialize(request.CustomCategories);
         if (request.AlertLowStock.HasValue) business.AlertLowStock = request.AlertLowStock.Value;
@@ -50,6 +61,7 @@ public class BusinessService : IBusinessService
         State = b.State,
         City = b.City,
         Country = b.Country,
+        Timezone = b.Timezone,
         Plan = b.Plan,
         SubscribedPlan = b.SubscribedPlan,
         TrialEndsAt = b.TrialEndsAt,

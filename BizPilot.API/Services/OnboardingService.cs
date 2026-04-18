@@ -161,10 +161,12 @@ public class OnboardingService
                 state.OwnerName = CleanName(trimmed);
                 state.Step = OnboardingStep.Confirmation;
                 await _db.SaveChangesAsync();
+                var detectedCountry = (Common.CountryLookup.InferFromPhone(phone) ?? Common.CountryLookup.Default).Name;
                 await Send(from, $"Here's what I have:\n\n" +
                     $"🏪 *Business:* {state.BusinessName}\n" +
                     $"📋 *Type:* {state.BusinessType}\n" +
                     $"📍 *City:* {state.City}\n" +
+                    $"🌍 *Country:* {detectedCountry}\n" +
                     $"👤 *Owner:* {state.OwnerName}\n\n" +
                     $"Reply *confirm* to create your account, or tell me what to fix.");
                 return "onboarding:owner_name";
@@ -180,16 +182,18 @@ public class OnboardingService
                 if (corrected)
                 {
                     await _db.SaveChangesAsync();
+                    var correctedCountry = (Common.CountryLookup.InferFromPhone(phone) ?? Common.CountryLookup.Default).Name;
                     await Send(from, $"Updated! Here's the revised info:\n\n" +
                         $"🏪 *Business:* {state.BusinessName}\n" +
                         $"📋 *Type:* {state.BusinessType}\n" +
                         $"📍 *City:* {state.City}\n" +
+                        $"🌍 *Country:* {correctedCountry}\n" +
                         $"👤 *Owner:* {state.OwnerName}\n\n" +
                         $"Reply *confirm* to create your account, or tell me what to fix.");
                     return "onboarding:correction";
                 }
 
-                await Send(from, "Reply *confirm* to create your account, or tell me what to fix.\n\nExamples: \"business name is Ada Beauty\" or \"city is Lagos\"");
+                await Send(from, "Reply *confirm* to create your account, or tell me what to fix.\n\nExamples: \"business name is Ada Beauty\" or \"city is Accra\"");
                 return "onboarding:awaiting_confirm";
 
             default:
@@ -220,11 +224,18 @@ public class OnboardingService
             await _db.SaveChangesAsync();
         }
 
+        // Auto-detect country, currency, and timezone from the phone number prefix.
+        // Falls back to Nigeria if the prefix isn't recognized.
+        var inferred = Common.CountryLookup.InferFromPhone(phone) ?? Common.CountryLookup.Default;
+
         var business = new Business
         {
             Name = state.BusinessName!,
             BusinessType = state.BusinessType,
             City = state.City,
+            Country = inferred.Name,
+            Currency = inferred.Currency,
+            Timezone = inferred.Timezone,
             Plan = "starter",
             TrialEndsAt = DateTime.UtcNow.AddDays(30)
         };

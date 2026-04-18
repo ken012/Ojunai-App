@@ -134,7 +134,8 @@ public class ReportsController : BizPilotBaseController
     {
         var (allowed, err) = await _planGuard.CheckFeatureAsync(BusinessId, "advanced_reports");
         if (!allowed) return BadRequest(ApiResponse<SalesHeatmapDto>.Fail(err!));
-        var result = await _reports.GetSalesHeatmapAsync(BusinessId, weeks);
+        var biz = await _planGuard.GetBusinessAsync(BusinessId);
+        var result = await _reports.GetSalesHeatmapAsync(BusinessId, weeks, biz?.Timezone);
         return Ok(ApiResponse<SalesHeatmapDto>.Ok(result));
     }
 

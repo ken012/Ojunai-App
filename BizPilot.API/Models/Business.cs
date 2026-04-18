@@ -7,6 +7,7 @@ public class Business
     public string? BusinessType { get; set; }
     public string Currency { get; set; } = "NGN";
     public string Country { get; set; } = "Nigeria";
+    public string Timezone { get; set; } = "Africa/Lagos";
     public string? State { get; set; }
     public string? City { get; set; }
     public Guid OwnerUserId { get; set; }
