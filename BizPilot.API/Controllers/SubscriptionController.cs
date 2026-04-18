@@ -59,25 +59,45 @@ public class SubscriptionController : BizPilotBaseController
         var email = user?.Email ?? $"{user?.PhoneNumber}@bizpilot-ai.com";
 
         var provider = BillingConfig.GetProvider(currency);
-        string url;
 
-        if (provider == BillingConfig.BillingProvider.Paystack)
-        {
-            url = await _paystack.InitializeSubscriptionAsync(BusinessId, plan, email);
-        }
-        else
-        {
-            url = await _flutterwave.InitializePaymentAsync(BusinessId, plan, cycle, currency, email);
-        }
-
-        // Store the billing context so the webhook knows what was intended
+        // Store the billing context
         business.BillingProvider = provider.ToString().ToLower();
         business.BillingCycle = cycle;
         business.BillingCurrency = currency;
         await _db.SaveChangesAsync();
 
-        return Ok(ApiResponse<object>.Ok(new { paymentUrl = url, provider = provider.ToString().ToLower() },
-            "Redirecting to payment..."));
+        if (provider == BillingConfig.BillingProvider.Paystack)
+        {
+            var url = await _paystack.InitializeSubscriptionAsync(BusinessId, plan, email);
+            return Ok(ApiResponse<object>.Ok(new { paymentUrl = url, provider = "paystack" },
+                "Redirecting to payment..."));
+        }
+
+        // Flutterwave: return inline checkout config for the frontend JS SDK
+        if (!Enum.TryParse<BillingConfig.BillingCycle>(cycle, true, out var billingCycle))
+            return BadRequest(ApiResponse<object>.Fail("Invalid billing cycle."));
+
+        var amount = BillingConfig.GetPrice(plan, billingCycle, currency)
+            ?? 0m;
+
+        var txRef = $"bizpilot-{BusinessId:N}-{DateTime.UtcNow.Ticks}";
+        var publicKey = _config["Flutterwave:PublicKey"] ?? "";
+        var callbackUrl = _config["Flutterwave:CallbackUrl"] ?? "https://app.bizpilot-ai.com/settings";
+
+        return Ok(ApiResponse<object>.Ok(new
+        {
+            provider = "flutterwave",
+            inlineCheckout = true,
+            publicKey,
+            txRef,
+            amount,
+            currency,
+            email,
+            plan,
+            billingCycle = cycle,
+            callbackUrl,
+            businessName = business.Name,
+        }, "Ready for checkout."));
     }
 
     [HttpPost("cancel")]
@@ -135,6 +155,24 @@ public class SubscriptionController : BizPilotBaseController
         await _db.SaveChangesAsync();
 
         return Ok(ApiResponse<object>.Ok(null!, $"Plan changed to {targetLabel}."));
+    }
+
+    /// <summary>
+    /// Verify a Flutterwave Inline checkout payment after the frontend JS SDK callback fires.
+    /// Checks the transaction via Flutterwave API and activates the subscription.
+    /// </summary>
+    [HttpPost("verify-flutterwave")]
+    [RequirePermission(Permission.ManageSettings)]
+    public async Task<ActionResult<ApiResponse<object>>> VerifyFlutterwave([FromBody] VerifyFlutterwaveRequest request)
+    {
+        if (string.IsNullOrEmpty(request.TransactionId) && string.IsNullOrEmpty(request.TxRef))
+            return BadRequest(ApiResponse<object>.Fail("Transaction ID or reference is required."));
+
+        var result = await _flutterwave.VerifyAndActivateAsync(BusinessId, request.TransactionId, request.TxRef);
+        if (result != null)
+            return BadRequest(ApiResponse<object>.Fail(result));
+
+        return Ok(ApiResponse<object>.Ok(null!, "Payment verified. Your plan is now active."));
     }
 
     /// <summary>Paystack webhook (NGN payments)</summary>
@@ -199,4 +237,10 @@ public class InitializeSubscriptionRequest
 public class ChangePlanRequest
 {
     public string Plan { get; set; } = string.Empty;
+}
+
+public class VerifyFlutterwaveRequest
+{
+    public string? TransactionId { get; set; }
+    public string? TxRef { get; set; }
 }

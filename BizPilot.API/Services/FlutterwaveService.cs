@@ -80,7 +80,7 @@ public class FlutterwaveService
 
         var client = _httpFactory.CreateClient("Flutterwave");
         var json = JsonSerializer.Serialize(payload);
-        var response = await client.PostAsync("/v3/payments",
+        var response = await client.PostAsync("/charges",
             new StringContent(json, Encoding.UTF8, "application/json"));
 
         var body = await response.Content.ReadAsStringAsync();
@@ -90,9 +90,15 @@ public class FlutterwaveService
             throw new InvalidOperationException("Failed to initialize payment. Please try again.");
         }
 
+        _logger.LogInformation("Flutterwave charge response: {Body}", body);
+
         using var doc = JsonDocument.Parse(body);
-        var link = doc.RootElement.GetProperty("data").GetProperty("link").GetString()
-            ?? throw new InvalidOperationException("Flutterwave did not return a payment link.");
+        var data = doc.RootElement.TryGetProperty("data", out var d) ? d : doc.RootElement;
+        // Try common field names for the checkout URL
+        var link = (data.TryGetProperty("link", out var l) ? l.GetString() : null)
+            ?? (data.TryGetProperty("checkout_url", out var cu) ? cu.GetString() : null)
+            ?? (data.TryGetProperty("authorization_url", out var au) ? au.GetString() : null)
+            ?? throw new InvalidOperationException($"Flutterwave did not return a payment link. Response: {body}");
 
         _logger.LogInformation("Flutterwave payment initialized: {TxRef} for {Plan}/{Cycle}/{Currency}",
             txRef, plan, billingCycle, currency);
@@ -130,6 +136,118 @@ public class FlutterwaveService
             Encoding.UTF8.GetBytes(secret));
     }
 
+    /// <summary>
+    /// Verify a Flutterwave Inline checkout payment and activate the subscription.
+    /// Called after the frontend JS SDK callback fires with the transaction details.
+    /// </summary>
+    public async Task<string?> VerifyAndActivateAsync(Guid businessId, string? transactionId, string? txRef)
+    {
+        var business = await _db.Businesses.FindAsync(businessId);
+        if (business == null) return "Business not found.";
+
+        // Verify via the v3 API with secret key (Inline SDK creates v3 transactions)
+        var secretKey = _config["Flutterwave:SecretKey"];
+        if (string.IsNullOrEmpty(secretKey))
+            return "Flutterwave SecretKey not configured.";
+
+        using var httpClient = new HttpClient();
+        httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {secretKey}");
+
+        HttpResponseMessage response;
+        if (!string.IsNullOrEmpty(transactionId))
+            response = await httpClient.GetAsync($"https://api.flutterwave.com/v3/transactions/{transactionId}/verify");
+        else if (!string.IsNullOrEmpty(txRef))
+            response = await httpClient.GetAsync($"https://api.flutterwave.com/v3/transactions/verify_by_reference?tx_ref={Uri.EscapeDataString(txRef)}");
+        else
+            return "No transaction identifier provided.";
+
+        var body = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("Flutterwave verify failed: {Status} {Body}", response.StatusCode, body);
+            return "Could not verify payment. Please try again.";
+        }
+
+        using var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+
+        // Handle both single charge and list response
+        JsonElement chargeData;
+        if (root.TryGetProperty("data", out var data))
+        {
+            if (data.ValueKind == JsonValueKind.Array)
+            {
+                if (data.GetArrayLength() == 0) return "Transaction not found.";
+                chargeData = data[0];
+            }
+            else
+            {
+                chargeData = data;
+            }
+        }
+        else return "Invalid verification response.";
+
+        var status = chargeData.TryGetProperty("status", out var st) ? st.GetString() : null;
+        if (status != "successful" && status != "completed")
+            return $"Payment was not successful. Status: {status}";
+
+        // Activate the subscription
+        var plan = business.Plan;
+        var billingCycle = business.BillingCycle ?? "monthly";
+        var currency = business.BillingCurrency ?? business.Currency;
+        var isAnnual = billingCycle.Equals("annual", StringComparison.OrdinalIgnoreCase);
+
+        // Read plan from the stored billing context (set during Initialize)
+        if (chargeData.TryGetProperty("meta", out var meta) && meta.TryGetProperty("plan", out var mp))
+            plan = mp.GetString() ?? plan;
+
+        business.Plan = plan;
+        business.SubscribedPlan = plan;
+        business.BillingProvider = "flutterwave";
+        business.PaymentMethod = "card";
+        business.IsAutoRenew = false;
+        business.TrialEndsAt = null;
+        business.SubscriptionEndsAt = isAnnual
+            ? DateTime.UtcNow.AddYears(1)
+            : DateTime.UtcNow.AddMonths(1);
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Flutterwave inline payment verified: {Business} → {Plan} ({Cycle}/{Currency})",
+            business.Name, plan, billingCycle, currency);
+
+        // Send WhatsApp confirmation
+        try
+        {
+            var owner = await _db.Users.FirstOrDefaultAsync(u =>
+                u.BusinessId == businessId && u.Role == UserRole.Owner && u.IsActive);
+            if (owner != null)
+            {
+                var planLabel = plan[0..1].ToUpper() + plan[1..];
+                if (!Enum.TryParse<BillingConfig.BillingCycle>(billingCycle, true, out var bc))
+                    bc = BillingConfig.BillingCycle.Monthly;
+                var price = BillingConfig.GetPrice(plan, bc, currency);
+                var formattedPrice = price.HasValue ? BillingConfig.FormatPrice(price.Value, currency) : "your selected plan";
+                var cycleLabel = isAnnual ? "year" : "month";
+
+                var whatsApp = _serviceProvider.GetRequiredService<IWhatsAppService>();
+                await whatsApp.SendMessageAsync(
+                    $"whatsapp:{owner.PhoneNumber}",
+                    $"✅ *Payment successful!*\n\n" +
+                    $"Your *{planLabel}* plan is now active at {formattedPrice}/{cycleLabel}.\n\n" +
+                    $"Expires on {business.SubscriptionEndsAt:dd MMM yyyy}. You'll need to renew manually.\n\n" +
+                    $"Say *my plan* to see your features.",
+                    businessId, owner.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send payment confirmation for {Business}", business.Name);
+        }
+
+        return null; // success
+    }
+
     public async Task CancelSubscriptionAsync(Guid businessId)
     {
         var business = await _db.Businesses.FindAsync(businessId)
@@ -140,7 +258,7 @@ public class FlutterwaveService
             try
             {
                 var client = _httpFactory.CreateClient("Flutterwave");
-                await client.PutAsync($"/v3/subscriptions/{business.FlutterwaveSubscriptionId}/cancel",
+                await client.PutAsync($"/subscriptions/{business.FlutterwaveSubscriptionId}/cancel",
                     new StringContent("{}", Encoding.UTF8, "application/json"));
             }
             catch (Exception ex)
@@ -180,7 +298,7 @@ public class FlutterwaveService
             var client = _httpFactory.CreateClient("Flutterwave");
 
             // Check existing plans
-            var listResponse = await client.GetAsync("/v3/payment-plans");
+            var listResponse = await client.GetAsync("/payment-plans");
             if (listResponse.IsSuccessStatusCode)
             {
                 var listBody = await listResponse.Content.ReadAsStringAsync();
@@ -207,7 +325,7 @@ public class FlutterwaveService
                 currency = currency.ToUpper()
             });
 
-            var createResponse = await client.PostAsync("/v3/payment-plans",
+            var createResponse = await client.PostAsync("/payment-plans",
                 new StringContent(createPayload, Encoding.UTF8, "application/json"));
 
             var createBody = await createResponse.Content.ReadAsStringAsync();
@@ -235,7 +353,7 @@ public class FlutterwaveService
         try
         {
             var client = _httpFactory.CreateClient("Flutterwave");
-            var response = await client.GetAsync($"/v3/subscriptions?email={Uri.EscapeDataString(email)}");
+            var response = await client.GetAsync($"/subscriptions?email={Uri.EscapeDataString(email)}");
             if (!response.IsSuccessStatusCode) return null;
 
             var body = await response.Content.ReadAsStringAsync();

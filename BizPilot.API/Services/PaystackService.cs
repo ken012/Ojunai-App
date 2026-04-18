@@ -283,30 +283,37 @@ public class PaystackService
 
     private async Task<string> GetOrCreatePlanAsync(string planName, decimal amount)
     {
-        // Check if we already have this plan in Paystack
-        var cacheKey = $"paystack_plan_{planName}";
         var existing = _config[$"Paystack:PlanCodes:{planName}"];
         if (!string.IsNullOrEmpty(existing)) return existing;
 
-        // List existing plans and find ours
         var response = await GetAsync("/plan");
-        var plans = response.GetProperty("data");
+        if (!response.TryGetProperty("data", out var plans))
+        {
+            _logger.LogError("Paystack /plan response missing 'data'. Check your Paystack:SecretKey. Response: {Response}", response);
+            throw new InvalidOperationException("Failed to connect to Paystack. Check API key configuration.");
+        }
+
         foreach (var p in plans.EnumerateArray())
         {
-            var name = p.GetProperty("name").GetString();
+            var name = p.TryGetProperty("name", out var n) ? n.GetString() : null;
             if (name == $"BizPilot {planName}")
                 return p.GetProperty("plan_code").GetString()!;
         }
 
-        // Create new plan
         var result = await PostAsync("/plan", new
         {
             name = $"BizPilot {planName}",
-            amount = (int)(amount * 100), // kobo
+            amount = (int)(amount * 100),
             interval = "monthly"
         });
 
-        return result.GetProperty("data").GetProperty("plan_code").GetString()!;
+        if (!result.TryGetProperty("data", out var data) || !data.TryGetProperty("plan_code", out var code))
+        {
+            _logger.LogError("Paystack plan creation failed: {Response}", result);
+            throw new InvalidOperationException("Failed to create payment plan on Paystack.");
+        }
+
+        return code.GetString()!;
     }
 
     private async Task<string> CreateCustomerAsync(string email, string businessName, Guid businessId)

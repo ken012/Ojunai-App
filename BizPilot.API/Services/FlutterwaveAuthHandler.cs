@@ -1,5 +1,4 @@
 using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json;
 
 namespace BizPilot.API.Services;
@@ -7,11 +6,14 @@ namespace BizPilot.API.Services;
 /// <summary>
 /// DelegatingHandler that transparently adds a Flutterwave OAuth2 access token
 /// to every outgoing request on the "Flutterwave" HttpClient.
-/// Exchanges client_id + client_secret for a short-lived token via
-/// POST https://idp.flutterwave.com/oauth/token and caches it until expiry.
+/// Uses the centralized Flutterwave IDP (same URL for sandbox and production).
+/// Token is cached until expiry.
 /// </summary>
 public class FlutterwaveAuthHandler : DelegatingHandler
 {
+    private const string DefaultTokenUrl =
+        "https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token";
+
     private readonly IConfiguration _config;
     private readonly ILogger<FlutterwaveAuthHandler> _logger;
 
@@ -42,7 +44,6 @@ public class FlutterwaveAuthHandler : DelegatingHandler
         await _lock.WaitAsync(ct);
         try
         {
-            // Double-check after acquiring lock
             if (_cachedToken != null && DateTime.UtcNow < _tokenExpiresAt)
                 return _cachedToken;
 
@@ -55,24 +56,22 @@ public class FlutterwaveAuthHandler : DelegatingHandler
                 return null;
             }
 
-            var payload = JsonSerializer.Serialize(new
+            var tokenUrl = _config["Flutterwave:TokenUrl"] ?? DefaultTokenUrl;
+
+            var form = new FormUrlEncodedContent(new Dictionary<string, string>
             {
-                client_id = clientId,
-                client_secret = clientSecret,
-                grant_type = "client_credentials"
+                ["client_id"] = clientId,
+                ["client_secret"] = clientSecret,
+                ["grant_type"] = "client_credentials"
             });
 
             using var httpClient = new HttpClient();
-            var response = await httpClient.PostAsync(
-                "https://idp.flutterwave.com/oauth/token",
-                new StringContent(payload, Encoding.UTF8, "application/json"),
-                ct);
-
+            var response = await httpClient.PostAsync(tokenUrl, form, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogError("Flutterwave OAuth token request failed: {Status} {Body}", response.StatusCode, body);
+                _logger.LogError("Flutterwave OAuth token failed: {Status} {Body}", response.StatusCode, body);
                 return null;
             }
 
@@ -81,7 +80,6 @@ public class FlutterwaveAuthHandler : DelegatingHandler
 
             _cachedToken = root.GetProperty("access_token").GetString();
             var expiresIn = root.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 3600;
-            // Refresh 60 seconds early to avoid edge-case expiry during a request
             _tokenExpiresAt = DateTime.UtcNow.AddSeconds(expiresIn - 60);
 
             _logger.LogInformation("Flutterwave OAuth token acquired, expires in {ExpiresIn}s", expiresIn);

@@ -63,7 +63,7 @@ builder.Services.AddHttpClient("Paystack", client =>
 builder.Services.AddTransient<FlutterwaveAuthHandler>();
 builder.Services.AddHttpClient("Flutterwave", client =>
 {
-    client.BaseAddress = new Uri("https://api.flutterwave.com");
+    client.BaseAddress = new Uri(config["Flutterwave:ApiBaseUrl"] ?? "https://developersandbox-api.flutterwave.com");
     client.Timeout = TimeSpan.FromSeconds(30);
 }).AddHttpMessageHandler<FlutterwaveAuthHandler>();
 

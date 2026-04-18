@@ -590,6 +590,20 @@ function ManageCategoriesCard({
   );
 }
 
+function loadFlutterwaveScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector('script[src*="checkout.flutterwave.com"]')) {
+      resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://checkout.flutterwave.com/v3.js";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Failed to load Flutterwave SDK"));
+    document.head.appendChild(script);
+  });
+}
+
 type PlanFeature = { text: string; included: boolean };
 
 const PLAN_ORDER = ["starter", "shop", "pro", "business"];
@@ -716,12 +730,53 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
     setSubscribing(targetPlan);
     setSubError(null);
     try {
-      const { data } = await api.post<{ data: { paymentUrl: string } }>("/subscription/initialize", {
+      const { data } = await api.post<{ data: Record<string, unknown> }>("/subscription/initialize", {
         plan: targetPlan,
         currency: selectedCurrency,
         billingCycle,
       });
-      window.location.href = data.data!.paymentUrl;
+      const result = data.data!;
+
+      if (result.provider === "paystack") {
+        window.location.href = result.paymentUrl as string;
+        return;
+      }
+
+      // Flutterwave Inline JS checkout
+      await loadFlutterwaveScript();
+      const win = window as unknown as { FlutterwaveCheckout?: (config: Record<string, unknown>) => void };
+      if (!win.FlutterwaveCheckout) {
+        setSubError("Failed to load payment widget. Please refresh and try again.");
+        setSubscribing(null);
+        return;
+      }
+
+      win.FlutterwaveCheckout({
+        public_key: result.publicKey,
+        tx_ref: result.txRef,
+        amount: result.amount,
+        currency: result.currency,
+        customer: { email: result.email },
+        customizations: {
+          title: "BizPilot AI",
+          description: `${(result.plan as string).charAt(0).toUpperCase() + (result.plan as string).slice(1)} Plan — ${result.billingCycle}`,
+          logo: "https://app.bizpilot-ai.com/favicon.ico",
+        },
+        callback: async (response: { transaction_id?: string; tx_ref?: string }) => {
+          try {
+            await api.post("/subscription/verify-flutterwave", {
+              transactionId: response.transaction_id?.toString(),
+              txRef: response.tx_ref,
+            });
+            qc.invalidateQueries({ queryKey: ["plan-status"] });
+          } catch {
+            setSubError("Payment received but verification failed. Please contact support.");
+          } finally {
+            setSubscribing(null);
+          }
+        },
+        onclose: () => setSubscribing(null),
+      });
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { errors?: string[] } } };
       setSubError(ax.response?.data?.errors?.[0] ?? "Failed to start subscription");
