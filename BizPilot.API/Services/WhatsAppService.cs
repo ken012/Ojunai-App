@@ -200,15 +200,15 @@ public class WhatsAppService : IWhatsAppService
     {
         var examples = intent switch
         {
-            "create_sale" => "• \"Sold 3 bags of rice at 5000\"\n• \"Sold 5 rice to Ada on credit\"\n• \"Sold 2 beans worth 3000\"",
+            "create_sale" => "• \"Sold 3 bags of rice at 5000\"\n• \"Sold 5 rice to Ama on credit\"\n• \"Sold 2 beans worth 3000\"",
             "create_expense" => "• \"Spent 5k on transport\"\n• \"Paid 100k for rent\"\n• \"Bought airtime 1000\"",
             "add_inventory" => "• \"Bought 30 bags rice at 4000\"\n• \"Received 50 shampoo from supplier\"\n• \"Restocked 10 cartons juice\"",
-            "create_receivable" => "• \"Ada owes me 20k\"\n• \"Tunde owes 50k for the rice\"",
+            "create_receivable" => "• \"Ama owes me 20k\"\n• \"Kofi owes 50k for the rice\"",
             "create_payable" => "• \"I owe Market Mama 30k\"\n• \"Owe NEPA 10k\"",
-            "record_receivable_payment" or "record_payable_payment" => "• \"Ada paid 10k\"\n• \"Clear Tunde's debt\"\n• \"Clear all debts\"",
+            "record_receivable_payment" or "record_payable_payment" => "• \"Ama paid 10k\"\n• \"Clear Kofi's debt\"\n• \"Clear all debts\"",
             "update_product_price" => "• \"Rice now sells at 5000\"\n• \"Reduce shampoo cost by 500\"",
-            "hold_stock" => "• \"Hold 5 bags of rice for Ada\"",
-            "release_hold" => "• \"Ada came for her rice\"\n• \"Release Ada's hold\"",
+            "hold_stock" => "• \"Hold 5 bags of rice for Ama\"",
+            "release_hold" => "• \"Ama came for her rice\"\n• \"Release Ama's hold\"",
             _ => "• \"Sold 3 bags of rice at 3000\"\n• \"Bought 10 shampoo at 1200\"\n• \"Check stock\"\n• \"Today's sales\""
         };
 
@@ -1694,7 +1694,7 @@ public class WhatsAppService : IWhatsAppService
 
         var normalizedPhone = NormalizePhone(phoneNumber);
         if (string.IsNullOrEmpty(normalizedPhone))
-            return "Invalid phone number. Please use a valid Nigerian or international format.";
+            return "Invalid phone number. Please use a valid phone number in international format (e.g. +233...)";
 
         var existingUser = await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == normalizedPhone);
         if (existingUser != null && existingUser.IsActive)
@@ -2526,21 +2526,21 @@ public class WhatsAppService : IWhatsAppService
         "📥 \"Bought 10 bags of rice\"\n" +
         "💸 \"Spent 5k on transport\"\n" +
         "📦 \"Check inventory\"\n" +
-        "💰 \"Emeka owes me 20k\"\n" +
+        "💰 \"Kofi owes me 20k\"\n" +
         "📊 \"What did I sell today?\"\n\n" +
         "Type *help* for more commands (holds, staff, insights, bulk actions).";
 
     private static string HandleHelp() =>
         "📖 *More commands:*\n\n" +
-        "🔒 *Holds:* \"Hold 5 rice for Emeka\" / \"What's on hold?\"\n" +
+        "🔒 *Holds:* \"Hold 5 rice for Ama\" / \"What's on hold?\"\n" +
         "👥 *Staff:* \"Add staff Mary 08012345678 as Admin\" / \"Who are my staff?\" / \"What did Mary sell?\"\n" +
         "    _Say *roles* to see what each role can do_\n" +
         "🔮 *Insights:* \"When will I run out?\" / \"Most profitable product?\" / \"Stock value\"\n" +
-        "💰 *Debts:* \"Clear Ngozi's debt\" / \"Clear all debts\"\n" +
+        "💰 *Debts:* \"Clear Ama's debt\" / \"Clear all debts\"\n" +
         "📊 *Reports:* \"Top 3 products\" / \"Least selling item\" / \"Dead stock\" / \"Compare weeks\"\n" +
         "📥 *Bulk restock:* \"Bought 10 rice, 5 juice, 3 shampoo\"\n" +
         "🛒 *Multi-sale:* \"Sold 3 rice and 2 beans at 5k each\"\n" +
-        "✏️ *Corrections:* \"Cancel that\" / \"That was on credit\" / \"Add Ada to that\"\n" +
+        "✏️ *Corrections:* \"Cancel that\" / \"That was on credit\" / \"Add Ama to that\"\n" +
         "📋 *Plans:* \"What plan am I on?\" / \"Plans\"\n\n" +
         "💡 *Tip:* Do multiple things at once!\n" +
         "\"Bought 3 yam at 2k, sold 2 toothpaste at 5k, NEPA bill 10k\"";
@@ -2577,7 +2577,7 @@ public class WhatsAppService : IWhatsAppService
         "• \"Recent expenses\" — last 7 days\n" +
         "• \"Who owes me\" — outstanding receivables\n" +
         "• \"Who I owe\" — outstanding payables\n" +
-        "• \"Emeka's balance\" — specific contact\n" +
+        "• \"Kofi's balance\" — specific contact\n" +
         "• \"Profit this month\" — monthly cash position\n\n" +
         "👥 *Staff:*\n" +
         "• \"Who are my staff\" — team list\n" +
@@ -2784,7 +2784,7 @@ public class WhatsAppService : IWhatsAppService
     {
         var name = ba.GetStringOrNull("contactName");
         if (string.IsNullOrWhiteSpace(name))
-            return "Please provide the contact's name. E.g. \"Add contact Ada Okafor\"";
+            return "Please provide the contact's name. E.g. \"Add contact Ama Mensah\"";
 
         var phone = ba.GetStringOrNull("phoneNumber");
         var typeStr = ba.GetStringOrNull("contactType") ?? "Customer";
@@ -2899,20 +2899,32 @@ public class WhatsAppService : IWhatsAppService
         if (hasPlus)
             return "+" + digits; // Already international — keep as-is
 
-        // Nigerian local: 11 digits starting with 0 → +234
-        if (digits.Length == 11 && digits.StartsWith("0"))
-            return "+234" + digits.Substring(1);
+        // Local format: starts with 0 — try to match against known African country codes by digit count.
+        // Nigerian local (0xxx): 11 digits → +234. Ghanaian local (0xxx): 10 digits → +233.
+        // Most African countries: 10-11 digits local with leading 0.
+        if (digits.StartsWith("0") && digits.Length >= 9 && digits.Length <= 11)
+        {
+            // Try known prefixes — match by total local digit count
+            if (digits.Length == 11) return "+234" + digits[1..]; // Nigeria
+            if (digits.Length == 10) return "+233" + digits[1..]; // Ghana (or Kenya +254, SA +27 — ambiguous, default Ghana)
+            if (digits.Length == 9) return "+254" + digits[1..];  // Kenya
+        }
+
+        // International without +: starts with a known country code
+        if (digits.StartsWith("234") && digits.Length == 13) return "+" + digits; // Nigeria
+        if (digits.StartsWith("233") && digits.Length == 12) return "+" + digits; // Ghana
+        if (digits.StartsWith("254") && digits.Length == 12) return "+" + digits; // Kenya
+        if (digits.StartsWith("27") && digits.Length == 11) return "+" + digits;  // South Africa
+        if (digits.StartsWith("255") && digits.Length == 12) return "+" + digits; // Tanzania
+        if (digits.StartsWith("256") && digits.Length == 12) return "+" + digits; // Uganda
+        if (digits.StartsWith("237") && digits.Length == 12) return "+" + digits; // Cameroon
 
         // North American: 10 digits (no country code) → +1
         if (digits.Length == 10 && !digits.StartsWith("0"))
             return "+1" + digits;
 
-        // North American: 11 digits starting with 1 (has country code, missing +)
+        // North American: 11 digits starting with 1
         if (digits.Length == 11 && digits.StartsWith("1"))
-            return "+" + digits;
-
-        // Nigerian intl: 13 digits starting with 234 (missing +)
-        if (digits.Length == 13 && digits.StartsWith("234"))
             return "+" + digits;
 
         // Fallback: prepend +
@@ -3034,7 +3046,7 @@ public class WhatsAppService : IWhatsAppService
             changes.Add($"payment method → {newMethod}");
         }
 
-        if (changes.Count == 0) return "Nothing to update. Specify what to change (e.g. 'that was on credit' or 'add Ada to that').";
+        if (changes.Count == 0) return "Nothing to update. Specify what to change (e.g. 'that was on credit' or 'add Ama to that').";
 
         await _db.SaveChangesAsync();
         return $"✅ Last sale updated: {string.Join(", ", changes)}";
