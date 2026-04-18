@@ -647,6 +647,7 @@ public class WhatsAppService : IWhatsAppService
         ["hold_stock"] = Permission.ManageStock,
         ["release_hold"] = Permission.ManageStock,
         ["correct_last_sale"] = Permission.VoidSales,
+        ["correct_last_expense"] = Permission.RecordExpenses,
         ["update_last_sale"] = Permission.VoidSales,
         ["correct_debt"] = Permission.ManageDebts,
         ["undo_last_action"] = Permission.VoidSales,
@@ -709,6 +710,7 @@ public class WhatsAppService : IWhatsAppService
             "get_stockout_prediction" => await HandleGetStockoutPredictionAsync(businessId),
             "get_today_expenses" => await HandleGetTodayExpensesAsync(businessId),
             "get_recent_expenses" => await HandleGetRecentExpensesAsync(businessId),
+            "correct_last_expense" => await HandleCorrectLastExpenseAsync(businessId, ba, user),
             "update_low_stock_threshold" => await HandleUpdateLowStockThresholdAsync(businessId, ba),
             "delete_product" => await HandleDeleteProductAsync(businessId, ba),
             "hold_stock" => await HandleHoldStockAsync(businessId, ba),
@@ -2306,6 +2308,78 @@ public class WhatsAppService : IWhatsAppService
         var lines = holds.Select(h =>
             $"• {h.Quantity:0.##} {h.Unit} of {h.ProductName} — for *{h.ContactName}* ({h.CreatedAtUtc:MMM d})");
         return $"📋 *Active Holds* ({holds.Count})\n{string.Join("\n", lines)}\n\nSay \"release [name]'s hold\" or \"[name] came for [product]\" to resolve.";
+    }
+
+    private async Task<string> HandleCorrectLastExpenseAsync(Guid businessId, JsonElement ba, User? recordedBy = null)
+    {
+        // Find the most recent non-deleted expense by this user (within 2 hours)
+        var cutoff = DateTime.UtcNow.AddHours(-2);
+        var lastExpense = await _db.Expenses
+            .Where(e => e.BusinessId == businessId && !e.IsDeleted
+                        && e.RecordedByUserId == recordedBy!.Id
+                        && e.CreatedAtUtc >= cutoff)
+            .OrderByDescending(e => e.CreatedAtUtc)
+            .FirstOrDefaultAsync();
+
+        if (lastExpense == null)
+            return "No recent expense found to modify. You can only correct your own expenses within 2 hours.";
+
+        // Check for replacement items (batch correction: "paid 20k to Mary and 40k to Ken")
+        var replacements = new List<(string Category, decimal Amount, string? PaidTo, string? Notes)>();
+
+        if (ba.TryGetProperty("items", out var itemsEl) && itemsEl.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in itemsEl.EnumerateArray())
+            {
+                var cat = item.GetStringOrNull("category") ?? lastExpense.Category;
+                var amt = item.GetDecimalOrNull("amount");
+                if (!amt.HasValue || amt.Value <= 0) continue;
+                replacements.Add((cat, amt.Value, item.GetStringOrNull("paidTo"), item.GetStringOrNull("notes")));
+            }
+        }
+
+        // Single correction: just update amount/category/notes
+        var newAmount = ba.GetDecimalOrNull("amount");
+        var newCategory = ba.GetStringOrNull("category");
+        var newPaidTo = ba.GetStringOrNull("paidTo");
+        var newNotes = ba.GetStringOrNull("notes");
+
+        if (replacements.Count == 0 && newAmount.HasValue)
+        {
+            replacements.Add((newCategory ?? lastExpense.Category, newAmount.Value, newPaidTo ?? lastExpense.PaidTo, newNotes));
+        }
+
+        if (replacements.Count == 0)
+            return $"What would you like to change about the last expense (₦{lastExpense.Amount:N0} {lastExpense.Category})? " +
+                   "For example: \"Change amount to 25,000\" or \"Change category to Transport\".";
+
+        // Void the original expense
+        var oldRef = $"EX-{lastExpense.Id.ToString("N")[..8].ToUpper()}";
+        lastExpense.IsDeleted = true;
+        lastExpense.DeletedAtUtc = DateTime.UtcNow;
+        lastExpense.Notes = $"{lastExpense.Notes ?? lastExpense.Category} [Voided — replaced by correction]";
+
+        // Create replacement(s)
+        var results = new List<string>();
+        foreach (var (cat, amt, paidTo, notes) in replacements)
+        {
+            await _expenses.CreateAsync(businessId, new DTOs.Expenses.CreateExpenseRequest
+            {
+                Category = cat,
+                Amount = amt,
+                PaidTo = paidTo,
+                Notes = $"{notes ?? cat} (corrected from {oldRef}: ₦{lastExpense.Amount:N0} {lastExpense.Category})"
+            }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
+
+            var paidToNote = !string.IsNullOrEmpty(paidTo) ? $" to {paidTo}" : "";
+            results.Add($"₦{amt:N0} for {cat}{paidToNote}");
+        }
+
+        await _db.SaveChangesAsync();
+
+        return $"✅ Corrected! Original expense voided (₦{lastExpense.Amount:N0} {lastExpense.Category}).\n" +
+               $"Replacement{(results.Count > 1 ? "s" : "")}:\n" +
+               string.Join("\n", results.Select((r, i) => $"• {r}"));
     }
 
     private async Task<string> HandleGetTodayExpensesAsync(Guid businessId)

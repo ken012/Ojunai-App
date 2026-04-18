@@ -235,6 +235,13 @@ Supported intents:
   User: "Ada's debt should be 15k" → {contactName:"Ada", amount:15000}
   User: "Clear Tunde's debt" → use record_receivable_payment with clearAll instead (existing intent)
 - undo_last_action: {} — void/undo the most recent action (sale, expense, or inventory). Triggers: "cancel that", "undo", "scratch that", "never mind that last one"
+- correct_last_expense: {amount?, category?, paidTo?, notes?, items?: [{category, amount, paidTo?, notes?}]} — modify or replace the most recent expense.
+  Use for single corrections OR splitting into multiple replacements (voids original, creates replacement entries).
+  Triggers: "modify last expense", "change last expense to 25k", "correct that expense", "actually it was 30k for transport", "split that into 20k for Mary and 40k for Ken"
+  Single correction: "Change amount to 25,000" → {amount:25000}
+  Single with category: "Change to transport 15k" → {amount:15000, category:"Transport"}
+  Split into multiple: "Actually paid 20k to Mary and 40k to Ken" → {items:[{category:"Salaries",amount:20000,paidTo:"Mary"},{category:"Salaries",amount:40000,paidTo:"Ken"}]}
+  IMPORTANT: When user says "modify/change/correct last expense" or responds to a clarification about a previous expense, use this intent — do NOT create a new create_expense.
 - return_product: {productName, quantity, contactName?} — customer returned items, add stock back
 - stocktake: {items: [{productName, actualCount}]} — adjust stock to match physical count. "I counted 15 rice, 8 beans" → {items:[{productName:"rice",actualCount:15},{productName:"beans",actualCount:8}]}
 - get_week_comparison: {} — compare this week vs last week
