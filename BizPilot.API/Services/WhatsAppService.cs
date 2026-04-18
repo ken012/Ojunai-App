@@ -648,6 +648,7 @@ public class WhatsAppService : IWhatsAppService
         ["release_hold"] = Permission.ManageStock,
         ["correct_last_sale"] = Permission.VoidSales,
         ["update_last_sale"] = Permission.VoidSales,
+        ["correct_debt"] = Permission.ManageDebts,
         ["undo_last_action"] = Permission.VoidSales,
         ["stocktake"] = Permission.ManageStock,
         ["add_staff"] = Permission.ManageStaff,
@@ -718,6 +719,7 @@ public class WhatsAppService : IWhatsAppService
             "create_contact" => await HandleCreateContactAsync(businessId, ba),
             "correct_last_sale" => await HandleCorrectLastSaleAsync(businessId, ba, user),
             "update_last_sale" => await HandleUpdateLastSaleAsync(businessId, ba, user),
+            "correct_debt" => await HandleCorrectDebtAsync(businessId, ba, user),
             "undo_last_action" => await HandleUndoLastActionAsync(businessId, user),
             "return_product" => await HandleReturnProductAsync(businessId, ba, user),
             "stocktake" => await HandleStocktakeAsync(businessId, ba, user),
@@ -2556,6 +2558,77 @@ public class WhatsAppService : IWhatsAppService
             }
         }
         return matrix[a.Length, b.Length];
+    }
+
+    private async Task<string> HandleCorrectDebtAsync(Guid businessId, JsonElement ba, User? recordedBy = null)
+    {
+        var contactName = ba.GetStringOrNull("contactName");
+        var newAmount = ba.GetDecimalOrNull("amount");
+        if (string.IsNullOrEmpty(contactName))
+            return "Which contact's debt do you want to adjust?";
+        if (!newAmount.HasValue || newAmount.Value < 0)
+            return "What should the new amount be?";
+
+        var contact = await _db.Contacts.FirstOrDefaultAsync(c =>
+            c.BusinessId == businessId && EF.Functions.ILike(c.Name, $"%{contactName}%"));
+        if (contact == null) return $"Contact '{contactName}' not found.";
+
+        // Find the most recent receivable or payable entry for this contact
+        var latestEntry = await _db.LedgerEntries
+            .Where(e => e.BusinessId == businessId && e.ContactId == contact.Id
+                        && (e.EntryType == LedgerEntryType.Receivable || e.EntryType == LedgerEntryType.Payable))
+            .OrderByDescending(e => e.CreatedAtUtc)
+            .FirstOrDefaultAsync();
+
+        if (latestEntry == null)
+            return $"No existing debt found for {contact.Name}. To create one, say \"{contact.Name} owes me [amount]\" or \"I owe {contact.Name} [amount]\".";
+
+        var oldAmount = latestEntry.Amount;
+        var typeLabel = latestEntry.EntryType == LedgerEntryType.Receivable ? "receivable" : "payable";
+
+        if (newAmount.Value == 0)
+        {
+            // Zero means clear the debt — create a reversal payment
+            var paymentType = latestEntry.EntryType == LedgerEntryType.Receivable
+                ? LedgerEntryType.ReceivablePayment : LedgerEntryType.PayablePayment;
+
+            // Calculate total outstanding, not just the latest entry
+            var entries = await _db.LedgerEntries
+                .Where(e => e.BusinessId == businessId && e.ContactId == contact.Id)
+                .ToListAsync();
+
+            var debtType = latestEntry.EntryType;
+            var payType = latestEntry.EntryType == LedgerEntryType.Receivable
+                ? LedgerEntryType.ReceivablePayment : LedgerEntryType.PayablePayment;
+
+            var outstanding = entries.Where(e => e.EntryType == debtType).Sum(e => e.Amount)
+                            - entries.Where(e => e.EntryType == payType).Sum(e => e.Amount);
+
+            if (outstanding <= 0) return $"{contact.Name} has no outstanding {typeLabel} balance.";
+
+            _db.LedgerEntries.Add(new LedgerEntry
+            {
+                BusinessId = businessId,
+                ContactId = contact.Id,
+                EntryType = paymentType,
+                Amount = outstanding,
+                Notes = $"Debt cleared (adjusted from ₦{outstanding:N0} to ₦0)",
+                Source = EntrySource.WhatsApp,
+                RecordedByUserId = recordedBy?.Id,
+                RecordedByName = recordedBy?.FullName
+            });
+            await _db.SaveChangesAsync();
+            return $"✅ Cleared {contact.Name}'s {typeLabel} balance (was ₦{outstanding:N0}).";
+        }
+
+        // Update the latest entry's amount
+        latestEntry.Amount = newAmount.Value;
+        latestEntry.Notes = $"{latestEntry.Notes ?? typeLabel} (edited: was ₦{oldAmount:N0})";
+        await _db.SaveChangesAsync();
+
+        var direction = latestEntry.EntryType == LedgerEntryType.Receivable
+            ? $"{contact.Name} owes you" : $"You owe {contact.Name}";
+        return $"✅ Updated: {direction} ₦{newAmount.Value:N0} (was ₦{oldAmount:N0})";
     }
 
     private async Task<string> HandleCreateContactAsync(Guid businessId, JsonElement ba)

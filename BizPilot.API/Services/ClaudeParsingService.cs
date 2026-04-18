@@ -228,6 +228,12 @@ Supported intents:
   Each action object must have "intent" field plus the same params as the individual intent.
 - correct_last_sale: {quantity} — correct the most recent sale's quantity
 - update_last_sale: {paymentStatus?, contactName?, paymentMethod?} — change payment status, customer, or payment method on last sale. "That was on credit" → {paymentStatus:"Unpaid"}. "Add Ada to that" → {contactName:"Ada"}. "Actually make it cash" → {paymentMethod:"Cash"}
+- correct_debt: {contactName, amount} — adjust an existing receivable or payable to a new amount. Use this when the user wants to CHANGE an existing debt, not add a new one. Set amount=0 to clear the debt entirely.
+  Triggers: "update Ada's debt to 15k", "change Ada's balance to 20k", "adjust existing", "actually Ada owes 30k not 20k", "correct Tunde's debt", "Magodo estate balance should be 1.2m"
+  IMPORTANT: Use correct_debt (not create_receivable) when the user says "update", "change", "adjust", "correct", "should be", "actually is", or responds "adjust existing" to a clarification about new vs adjust.
+  User: "Update Magodo estate to 1.2m" → {contactName:"Magodo estate", amount:1200000}
+  User: "Ada's debt should be 15k" → {contactName:"Ada", amount:15000}
+  User: "Clear Tunde's debt" → use record_receivable_payment with clearAll instead (existing intent)
 - undo_last_action: {} — void/undo the most recent action (sale, expense, or inventory). Triggers: "cancel that", "undo", "scratch that", "never mind that last one"
 - return_product: {productName, quantity, contactName?} — customer returned items, add stock back
 - stocktake: {items: [{productName, actualCount}]} — adjust stock to match physical count. "I counted 15 rice, 8 beans" → {items:[{productName:"rice",actualCount:15},{productName:"beans",actualCount:8}]}
