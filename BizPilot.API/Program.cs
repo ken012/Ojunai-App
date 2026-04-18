@@ -60,12 +60,12 @@ builder.Services.AddHttpClient("Paystack", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
+builder.Services.AddTransient<FlutterwaveAuthHandler>();
 builder.Services.AddHttpClient("Flutterwave", client =>
 {
     client.BaseAddress = new Uri("https://api.flutterwave.com");
-    client.DefaultRequestHeaders.Add("Authorization", $"Bearer {config["Flutterwave:SecretKey"]}");
     client.Timeout = TimeSpan.FromSeconds(30);
-});
+}).AddHttpMessageHandler<FlutterwaveAuthHandler>();
 
 
 // ── Application Services ──────────────────────────────────────────────────────
@@ -88,6 +88,7 @@ builder.Services.AddScoped<OnboardingService>();
 builder.Services.AddScoped<SummaryJobService>();
 builder.Services.AddScoped<TrialReminderJobService>();
 builder.Services.AddScoped<TrialRevertJobService>();
+builder.Services.AddScoped<RenewalReminderJobService>();
 builder.Services.AddScoped<ImportJobService>();
 
 // ── Hangfire ──────────────────────────────────────────────────────────────────
@@ -292,5 +293,10 @@ RecurringJob.AddOrUpdate<TrialRevertJobService>(
     svc => svc.RevertExpiredTrialsAsync(),
     "0 */4 * * *",
     new RecurringJobOptions { TimeZone = lagosZone });
+
+RecurringJob.AddOrUpdate<RenewalReminderJobService>(
+    "renewal-reminders",
+    svc => svc.SendRenewalRemindersAsync(),
+    "0 * * * *");
 
 app.Run();

@@ -23,6 +23,8 @@ public class Business
     public string BillingProvider { get; set; } = "paystack";
     public string BillingCycle { get; set; } = "monthly";
     public string BillingCurrency { get; set; } = "NGN";
+    public bool IsAutoRenew { get; set; } = true;
+    public string? PaymentMethod { get; set; }
     public DateTime? SubscriptionEndsAt { get; set; }
     public string? PendingPlanChange { get; set; }
     public decimal LargeSaleThreshold { get; set; } = 100000;

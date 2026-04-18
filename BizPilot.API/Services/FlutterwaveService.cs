@@ -38,7 +38,8 @@ public class FlutterwaveService
 
     /// <summary>
     /// Initialize a Flutterwave payment. Returns a hosted payment page URL.
-    /// The user is redirected there to complete payment; Flutterwave sends a webhook on success.
+    /// Card payments are attached to a payment plan for auto-renewal.
+    /// Mobile money / bank transfers are one-time charges.
     /// </summary>
     public async Task<string> InitializePaymentAsync(
         Guid businessId, string plan, string billingCycle, string currency, string email)
@@ -49,6 +50,8 @@ public class FlutterwaveService
         var amount = BillingConfig.GetPrice(plan, cycle, currency)
             ?? throw new ArgumentException($"No price found for {plan}/{billingCycle}/{currency}");
 
+        var planId = await GetOrCreatePaymentPlanAsync(plan, cycle, currency, amount);
+
         var txRef = $"bizpilot-{businessId:N}-{DateTime.UtcNow.Ticks}";
         var callbackUrl = _config["Flutterwave:CallbackUrl"] ?? "https://app.bizpilot-ai.com/settings";
 
@@ -58,6 +61,7 @@ public class FlutterwaveService
             amount = (double)amount,
             currency = currency.ToUpper(),
             redirect_url = callbackUrl,
+            payment_plan = planId,
             customer = new { email },
             meta = new
             {
@@ -71,8 +75,7 @@ public class FlutterwaveService
                 title = "BizPilot AI",
                 description = $"{plan[0..1].ToUpper() + plan[1..]} Plan — {billingCycle}",
                 logo = "https://app.bizpilot-ai.com/favicon.ico"
-            },
-            payment_plan = (string?)null // Will use payment plans for recurring later
+            }
         };
 
         var client = _httpFactory.CreateClient("Flutterwave");
@@ -106,9 +109,14 @@ public class FlutterwaveService
         var eventType = payload.TryGetProperty("event", out var evt) ? evt.GetString() : null;
         _logger.LogInformation("Flutterwave webhook: {Event}", eventType);
 
-        if (eventType == "charge.completed")
+        switch (eventType)
         {
-            await HandleChargeCompleted(payload);
+            case "charge.completed":
+                await HandleChargeCompleted(payload);
+                break;
+            case "subscription.cancelled":
+                await HandleSubscriptionCancelled(payload);
+                break;
         }
     }
 
@@ -156,6 +164,117 @@ public class FlutterwaveService
         await _db.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// Get or create a Flutterwave payment plan for recurring billing.
+    /// Plans are named "BizPilot {Plan} {Cycle} {Currency}" for dedup.
+    /// Returns the plan ID to attach to the payment.
+    /// </summary>
+    private async Task<int?> GetOrCreatePaymentPlanAsync(
+        string plan, BillingConfig.BillingCycle cycle, string currency, decimal amount)
+    {
+        var planName = $"BizPilot {plan} {cycle} {currency}".ToLower();
+        var interval = cycle == BillingConfig.BillingCycle.Annual ? "annually" : "monthly";
+
+        try
+        {
+            var client = _httpFactory.CreateClient("Flutterwave");
+
+            // Check existing plans
+            var listResponse = await client.GetAsync("/v3/payment-plans");
+            if (listResponse.IsSuccessStatusCode)
+            {
+                var listBody = await listResponse.Content.ReadAsStringAsync();
+                using var listDoc = JsonDocument.Parse(listBody);
+                if (listDoc.RootElement.TryGetProperty("data", out var plans) && plans.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var p in plans.EnumerateArray())
+                    {
+                        var name = p.TryGetProperty("name", out var n) ? n.GetString()?.ToLower() : null;
+                        if (name == planName)
+                        {
+                            return p.GetProperty("id").GetInt32();
+                        }
+                    }
+                }
+            }
+
+            // Create new plan
+            var createPayload = JsonSerializer.Serialize(new
+            {
+                amount = (int)amount,
+                name = planName,
+                interval,
+                currency = currency.ToUpper()
+            });
+
+            var createResponse = await client.PostAsync("/v3/payment-plans",
+                new StringContent(createPayload, Encoding.UTF8, "application/json"));
+
+            var createBody = await createResponse.Content.ReadAsStringAsync();
+            if (!createResponse.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Flutterwave plan creation failed: {Status} {Body}. Proceeding without plan.",
+                    createResponse.StatusCode, createBody);
+                return null;
+            }
+
+            using var createDoc = JsonDocument.Parse(createBody);
+            var newId = createDoc.RootElement.GetProperty("data").GetProperty("id").GetInt32();
+            _logger.LogInformation("Created Flutterwave payment plan: {Name} → {Id}", planName, newId);
+            return newId;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get/create Flutterwave payment plan. Proceeding without plan.");
+            return null;
+        }
+    }
+
+    private async Task<string?> FetchCustomerSubscriptionIdAsync(string email)
+    {
+        try
+        {
+            var client = _httpFactory.CreateClient("Flutterwave");
+            var response = await client.GetAsync($"/v3/subscriptions?email={Uri.EscapeDataString(email)}");
+            if (!response.IsSuccessStatusCode) return null;
+
+            var body = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(body);
+            if (!doc.RootElement.TryGetProperty("data", out var subs) || subs.ValueKind != JsonValueKind.Array) return null;
+
+            // Return the most recent active subscription
+            foreach (var sub in subs.EnumerateArray())
+            {
+                var status = sub.TryGetProperty("status", out var st) ? st.GetString() : null;
+                if (status == "active")
+                    return sub.GetProperty("id").GetInt32().ToString();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch Flutterwave subscription for {Email}", email);
+        }
+        return null;
+    }
+
+    private async Task HandleSubscriptionCancelled(JsonElement payload)
+    {
+        if (!payload.TryGetProperty("data", out var data)) return;
+
+        var subId = data.TryGetProperty("id", out var id) ? id.GetInt32().ToString() : null;
+        if (string.IsNullOrEmpty(subId)) return;
+
+        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.FlutterwaveSubscriptionId == subId);
+        if (business == null) { _logger.LogWarning("No business for Flutterwave subscription {SubId}", subId); return; }
+
+        business.FlutterwaveSubscriptionId = null;
+        business.IsAutoRenew = false;
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Flutterwave subscription cancelled: {Business}, access until {EndsAt}",
+            business.Name, business.SubscriptionEndsAt);
+    }
+
     private async Task HandleChargeCompleted(JsonElement payload)
     {
         if (!payload.TryGetProperty("data", out var data)) return;
@@ -190,12 +309,18 @@ public class FlutterwaveService
             && cust.TryGetProperty("email", out var em) ? em.GetString() : null;
         var customerId = cust.TryGetProperty("id", out var ci) ? ci.GetInt64().ToString() : null;
 
+        // Detect payment method — Flutterwave returns "card", "mobilemoney", "banktransfer", etc.
+        var paymentType = data.TryGetProperty("payment_type", out var pt) ? pt.GetString()?.ToLower() : null;
+        var isCard = paymentType is "card" or null;
+
         business.Plan = plan;
         business.SubscribedPlan = plan;
         business.BillingProvider = "flutterwave";
         business.BillingCycle = billingCycle ?? "monthly";
         business.BillingCurrency = currency ?? business.Currency;
         business.FlutterwaveCustomerId = customerId;
+        business.PaymentMethod = paymentType ?? "card";
+        business.IsAutoRenew = isCard;
         business.TrialEndsAt = null;
 
         // Set subscription end date based on cycle
@@ -203,6 +328,14 @@ public class FlutterwaveService
         business.SubscriptionEndsAt = isAnnual
             ? DateTime.UtcNow.AddYears(1)
             : DateTime.UtcNow.AddMonths(1);
+
+        // For card payments with a payment plan, Flutterwave auto-creates a subscription.
+        // Fetch it so we can cancel later if needed.
+        if (isCard && !string.IsNullOrEmpty(customerEmail))
+        {
+            var subId = await FetchCustomerSubscriptionIdAsync(customerEmail);
+            if (subId != null) business.FlutterwaveSubscriptionId = subId;
+        }
 
         await _db.SaveChangesAsync();
 
@@ -223,12 +356,16 @@ public class FlutterwaveService
                 var formattedPrice = price.HasValue ? BillingConfig.FormatPrice(price.Value, currency ?? "USD") : "your selected plan";
                 var cycleLabel = isAnnual ? "year" : "month";
 
+                var renewalNote = isCard
+                    ? $"Auto-renews on {business.SubscriptionEndsAt:dd MMM yyyy}."
+                    : $"Expires on {business.SubscriptionEndsAt:dd MMM yyyy}. You'll need to renew manually.";
+
                 var whatsApp = _serviceProvider.GetRequiredService<IWhatsAppService>();
                 await whatsApp.SendMessageAsync(
                     $"whatsapp:{owner.PhoneNumber}",
                     $"✅ *Payment successful!*\n\n" +
                     $"Your *{planLabel}* plan is now active at {formattedPrice}/{cycleLabel}.\n\n" +
-                    $"Next renewal: {business.SubscriptionEndsAt:dd MMM yyyy}\n\n" +
+                    $"{renewalNote}\n\n" +
                     $"Say *my plan* to see your features.",
                     businessId, owner.Id);
             }

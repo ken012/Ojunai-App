@@ -73,9 +73,13 @@ public class BusinessController : BizPilotBaseController
             HasMonthlyCharts = config.HasMonthlyCharts,
             HasStockHolds = config.HasStockHolds,
             IsBillable = biz.IsBillable,
-            HasActiveSubscription = !string.IsNullOrEmpty(biz.PaystackSubscriptionCode),
+            HasActiveSubscription = !string.IsNullOrEmpty(biz.PaystackSubscriptionCode)
+                || !string.IsNullOrEmpty(biz.FlutterwaveSubscriptionId)
+                || (biz.SubscriptionEndsAt.HasValue && biz.SubscriptionEndsAt > DateTime.UtcNow),
             SubscriptionEndsAt = biz.SubscriptionEndsAt,
             PendingPlanChange = biz.PendingPlanChange,
+            IsAutoRenew = biz.IsAutoRenew,
+            PaymentMethod = biz.PaymentMethod,
         }));
     }
 
@@ -308,6 +312,8 @@ public class PlanStatusDto
     public bool HasActiveSubscription { get; set; }
     public DateTime? SubscriptionEndsAt { get; set; }
     public string? PendingPlanChange { get; set; }
+    public bool IsAutoRenew { get; set; }
+    public string? PaymentMethod { get; set; }
 }
 
 public class StartTrialRequest

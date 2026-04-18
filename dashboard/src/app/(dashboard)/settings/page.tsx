@@ -80,6 +80,8 @@ export default function SettingsPage() {
   const [editing, setEditing] = useState(false);
   const [mounted, setMounted] = useState(false);
 
+  const cs = CURRENCY_META[(business?.currency ?? "NGN") as SupportedCurrency]?.symbol ?? business?.currency ?? "₦";
+
   // Read localStorage only on client after mount (prevents hydration mismatch)
   if (!mounted && typeof window !== "undefined") {
     setUser(getStoredUser());
@@ -144,7 +146,7 @@ export default function SettingsPage() {
           <Separator />
           <div className="flex justify-between">
             <span className="text-sm text-slate-500">Large Sale Alert</span>
-            <span className="text-sm font-mono">₦{(business?.largeSaleThreshold && business.largeSaleThreshold > 0 ? business.largeSaleThreshold : 100000).toLocaleString()}</span>
+            <span className="text-sm font-mono">{cs}{(business?.largeSaleThreshold && business.largeSaleThreshold > 0 ? business.largeSaleThreshold : 100000).toLocaleString()}</span>
           </div>
           <Separator />
           <div className="flex justify-between">
@@ -172,7 +174,7 @@ export default function SettingsPage() {
           {[
             { key: "alertLowStock" as const, label: "Low Stock Alerts", desc: "When a product drops below its threshold after a sale" },
             { key: "alertDailySummary" as const, label: "Daily Summary", desc: "Sales, expenses, and net sent at 8 PM daily" },
-            { key: "alertLargeSale" as const, label: "Large Sale Alert", desc: `When a sale exceeds ₦${(business?.largeSaleThreshold && business.largeSaleThreshold > 0 ? business.largeSaleThreshold : 100000).toLocaleString()}` },
+            { key: "alertLargeSale" as const, label: "Large Sale Alert", desc: `When a sale exceeds ${cs}${(business?.largeSaleThreshold && business.largeSaleThreshold > 0 ? business.largeSaleThreshold : 100000).toLocaleString()}` },
           ].map(({ key, label, desc }) => (
             <label key={key} className="flex items-start gap-3 cursor-pointer">
               <input
@@ -661,6 +663,8 @@ type PlanStatus = {
   isBillable: boolean;
   hasActiveSubscription: boolean;
   subscriptionEndsAt: string | null;
+  isAutoRenew: boolean;
+  paymentMethod: string | null;
 };
 
 function PlanCard({ business }: { business: BusinessShape | null }) {
@@ -675,7 +679,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
   const [subscribing, setSubscribing] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [subError, setSubError] = useState<string | null>(null);
-  const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("annual");
+  const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
   const [selectedCurrency, setSelectedCurrency] = useState<SupportedCurrency>(getDefaultCurrency());
 
   useEffect(() => {
@@ -689,6 +693,11 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
   const isSubscriber = planStatus?.isSubscriber ?? false;
   const isBillable = planStatus?.isBillable ?? true;
   const hasActiveSub = planStatus?.hasActiveSubscription ?? false;
+  const isAutoRenew = planStatus?.isAutoRenew ?? true;
+  const paymentMethod = planStatus?.paymentMethod;
+  const subEndsAt = planStatus?.subscriptionEndsAt ? new Date(planStatus.subscriptionEndsAt) : null;
+  const daysUntilExpiry = subEndsAt ? Math.max(0, Math.ceil((subEndsAt.getTime() - Date.now()) / 86400000)) : null;
+  const isExpiringSoon = daysUntilExpiry != null && daysUntilExpiry <= 7 && hasActiveSub;
   const monthlyPrice = getPrice(plan, "monthly", selectedCurrency);
   const displayPrice = billingCycle === "annual"
     ? formatPrice(getMonthlyEquivalent(plan, selectedCurrency), selectedCurrency)
@@ -978,6 +987,23 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
           </div>
         )}
 
+        {/* Expiry banner for manual (non-auto-renew) subscribers */}
+        {isBillable && hasActiveSub && !isAutoRenew && isExpiringSoon && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+            <p className="text-sm text-amber-800">
+              Your plan expires in {daysUntilExpiry} day{daysUntilExpiry !== 1 ? "s" : ""}.
+              Renew now to keep your {details.label} features.
+            </p>
+            <Button
+              className="w-full h-10 text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={() => handleSubscribe(plan)}
+              disabled={subscribing !== null}
+            >
+              {subscribing === plan ? "Redirecting..." : `Renew ${details.label} — ${btnPrice(plan)}`}
+            </Button>
+          </div>
+        )}
+
         {isBillable && (hasActiveSub || isSubscriber) && (
           <div className="pt-2">
             <button
@@ -989,7 +1015,14 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
             </button>
             {planStatus?.subscriptionEndsAt && (
               <p className="text-xs text-slate-400 mt-1">
-                Renews {new Date(planStatus.subscriptionEndsAt).toLocaleDateString()}
+                {isAutoRenew
+                  ? `Auto-renews ${new Date(planStatus.subscriptionEndsAt).toLocaleDateString()}`
+                  : `Expires ${new Date(planStatus.subscriptionEndsAt).toLocaleDateString()}`}
+                {paymentMethod && paymentMethod !== "card" && (
+                  <span className="ml-1">
+                    · Paid via {paymentMethod === "mobilemoney" ? "mobile money" : paymentMethod.replace("_", " ")}
+                  </span>
+                )}
               </p>
             )}
           </div>
@@ -1047,9 +1080,9 @@ function EditBusinessDialog({
       const { data } = await api.put<{ data: BusinessShape }>("/business", {
         businessType: form.businessType || null,
         currency: form.currency,
-        city: form.city || null,
-        state: form.state || null,
-        country: form.country || null,
+        city: form.city,
+        state: form.state,
+        country: form.country,
         largeSaleThreshold: form.largeSaleThreshold ? Number(form.largeSaleThreshold) : null,
       });
       onSaved(data.data!);

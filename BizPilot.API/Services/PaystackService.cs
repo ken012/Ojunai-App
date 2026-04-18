@@ -237,6 +237,8 @@ public class PaystackService
 
             business.Plan = plan;
             business.SubscribedPlan = plan;
+            business.PaymentMethod = "card";
+            business.IsAutoRenew = true;
             business.TrialEndsAt = null;
             business.SubscriptionEndsAt = DateTime.UtcNow.AddDays(32);
 
