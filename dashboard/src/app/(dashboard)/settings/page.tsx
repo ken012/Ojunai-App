@@ -347,9 +347,9 @@ function SettingsPage() {
         onClose={() => setEditing(false)}
         onSaved={(updated) => {
           setBusiness(updated);
-          // Keep localStorage in sync so other pages see the change
           if (typeof window !== "undefined") {
             localStorage.setItem("bp_business", JSON.stringify(updated));
+            refreshSync();
           }
         }}
       />

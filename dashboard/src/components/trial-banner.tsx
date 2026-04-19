@@ -1,9 +1,8 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
 import { X } from "lucide-react";
 import { useState } from "react";
+import { usePlanStatus } from "@/lib/use-plan-status";
 
 const PLAN_LABELS: Record<string, string> = {
   starter: "Starter",
@@ -12,23 +11,9 @@ const PLAN_LABELS: Record<string, string> = {
   business: "Business",
 };
 
-type PlanStatus = {
-  plan: string;
-  trialStatus: string;
-  trialDaysLeft: number | null;
-};
-
 export function TrialBanner() {
   const [dismissed, setDismissed] = useState(false);
-
-  const { data: status } = useQuery({
-    queryKey: ["plan-status"],
-    queryFn: async () => {
-      const { data } = await api.get<{ data: PlanStatus }>("/business/plan-status");
-      return data.data!;
-    },
-    staleTime: 5 * 60 * 1000,
-  });
+  const { data: status } = usePlanStatus();
 
   if (dismissed || !status) return null;
 
