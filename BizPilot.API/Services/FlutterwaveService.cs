@@ -124,6 +124,8 @@ public class FlutterwaveService
         else return "Invalid verification response.";
 
         var status = chargeData.TryGetProperty("status", out var st) ? st.GetString() : null;
+        if (status == "pending")
+            return "PENDING:Your payment is being processed. You'll receive a WhatsApp confirmation once it's confirmed.";
         if (status != "successful" && status != "completed")
             return $"Payment was not successful. Status: {status}";
 

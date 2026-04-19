@@ -103,6 +103,7 @@ public class SubscriptionController : BizPilotBaseController
             plan,
             billingCycle = cycle,
             callbackUrl,
+            businessId = BusinessId.ToString(),
             businessName = business.Name,
             paymentPlanId,
         }, "Ready for checkout."));

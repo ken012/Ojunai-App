@@ -812,7 +812,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
     const timeout = setTimeout(() => {
       setSubError("Payment timed out. Please try again.");
       setSubscribing(null);
-    }, 30000);
+    }, useCard ? 30000 : 120000);
 
     const config: Record<string, unknown> = {
       public_key: result.publicKey,
@@ -821,6 +821,12 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
       currency: result.currency,
       redirect_url: result.callbackUrl,
       customer: { email: result.email },
+      meta: {
+        businessId: result.businessId,
+        plan: result.plan,
+        billingCycle: result.billingCycle,
+        currency: result.currency,
+      },
       customizations: {
         title: "BizPilot AI",
         description: `${(result.plan as string).charAt(0).toUpperCase() + (result.plan as string).slice(1)} Plan — ${result.billingCycle}`,
@@ -834,9 +840,15 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
             txRef: response.tx_ref,
           });
           qc.invalidateQueries({ queryKey: ["plan-status"] });
-        } catch {
-          setFailedVerify({ transactionId: response.transaction_id?.toString(), txRef: response.tx_ref });
-          setSubError("Payment received but verification failed.");
+        } catch (err: unknown) {
+          const ax = err as { response?: { data?: { errors?: string[] } } };
+          const msg = ax.response?.data?.errors?.[0] ?? "";
+          if (msg.startsWith("PENDING:")) {
+            setSubError(msg.replace("PENDING:", ""));
+          } else {
+            setFailedVerify({ transactionId: response.transaction_id?.toString(), txRef: response.tx_ref });
+            setSubError("Payment received but verification failed.");
+          }
         } finally {
           setSubscribing(null);
         }
