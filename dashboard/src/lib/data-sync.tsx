@@ -39,11 +39,6 @@ export function DataSyncProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => { sync(); }, [sync]);
 
-  const updateBusiness = useCallback((updated: BusinessDto) => {
-    setBusiness(updated);
-    localStorage.setItem("bp_business", JSON.stringify(updated));
-  }, []);
-
   return (
     <DataSyncContext.Provider value={{ business, user, refresh: sync }}>
       {children}

@@ -45,8 +45,6 @@ function getCategoryClass(category: string) {
 const CURRENCY_SYMBOLS: Record<string, string> = { NGN: "\u20A6", GHS: "GH\u20B5", USD: "$", GBP: "\u00A3", KES: "KSh", ZAR: "R", TZS: "TSh", UGX: "USh", RWF: "RF", XAF: "FCFA", XOF: "CFA", EGP: "E\u00A3", ETB: "Br" };
 
 export default function ExpensesPage() {
-  const biz = useBusiness();
-  const currencySymbol = CURRENCY_SYMBOLS[biz?.currency?.toUpperCase() ?? "NGN"] ?? biz?.currency ?? "\u20A6";
   const [page, setPage] = useState(1);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<ExpenseDto | null>(null);
