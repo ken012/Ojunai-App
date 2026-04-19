@@ -39,7 +39,9 @@ public class RenewalReminderJobService
             try
             {
                 // Only send when it's 9 AM in the business's local timezone
-                var tz = TimeZoneInfo.FindSystemTimeZoneById(biz.Timezone ?? "Africa/Lagos");
+                TimeZoneInfo tz;
+                try { tz = TimeZoneInfo.FindSystemTimeZoneById(biz.Timezone ?? "Africa/Lagos"); }
+                catch { tz = TimeZoneInfo.FindSystemTimeZoneById("Africa/Lagos"); }
                 var localHour = TimeZoneInfo.ConvertTimeFromUtc(utcNow, tz).Hour;
                 if (localHour != ReminderHour) continue;
 

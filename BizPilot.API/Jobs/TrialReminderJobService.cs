@@ -31,7 +31,9 @@ public class TrialReminderJobService
         {
             try
             {
-                var tz = TimeZoneInfo.FindSystemTimeZoneById(biz.Timezone ?? "Africa/Lagos");
+                TimeZoneInfo tz;
+                try { tz = TimeZoneInfo.FindSystemTimeZoneById(biz.Timezone ?? "Africa/Lagos"); }
+                catch { tz = TimeZoneInfo.FindSystemTimeZoneById("Africa/Lagos"); }
                 var localHour = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz).Hour;
                 if (localHour != 10) continue; // Only send at 10 AM local time
 

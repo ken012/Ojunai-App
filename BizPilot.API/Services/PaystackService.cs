@@ -37,8 +37,15 @@ public class PaystackService
         if (planConfig.PricePerMonth <= 0)
             throw new InvalidOperationException("Invalid plan.");
 
+        // Determine billing cycle and amount from BillingConfig
+        var cycle = business.BillingCycle ?? "monthly";
+        var isAnnual = cycle.Equals("annual", StringComparison.OrdinalIgnoreCase);
+        var billingCycleEnum = isAnnual ? BillingConfig.BillingCycle.Annual : BillingConfig.BillingCycle.Monthly;
+        var amount = BillingConfig.GetPrice(plan, billingCycleEnum, "NGN") ?? planConfig.PricePerMonth;
+        var interval = isAnnual ? "annually" : "monthly";
+
         // Create or get Paystack plan
-        var paystackPlanCode = await GetOrCreatePlanAsync(plan, planConfig.PricePerMonth);
+        var paystackPlanCode = await GetOrCreatePlanAsync($"{plan}-{cycle}", amount, interval);
 
         // Create or get Paystack customer
         var customerCode = business.PaystackCustomerCode;
@@ -66,7 +73,7 @@ public class PaystackService
         var body = new
         {
             email,
-            amount = (int)(planConfig.PricePerMonth * 100), // kobo
+            amount = (int)(amount * 100), // kobo
             plan = paystackPlanCode,
             callback_url = $"{_config["App:DashboardUrl"] ?? "https://app.bizpilot-ai.com"}/settings?subscribed=true",
             metadata = new { businessId = businessId.ToString(), plan }
@@ -491,7 +498,7 @@ public class PaystackService
         }
     }
 
-    private async Task<string> GetOrCreatePlanAsync(string planName, decimal amount)
+    private async Task<string> GetOrCreatePlanAsync(string planName, decimal amount, string interval = "monthly")
     {
         var existing = _config[$"Paystack:PlanCodes:{planName}"];
         if (!string.IsNullOrEmpty(existing)) return existing;
@@ -514,7 +521,7 @@ public class PaystackService
         {
             name = $"BizPilot {planName}",
             amount = (int)(amount * 100),
-            interval = "monthly"
+            interval
         });
 
         if (!result.TryGetProperty("data", out var data) || !data.TryGetProperty("plan_code", out var code))

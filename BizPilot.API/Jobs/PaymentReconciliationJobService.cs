@@ -1,5 +1,6 @@
 using BizPilot.API.Data;
 using BizPilot.API.Models;
+using BizPilot.API.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
 namespace BizPilot.API.Jobs;
@@ -7,11 +8,13 @@ namespace BizPilot.API.Jobs;
 public class PaymentReconciliationJobService
 {
     private readonly AppDbContext _db;
+    private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<PaymentReconciliationJobService> _logger;
 
-    public PaymentReconciliationJobService(AppDbContext db, ILogger<PaymentReconciliationJobService> logger)
+    public PaymentReconciliationJobService(AppDbContext db, IServiceProvider serviceProvider, ILogger<PaymentReconciliationJobService> logger)
     {
         _db = db;
+        _serviceProvider = serviceProvider;
         _logger = logger;
     }
 
@@ -20,8 +23,8 @@ public class PaymentReconciliationJobService
         var now = DateTime.UtcNow;
         var checkWindow = now.AddDays(-3);
 
-        // Find auto-renew subscriptions that should have renewed but SubscriptionEndsAt is in the past
         var stale = await _db.Businesses
+            .Include(b => b.Users)
             .Where(b => b.IsActive
                 && b.IsAutoRenew
                 && b.SubscriptionEndsAt.HasValue
@@ -49,6 +52,26 @@ public class PaymentReconciliationJobService
                 ErrorDetails = $"Auto-renew subscription expired at {biz.SubscriptionEndsAt:u} but no renewal webhook received",
                 CreatedAtUtc = DateTime.UtcNow
             });
+
+            // Notify business owner via WhatsApp
+            try
+            {
+                var owner = biz.Users.FirstOrDefault(u => u.Role == UserRole.Owner && u.IsActive);
+                if (owner != null)
+                {
+                    var planLabel = biz.Plan[0..1].ToUpper() + biz.Plan[1..];
+                    var whatsApp = _serviceProvider.GetRequiredService<IWhatsAppService>();
+                    await whatsApp.SendMessageAsync(
+                        $"whatsapp:{owner.PhoneNumber}",
+                        $"Your *{planLabel}* plan renewal could not be processed. " +
+                        $"Please visit app.bizpilot-ai.com/settings to resubscribe and keep your features.",
+                        biz.Id, owner.Id);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to send reconciliation alert for {Business}", biz.Name);
+            }
         }
 
         if (stale.Count > 0)

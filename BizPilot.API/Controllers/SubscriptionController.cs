@@ -128,6 +128,13 @@ public class SubscriptionController : BizPilotBaseController
         else
             await _paystack.CancelSubscriptionAsync(BusinessId);
 
+        // Clear any pending downgrade — user explicitly cancelled, so scheduled changes are moot
+        if (!string.IsNullOrEmpty(business.PendingPlanChange))
+        {
+            business.PendingPlanChange = null;
+            await _db.SaveChangesAsync();
+        }
+
         return Ok(ApiResponse<object>.Ok(null!, "Subscription cancelled. You'll keep access until the end of your billing period."));
     }
 
