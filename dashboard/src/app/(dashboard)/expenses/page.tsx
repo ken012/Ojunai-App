@@ -46,15 +46,16 @@ const CURRENCY_SYMBOLS: Record<string, string> = { NGN: "\u20A6", GHS: "GH\u20B5
 
 export default function ExpensesPage() {
   const [page, setPage] = useState(1);
+  const [expenseTab, setExpenseTab] = useState<"operating" | "cogs">("operating");
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<ExpenseDto | null>(null);
   const [deleting, setDeleting] = useState<ExpenseDto | null>(null);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["expenses", page],
+    queryKey: ["expenses", page, expenseTab],
     queryFn: async () => {
       const { data } = await api.get<{ data: PaginatedResult<ExpenseDto> }>(
-        `/expenses?page=${page}&pageSize=20`
+        `/expenses?page=${page}&pageSize=20&expenseType=${expenseTab}`
       );
       return data.data!;
     },
@@ -72,11 +73,37 @@ export default function ExpensesPage() {
         {hasPermission(Permission.RecordExpenses) && <Button onClick={() => setAdding(true)}>+ Add Expense</Button>}
       </div>
 
+      {/* Expense Type Tabs */}
+      <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit">
+        <button
+          onClick={() => { setExpenseTab("operating"); setPage(1); }}
+          className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+            expenseTab === "operating"
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Operating Expenses
+        </button>
+        <button
+          onClick={() => { setExpenseTab("cogs"); setPage(1); }}
+          className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+            expenseTab === "cogs"
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Cost of Goods Sold
+        </button>
+      </div>
+
       {data && (
         <div className="grid grid-cols-2 gap-4">
           <Card>
             <CardContent className="p-5">
-              <p className="text-xs text-slate-500 uppercase tracking-wide">Total Expenses</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wide">
+                {expenseTab === "operating" ? "Operating Expenses" : "Cost of Goods Sold"}
+              </p>
               <p className="text-2xl font-bold text-red-500 mt-1">{formatNaira(totalOnPage)}</p>
               <p className="text-xs text-slate-400">This page</p>
             </CardContent>
@@ -181,7 +208,7 @@ export default function ExpensesPage() {
         </CardContent>
       </Card>
 
-      <AddExpenseDialog open={adding} onClose={() => setAdding(false)} />
+      <AddExpenseDialog open={adding} onClose={() => setAdding(false)} defaultExpenseType={expenseTab} />
       <EditExpenseDialog
         expense={editing}
         open={editing !== null}
@@ -196,13 +223,18 @@ export default function ExpensesPage() {
   );
 }
 
-function AddExpenseDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function AddExpenseDialog({ open, onClose, defaultExpenseType }: { open: boolean; onClose: () => void; defaultExpenseType: "operating" | "cogs" }) {
   const qc = useQueryClient();
   const biz = useBusiness();
   const currencySymbol = CURRENCY_SYMBOLS[biz?.currency?.toUpperCase() ?? "NGN"] ?? biz?.currency ?? "\u20A6";
-  const [form, setForm] = useState({ category: "General", amount: "", paidTo: "", notes: "" });
+  const [form, setForm] = useState({ category: "General", amount: "", paidTo: "", notes: "", expenseType: defaultExpenseType });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Sync default when tab changes
+  if (open && form.expenseType !== defaultExpenseType && form.amount === "") {
+    setForm(f => ({ ...f, expenseType: defaultExpenseType }));
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -213,6 +245,7 @@ function AddExpenseDialog({ open, onClose }: { open: boolean; onClose: () => voi
         amount: Number(form.amount),
         paidTo: form.paidTo || undefined,
         notes: form.notes || undefined,
+        expenseType: form.expenseType,
       });
       qc.invalidateQueries({ queryKey: ["expenses"] });
       handleClose();
@@ -225,7 +258,7 @@ function AddExpenseDialog({ open, onClose }: { open: boolean; onClose: () => voi
   }
 
   function handleClose() {
-    setForm({ category: "General", amount: "", paidTo: "", notes: "" });
+    setForm({ category: "General", amount: "", paidTo: "", notes: "", expenseType: defaultExpenseType });
     setError(null);
     onClose();
   }
@@ -237,6 +270,17 @@ function AddExpenseDialog({ open, onClose }: { open: boolean; onClose: () => voi
           <DialogTitle>Add Expense</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
+          <div>
+            <Label>Expense Type</Label>
+            <select
+              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
+              value={form.expenseType}
+              onChange={(e) => setForm({ ...form, expenseType: e.target.value as "operating" | "cogs" })}
+            >
+              <option value="operating">Operating Expense</option>
+              <option value="cogs">Cost of Goods Sold</option>
+            </select>
+          </div>
           <div>
             <Label>Category</Label>
             <Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="e.g. Transport, Fuel, Rent" />

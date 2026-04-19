@@ -8,6 +8,7 @@ public class CreateExpenseRequest
     [Range(0.01, 999999999)] public decimal Amount { get; set; }
     [MaxLength(500)] public string? Notes { get; set; }
     [MaxLength(200)] public string? PaidTo { get; set; }
+    [MaxLength(20)] public string? ExpenseType { get; set; }
 }
 
 public class UpdateExpenseRequest
@@ -16,12 +17,14 @@ public class UpdateExpenseRequest
     [Range(0.01, 999999999)] public decimal? Amount { get; set; }
     [MaxLength(500)] public string? Notes { get; set; }
     [MaxLength(200)] public string? PaidTo { get; set; }
+    [MaxLength(20)] public string? ExpenseType { get; set; }
 }
 
 public class ExpenseDto
 {
     public Guid Id { get; set; }
     public string Category { get; set; } = string.Empty;
+    public string ExpenseType { get; set; } = "operating";
     public decimal Amount { get; set; }
     public string? Notes { get; set; }
     public string? PaidTo { get; set; }

@@ -99,6 +99,7 @@ export interface SaleItemDto {
 export interface ExpenseDto {
   id: string;
   category: string;
+  expenseType: string;
   amount: number;
   notes?: string;
   paidTo?: string;
@@ -229,6 +230,13 @@ export interface PaymentStatusBreakdownDto {
 export interface AgingBucketDto {
   bucket: string;
   amount: number;
+  contacts: AgingBucketContactDto[];
+}
+
+export interface AgingBucketContactDto {
+  contactName: string;
+  amount: number;
+  daysOld: number;
 }
 
 export interface DailyNetDto {

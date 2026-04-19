@@ -509,7 +509,7 @@ public partial class ReportService
         var damage = await _db.InventoryTransactions
             .Include(t => t.Product)
             .Where(t => t.BusinessId == businessId
-                        && t.Type == InventoryTransactionType.Damaged
+                        && (t.Type == InventoryTransactionType.Damaged || t.Type == InventoryTransactionType.Wastage)
                         && t.CreatedAtUtc >= cutoff)
             .ToListAsync();
 

@@ -107,6 +107,30 @@ public class InventoryService : IInventoryService
         return ToDto(txn, product.Name, product.Unit);
     }
 
+    public async Task<InventoryTransactionDto> MarkWastageAsync(Guid businessId, DamagedRequest request, Guid? recordedByUserId = null, string? recordedByName = null)
+    {
+        var product = await GetProductAsync(businessId, request.ProductId);
+
+        if (product.CurrentStock < request.Quantity)
+            throw new InvalidOperationException($"Insufficient stock. Available: {product.CurrentStock} {product.Unit}.");
+
+        var txn = new InventoryTransaction
+        {
+            BusinessId = businessId,
+            ProductId = request.ProductId,
+            Type = InventoryTransactionType.Wastage,
+            Quantity = request.Quantity,
+            Notes = request.Notes,
+            RecordedByUserId = recordedByUserId,
+            RecordedByName = recordedByName
+        };
+
+        product.CurrentStock -= request.Quantity;
+        _db.InventoryTransactions.Add(txn);
+        await _db.SaveChangesAsync();
+        return ToDto(txn, product.Name, product.Unit);
+    }
+
     public async Task<PaginatedResult<InventoryTransactionDto>> GetTransactionsAsync(
         Guid businessId, Guid? productId, int page, int pageSize)
     {

@@ -62,6 +62,16 @@ public class InventoryController : BizPilotBaseController
         return Ok(ApiResponse<InventoryTransactionDto>.Ok(result, "Damaged stock recorded."));
     }
 
+    [HttpPost("wastage")]
+    [RequirePermission(Permission.ManageStock)]
+    public async Task<ActionResult<ApiResponse<InventoryTransactionDto>>> Wastage([FromBody] DamagedRequest request)
+    {
+        var user = await _db.Users.FindAsync(UserId);
+        var result = await _inventory.MarkWastageAsync(BusinessId, request, user?.Id, user?.FullName);
+        _ = Task.Run(async () => { try { await FireStockAlertsAsync(); } catch (Exception ex) { _logger.LogError(ex, "Failed to fire stock alerts"); } });
+        return Ok(ApiResponse<InventoryTransactionDto>.Ok(result, "Wastage recorded."));
+    }
+
     [HttpPost("return")]
     [RequirePermission(Permission.ManageStock)]
     public async Task<ActionResult<ApiResponse<InventoryTransactionDto>>> Return([FromBody] ReturnRequest request)

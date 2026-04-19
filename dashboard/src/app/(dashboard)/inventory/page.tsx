@@ -886,6 +886,104 @@ function ReturnDialog({ open, onClose, products }: { open: boolean; onClose: () 
   );
 }
 
+// ─── Wastage dialog ────────────────────────────────────────────────────────
+function WastageDialog({ open, onClose, products }: { open: boolean; onClose: () => void; products: ProductDto[] }) {
+  const qc = useQueryClient();
+  const [productId, setProductId] = useState("");
+  const [qty, setQty] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const selected = products.find((p) => p.id === productId);
+
+  async function handleSave() {
+    if (!productId || !qty) return;
+    const quantity = Number(qty);
+    if (quantity <= 0 || (selected && quantity > selected.currentStock)) {
+      setError(`Quantity must be between 1 and ${selected?.currentStock ?? 0}`);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await api.post("/inventory/wastage", {
+        productId,
+        quantity,
+        notes: notes || null,
+      });
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["low-stock"] });
+      qc.invalidateQueries({ queryKey: ["inventory-losses"] });
+      handleClose();
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      setError(ax.response?.data?.errors?.[0] ?? "Failed to record wastage");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleClose() {
+    setProductId("");
+    setQty("");
+    setNotes("");
+    setError(null);
+    onClose();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Record Wastage</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>Product</Label>
+            <select
+              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
+              value={productId}
+              onChange={(e) => setProductId(e.target.value)}
+            >
+              <option value="">Select product</option>
+              {products.filter((p) => p.currentStock > 0).map((p) => (
+                <option key={p.id} value={p.id}>{p.name} ({p.currentStock} {p.unit} available)</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label>Quantity Wasted</Label>
+            <Input
+              type="number"
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              placeholder={selected ? `Max ${selected.currentStock}` : ""}
+              min={1}
+              max={selected?.currentStock}
+            />
+          </div>
+          <div>
+            <Label>Reason / Notes</Label>
+            <Input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. Expired, spoiled, spilled"
+            />
+          </div>
+          {error && <p className="text-xs text-red-500">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose} disabled={saving}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving || !productId || !qty} className="bg-orange-600 hover:bg-orange-700 text-white">
+            {saving ? "Saving..." : "Record Wastage"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Main page ───────────────────────────────────────────────────────────────
 type StockFilter = "all" | "low" | "sufficient";
 
@@ -897,6 +995,7 @@ export default function InventoryPage() {
   const [damaging, setDamaging] = useState<ProductDto | null>(null);
   const [removingStock, setRemovingStock] = useState<ProductDto | null>(null);
   const [returning, setReturning] = useState(false);
+  const [wastaging, setWastaging] = useState(false);
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
   const { data: planStatus } = usePlanStatus();
@@ -928,6 +1027,22 @@ export default function InventoryPage() {
       return data.data!;
     },
     enabled: hasHolds,
+  });
+
+  // Wastage & damaged history
+  interface LossEntry { id: string; productId: string; productName: string; type: string; quantity: number; notes?: string; createdAtUtc: string; }
+  const { data: lossesData } = useQuery({
+    queryKey: ["inventory-losses"],
+    queryFn: async () => {
+      const { data } = await api.get<{ data: { items: LossEntry[]; totalCount: number } }>(
+        "/inventory/transactions?page=1&pageSize=20"
+      );
+      // Filter to only Damaged and Wastage
+      const filtered = (data.data?.items ?? []).filter(
+        (t) => t.type === "Damaged" || t.type === "Wastage"
+      );
+      return filtered;
+    },
   });
 
   const [holdAction, setHoldAction] = useState<{ id: string; type: "release" | "convert" } | null>(null);
@@ -973,6 +1088,9 @@ export default function InventoryPage() {
         </div>
         {hasPermission(Permission.ManageStock) && (
           <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setWastaging(true)} className="text-orange-600 border-orange-200 hover:bg-orange-50">
+              <Ban size={14} className="mr-1" /> Wastage
+            </Button>
             <Button variant="outline" onClick={() => setReturning(true)}>
               <RotateCcw size={14} className="mr-1" /> Return
             </Button>
@@ -1120,6 +1238,47 @@ export default function InventoryPage() {
           )}
         </div>
 
+      {/* Wastage & Damaged History */}
+      {lossesData && lossesData.length > 0 && (
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Ban size={16} className="text-orange-500" />
+              <h3 className="text-sm font-semibold text-slate-700">
+                Recent Wastage & Damaged Stock
+              </h3>
+            </div>
+            <div className="space-y-2">
+              {lossesData.slice(0, 8).map((entry) => (
+                <div
+                  key={entry.id}
+                  className="flex items-center justify-between border rounded-lg px-3 py-2"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900 truncate">
+                      {entry.quantity} of {entry.productName}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {entry.notes ?? "No notes"} — {formatDateTime(entry.createdAtUtc)}
+                    </p>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={`text-xs ml-2 flex-shrink-0 ${
+                      entry.type === "Wastage"
+                        ? "text-orange-600 border-orange-300"
+                        : "text-amber-600 border-amber-300"
+                    }`}
+                  >
+                    {entry.type}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Product grid */}
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1177,6 +1336,11 @@ export default function InventoryPage() {
       <ReturnDialog
         open={returning}
         onClose={() => setReturning(false)}
+        products={allProducts}
+      />
+      <WastageDialog
+        open={wastaging}
+        onClose={() => setWastaging(false)}
         products={allProducts}
       />
     </div>

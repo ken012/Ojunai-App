@@ -89,6 +89,14 @@ public class AgingBucketDto
 {
     public string Bucket { get; set; } = string.Empty;
     public decimal Amount { get; set; }
+    public List<AgingBucketContactDto> Contacts { get; set; } = new();
+}
+
+public class AgingBucketContactDto
+{
+    public string ContactName { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public int DaysOld { get; set; }
 }
 
 public class DailyNetDto

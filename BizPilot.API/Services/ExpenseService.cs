@@ -19,6 +19,7 @@ public class ExpenseService : IExpenseService
         {
             BusinessId = businessId,
             Category = request.Category,
+            ExpenseType = request.ExpenseType ?? "operating",
             Amount = request.Amount,
             Notes = request.Notes,
             PaidTo = request.PaidTo,
@@ -32,12 +33,14 @@ public class ExpenseService : IExpenseService
     }
 
     public async Task<PaginatedResult<ExpenseDto>> GetAllAsync(
-        Guid businessId, int page, int pageSize, DateTime? from, DateTime? to)
+        Guid businessId, int page, int pageSize, DateTime? from, DateTime? to, string? expenseType = null)
     {
         var query = _db.Expenses.Where(e => e.BusinessId == businessId);
 
         if (from.HasValue) query = query.Where(e => e.CreatedAtUtc >= from.Value);
         if (to.HasValue) query = query.Where(e => e.CreatedAtUtc <= to.Value);
+        if (!string.IsNullOrEmpty(expenseType))
+            query = query.Where(e => e.ExpenseType == expenseType);
 
         var total = await query.CountAsync();
         var items = await query
@@ -62,6 +65,7 @@ public class ExpenseService : IExpenseService
             ?? throw new KeyNotFoundException("Expense not found.");
 
         if (request.Category != null) expense.Category = request.Category;
+        if (request.ExpenseType != null) expense.ExpenseType = request.ExpenseType;
         if (request.Amount.HasValue && request.Amount.Value > 0) expense.Amount = request.Amount.Value;
         if (request.Notes != null) expense.Notes = request.Notes;
         if (request.PaidTo != null) expense.PaidTo = request.PaidTo;
@@ -84,6 +88,7 @@ public class ExpenseService : IExpenseService
     {
         Id = e.Id,
         Category = e.Category,
+        ExpenseType = e.ExpenseType,
         Amount = e.Amount,
         Notes = e.Notes,
         PaidTo = e.PaidTo,

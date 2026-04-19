@@ -336,6 +336,7 @@ public partial class ReportService : IReportService
 
         // 4. Receivables aging
         var receivableEntries = await _db.LedgerEntries
+            .Include(e => e.Contact)
             .Where(e => e.BusinessId == businessId &&
                         (e.EntryType == LedgerEntryType.Receivable || e.EntryType == LedgerEntryType.ReceivablePayment))
             .ToListAsync();
@@ -345,6 +346,7 @@ public partial class ReportService : IReportService
             .Select(g => new
             {
                 ContactId = g.Key,
+                ContactName = g.First().Contact.Name,
                 Outstanding = g.Where(e => e.EntryType == LedgerEntryType.Receivable).Sum(e => e.Amount)
                             - g.Where(e => e.EntryType == LedgerEntryType.ReceivablePayment).Sum(e => e.Amount),
                 OldestDate = g.Where(e => e.EntryType == LedgerEntryType.Receivable)
@@ -361,9 +363,21 @@ public partial class ReportService : IReportService
 
         foreach (var c in byContact)
         {
-            var ageDays = (nowUtc - c.OldestDate!.Value).TotalDays;
+            var ageDays = (int)(nowUtc - c.OldestDate!.Value).TotalDays;
             int bucketIdx = ageDays <= 7 ? 0 : ageDays <= 30 ? 1 : ageDays <= 60 ? 2 : 3;
             aging[bucketIdx].Amount += c.Outstanding;
+            aging[bucketIdx].Contacts.Add(new AgingBucketContactDto
+            {
+                ContactName = c.ContactName,
+                Amount = c.Outstanding,
+                DaysOld = ageDays
+            });
+        }
+
+        // Sort contacts in each bucket by amount descending and keep top 5
+        foreach (var bucket in aging)
+        {
+            bucket.Contacts = bucket.Contacts.OrderByDescending(c => c.Amount).Take(5).ToList();
         }
 
         // 5. Daily net cash flow (last 14 days)

@@ -22,5 +22,6 @@ public enum InventoryTransactionType
     StockIn = 1,
     StockOut = 2,
     Adjustment = 3,
-    Damaged = 4
+    Damaged = 4,
+    Wastage = 5
 }

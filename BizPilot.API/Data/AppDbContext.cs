@@ -116,6 +116,7 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.BusinessId, x.CreatedAtUtc });
             e.Property(x => x.Amount).HasPrecision(18, 2);
             e.Property(x => x.Category).HasMaxLength(100).HasDefaultValue("General");
+            e.Property(x => x.ExpenseType).HasMaxLength(20).HasDefaultValue("operating");
             e.Property(x => x.PaidTo).HasMaxLength(200);
             e.HasQueryFilter(x => !x.IsDeleted);
             e.HasOne(x => x.Business)

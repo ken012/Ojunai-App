@@ -650,25 +650,48 @@ export default function DashboardPage() {
               {insights.receivablesAging.every((b) => b.amount === 0) ? (
                 <p className="text-sm text-slate-400 text-center py-8">No outstanding receivables</p>
               ) : (
-                <ResponsiveContainer width="100%" height={180}>
-                  <BarChart data={insights.receivablesAging}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: "#475569" }} />
-                    <YAxis
-                      tick={{ fontSize: 10, fill: "#94a3b8" }}
-                      tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`}
-                    />
-                    <Tooltip formatter={(v) => formatNaira(Number(v))} />
-                    <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
-                      {insights.receivablesAging.map((_, i) => (
-                        <Cell
-                          key={i}
-                          fill={["#10b981", "#f59e0b", "#f97316", "#ef4444"][i]}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                <>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <BarChart data={insights.receivablesAging}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="bucket" tick={{ fontSize: 11, fill: "#475569" }} />
+                      <YAxis
+                        tick={{ fontSize: 10, fill: "#94a3b8" }}
+                        tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`}
+                      />
+                      <Tooltip formatter={(v) => formatNaira(Number(v))} />
+                      <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
+                        {insights.receivablesAging.map((_, i) => (
+                          <Cell
+                            key={i}
+                            fill={["#10b981", "#f59e0b", "#f97316", "#ef4444"][i]}
+                          />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                  {/* Contact names per aging bucket */}
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {insights.receivablesAging.map((bucket, i) => {
+                      const colors = ["border-emerald-200 bg-emerald-50/50", "border-amber-200 bg-amber-50/50", "border-orange-200 bg-orange-50/50", "border-red-200 bg-red-50/50"];
+                      const textColors = ["text-emerald-700", "text-amber-700", "text-orange-700", "text-red-700"];
+                      if (!bucket.contacts || bucket.contacts.length === 0) return null;
+                      return (
+                        <div key={bucket.bucket} className={`border rounded-lg p-3 ${colors[i]}`}>
+                          <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${textColors[i]}`}>{bucket.bucket}</p>
+                          <div className="space-y-1.5">
+                            {bucket.contacts.map((contact, ci) => (
+                              <div key={ci} className="flex justify-between text-xs">
+                                <span className="text-slate-700 truncate mr-2">{contact.contactName}</span>
+                                <span className={`font-medium whitespace-nowrap ${textColors[i]}`}>{formatNaira(contact.amount)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>
