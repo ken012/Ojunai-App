@@ -91,6 +91,12 @@ export default function LoginPage() {
             <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting ? "Signing in…" : "Sign In"}
             </Button>
+
+            <p className="text-xs text-slate-400 text-center mt-3">
+              By signing in, you agree to our{" "}
+              <Link href="/terms" className="underline hover:text-slate-600">Terms of Service</Link> and{" "}
+              <Link href="/privacy" className="underline hover:text-slate-600">Privacy Policy</Link>.
+            </p>
           </form>
         </div>
 

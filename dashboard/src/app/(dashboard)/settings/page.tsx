@@ -722,6 +722,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
   const [subscribing, setSubscribing] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [subError, setSubError] = useState<string | null>(null);
+  const [payMethodPick, setPayMethodPick] = useState<{ plan: string; result: Record<string, unknown> } | null>(null);
   const [failedVerify, setFailedVerify] = useState<{transactionId?: string; txRef?: string} | null>(null);
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
   const [selectedCurrency, setSelectedCurrency] = useState<SupportedCurrency>(getDefaultCurrency());
@@ -772,72 +773,84 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
         return;
       }
 
-      // Flutterwave Inline JS checkout
       if (!result.publicKey) {
         setSubError("Payment gateway not configured. Please contact support.");
         setSubscribing(null);
         return;
       }
 
-      try {
-        await loadFlutterwaveScript();
-      } catch {
-        setSubError("Failed to load payment widget. Please refresh and try again.");
-        setSubscribing(null);
-        return;
-      }
-
-      const win = window as unknown as { FlutterwaveCheckout?: (config: Record<string, unknown>) => void };
-      if (!win.FlutterwaveCheckout) {
-        setSubError("Failed to load payment widget. Please refresh and try again.");
-        setSubscribing(null);
-        return;
-      }
-
-      // Safety timeout — if modal doesn't open or callback never fires
-      const timeout = setTimeout(() => {
-        setSubError("Payment timed out. Please try again.");
-        setSubscribing(null);
-      }, 30000);
-
-      win.FlutterwaveCheckout({
-        public_key: result.publicKey,
-        tx_ref: result.txRef,
-        amount: result.amount,
-        currency: result.currency,
-        payment_plan: result.paymentPlanId ?? undefined,
-        redirect_url: result.callbackUrl,
-        customer: { email: result.email },
-        customizations: {
-          title: "BizPilot AI",
-          description: `${(result.plan as string).charAt(0).toUpperCase() + (result.plan as string).slice(1)} Plan — ${result.billingCycle}`,
-          logo: "https://app.bizpilot-ai.com/favicon.ico",
-        },
-        callback: async (response: { transaction_id?: string; tx_ref?: string }) => {
-          clearTimeout(timeout);
-          try {
-            await api.post("/subscription/verify-flutterwave", {
-              transactionId: response.transaction_id?.toString(),
-              txRef: response.tx_ref,
-            });
-            qc.invalidateQueries({ queryKey: ["plan-status"] });
-          } catch {
-            setFailedVerify({ transactionId: response.transaction_id?.toString(), txRef: response.tx_ref });
-            setSubError("Payment received but verification failed.");
-          } finally {
-            setSubscribing(null);
-          }
-        },
-        onclose: () => {
-          clearTimeout(timeout);
-          setSubscribing(null);
-        },
-      });
+      // Show payment method picker for Flutterwave
+      setPayMethodPick({ plan: targetPlan, result });
+      setSubscribing(null);
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { errors?: string[] } } };
       setSubError(ax.response?.data?.errors?.[0] ?? "Failed to start subscription");
       setSubscribing(null);
     }
+  }
+
+  async function openFlutterwaveCheckout(useCard: boolean) {
+    if (!payMethodPick) return;
+    const { plan: targetPlan, result } = payMethodPick;
+    setPayMethodPick(null);
+    setSubscribing(targetPlan);
+
+    try { await loadFlutterwaveScript(); } catch {
+      setSubError("Failed to load payment widget. Please refresh and try again.");
+      setSubscribing(null);
+      return;
+    }
+
+    const win = window as unknown as { FlutterwaveCheckout?: (config: Record<string, unknown>) => void };
+    if (!win.FlutterwaveCheckout) {
+      setSubError("Failed to load payment widget. Please refresh and try again.");
+      setSubscribing(null);
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setSubError("Payment timed out. Please try again.");
+      setSubscribing(null);
+    }, 30000);
+
+    const config: Record<string, unknown> = {
+      public_key: result.publicKey,
+      tx_ref: result.txRef,
+      amount: result.amount,
+      currency: result.currency,
+      redirect_url: result.callbackUrl,
+      customer: { email: result.email },
+      customizations: {
+        title: "BizPilot AI",
+        description: `${(result.plan as string).charAt(0).toUpperCase() + (result.plan as string).slice(1)} Plan — ${result.billingCycle}`,
+        logo: "https://app.bizpilot-ai.com/favicon.ico",
+      },
+      callback: async (response: { transaction_id?: string; tx_ref?: string }) => {
+        clearTimeout(timeout);
+        try {
+          await api.post("/subscription/verify-flutterwave", {
+            transactionId: response.transaction_id?.toString(),
+            txRef: response.tx_ref,
+          });
+          qc.invalidateQueries({ queryKey: ["plan-status"] });
+        } catch {
+          setFailedVerify({ transactionId: response.transaction_id?.toString(), txRef: response.tx_ref });
+          setSubError("Payment received but verification failed.");
+        } finally {
+          setSubscribing(null);
+        }
+      },
+      onclose: () => { clearTimeout(timeout); setSubscribing(null); },
+    };
+
+    if (useCard && result.paymentPlanId) {
+      config.payment_plan = result.paymentPlanId;
+      config.payment_options = "card";
+    } else {
+      config.payment_options = "mobilemoney,banktransfer,ussd";
+    }
+
+    win.FlutterwaveCheckout(config);
   }
 
   async function handleCancel() {
@@ -989,6 +1002,39 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
         </ul>
 
         {subError && <p className="text-xs text-red-500">{subError}</p>}
+
+        {/* Payment method picker for Flutterwave */}
+        {payMethodPick && (
+          <div className="rounded-lg border border-sky-200 bg-sky-50 p-4 space-y-3">
+            <p className="text-sm font-medium text-slate-700">How would you like to pay?</p>
+            <div className="grid grid-cols-1 gap-2">
+              <button
+                onClick={() => openFlutterwaveCheckout(true)}
+                className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-200 bg-white hover:border-sky-300 hover:bg-sky-50 transition-colors text-left"
+              >
+                <div>
+                  <p className="text-sm font-medium text-slate-900">Card payment</p>
+                  <p className="text-xs text-green-600">Auto-renews — no action needed at renewal</p>
+                </div>
+                <span className="text-xs text-slate-400">Visa, Mastercard</span>
+              </button>
+              <button
+                onClick={() => openFlutterwaveCheckout(false)}
+                className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-200 bg-white hover:border-sky-300 hover:bg-sky-50 transition-colors text-left"
+              >
+                <div>
+                  <p className="text-sm font-medium text-slate-900">Mobile money / Bank transfer</p>
+                  <p className="text-xs text-amber-600">Manual renewal — you renew before expiry</p>
+                </div>
+                <span className="text-xs text-slate-400">M-Pesa, MoMo, USSD</span>
+              </button>
+            </div>
+            <button onClick={() => setPayMethodPick(null)} className="text-xs text-slate-400 hover:text-slate-600">
+              Cancel
+            </button>
+          </div>
+        )}
+
         {failedVerify && (
           <Button
             size="sm"
