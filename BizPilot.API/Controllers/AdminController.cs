@@ -22,8 +22,8 @@ public class AdminController : ControllerBase
         var secret = _config["Admin:AnalyticsKey"];
         if (string.IsNullOrEmpty(secret) || secret.Length < 32) return StatusCode(503, "Admin endpoint not configured.");
         if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-            System.Text.Encoding.UTF8.GetBytes(key ?? ""),
-            System.Text.Encoding.UTF8.GetBytes(secret))) return Unauthorized();
+            System.Text.Encoding.UTF8.GetBytes((key ?? "").ToLowerInvariant()),
+            System.Text.Encoding.UTF8.GetBytes(secret.ToLowerInvariant()))) return Unauthorized();
 
         var logs = await _db.MessageLogs
             .Where(m => m.ParsedIntent != null && m.ParsedIntent.StartsWith("onboarding:"))
@@ -114,8 +114,8 @@ public class AdminController : ControllerBase
         if (string.IsNullOrEmpty(secret) || secret.Length < 32)
             return StatusCode(503, "Admin endpoint not configured.");
         if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-            System.Text.Encoding.UTF8.GetBytes(key ?? ""),
-            System.Text.Encoding.UTF8.GetBytes(secret))) return Unauthorized();
+            System.Text.Encoding.UTF8.GetBytes((key ?? "").ToLowerInvariant()),
+            System.Text.Encoding.UTF8.GetBytes(secret.ToLowerInvariant()))) return Unauthorized();
         return null;
     }
 

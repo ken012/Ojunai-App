@@ -54,6 +54,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             OnMessageReceived = context =>
             {
+                // Don't read cookie for admin/webhook/health endpoints — they use their own auth
+                var path = context.Request.Path.Value ?? "";
+                if (path.StartsWith("/api/admin") || path.StartsWith("/api/subscription/webhook") || path == "/health")
+                    return Task.CompletedTask;
+
                 if (string.IsNullOrEmpty(context.Token)
                     && context.Request.Cookies.TryGetValue("bp_auth", out var cookieToken)
                     && !string.IsNullOrEmpty(cookieToken))
@@ -64,7 +69,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             },
             OnAuthenticationFailed = context =>
             {
-                // Don't return 401 for expired/invalid cookies — let [AllowAnonymous] endpoints through
                 context.NoResult();
                 return Task.CompletedTask;
             }
