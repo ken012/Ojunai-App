@@ -8,6 +8,7 @@ public class Contact
     public string? PhoneNumber { get; set; }
     public ContactType Type { get; set; } = ContactType.Customer;
     public string Source { get; set; } = "Manual";
+    public Guid? ImportBatchId { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     public Business Business { get; set; } = null!;

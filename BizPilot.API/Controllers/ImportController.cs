@@ -83,6 +83,40 @@ public class ImportController : BizPilotBaseController
         return Ok(ApiResponse<ImportJobDto>.Ok(MapToDto(job)));
     }
 
+    /// <summary>
+    /// Rolls back a completed import by deactivating products and soft-deleting expenses created by the
+    /// import batch. Contacts and ledger entries are left untouched because they may have been referenced
+    /// by other transactions since the import.
+    /// </summary>
+    [HttpPost("rollback/{jobId:guid}")]
+    [RequirePermission(Permission.ManageSettings)]
+    public async Task<ActionResult<ApiResponse<object>>> Rollback(Guid jobId)
+    {
+        var job = await _db.ImportJobs.FirstOrDefaultAsync(j => j.Id == jobId && j.BusinessId == BusinessId);
+        if (job == null) return NotFound(ApiResponse<object>.Fail("Import job not found."));
+        if (job.Status != ImportJobStatus.Completed)
+            return BadRequest(ApiResponse<object>.Fail("Only completed imports can be rolled back."));
+
+        // Products: deactivate (not hard-delete, they may have sales referencing them)
+        var products = await _db.Products.Where(p => p.ImportBatchId == jobId).ToListAsync();
+        foreach (var p in products) p.IsActive = false;
+
+        // Expenses: soft-delete
+        var expenses = await _db.Expenses.Where(e => e.ImportBatchId == jobId).ToListAsync();
+        foreach (var e in expenses) { e.IsDeleted = true; e.DeletedAtUtc = DateTime.UtcNow; }
+
+        // Contacts and ledger entries: leave alone (too risky — they may be linked to sales or payments)
+
+        job.Status = ImportJobStatus.RolledBack;
+        await _db.SaveChangesAsync();
+
+        var count = products.Count + expenses.Count;
+        _logger.LogInformation("Import {JobId} rolled back: {Products} products deactivated, {Expenses} expenses deleted",
+            jobId, products.Count, expenses.Count);
+
+        return Ok(ApiResponse<object>.Ok(null!, $"Import rolled back. {count} records affected."));
+    }
+
     /// <summary>Lists recent import jobs for the current business. Useful for an import history page.</summary>
     [HttpGet("jobs")]
     public async Task<ActionResult<ApiResponse<List<ImportJobDto>>>> ListJobs([FromQuery] int limit = 20)

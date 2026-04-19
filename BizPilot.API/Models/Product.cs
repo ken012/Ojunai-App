@@ -15,6 +15,7 @@ public class Product
     public string? Subcategory { get; set; }
     public bool IsActive { get; set; } = true;
     public string Source { get; set; } = "Manual";
+    public Guid? ImportBatchId { get; set; }
     public Guid? RecordedByUserId { get; set; }
     public string? RecordedByName { get; set; }
     public uint Version { get; set; }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { api } from "@/lib/api";
 import { hasPermission, Permission } from "@/lib/permissions";
 import { usePlanStatus } from "@/lib/use-plan-status";
@@ -17,7 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Upload, Download, Copy, CheckCircle, AlertTriangle, Clock } from "lucide-react";
+import { Upload, Download, Copy, CheckCircle, AlertTriangle, Clock, ChevronLeft, ChevronRight } from "lucide-react";
 
 type ImportType = "inventory" | "sales" | "expenses" | "contacts" | "contacts-ledger";
 
@@ -68,7 +68,7 @@ const FORMATS: Record<ImportType, { headers: string; example: string; required: 
 type ImportJob = {
   id: string;
   type: string;
-  status: "Queued" | "Running" | "Completed" | "Failed";
+  status: "Queued" | "Running" | "Completed" | "Failed" | "RolledBack";
   fileName: string;
   totalRows: number;
   processedRows: number;
@@ -82,18 +82,81 @@ type ImportJob = {
   progressPercent: number;
 };
 
+type RowIssue = { row: number; column: string; issue: string; severity: "error" | "warning" };
+
+function validateRows(headers: string[], rows: string[][], importType: string): RowIssue[] {
+  const issues: RowIssue[] = [];
+  const seen = new Map<string, number>();
+
+  rows.forEach((row, idx) => {
+    const rowNum = idx + 2; // +2 for header row + 0-index
+
+    // Check for empty required fields based on import type
+    headers.forEach((header, colIdx) => {
+      const val = row[colIdx]?.trim() ?? "";
+      const h = header.toLowerCase();
+
+      // Required field checks
+      if (importType === "inventory" && h.includes("name") && !val)
+        issues.push({ row: rowNum, column: header, issue: "Product name is required", severity: "error" });
+      if (importType === "sales" && h.includes("product") && !val)
+        issues.push({ row: rowNum, column: header, issue: "Product name is required", severity: "error" });
+      if (importType === "expenses" && h.includes("amount") && !val)
+        issues.push({ row: rowNum, column: header, issue: "Amount is required", severity: "error" });
+
+      // Numeric field checks
+      if ((h.includes("price") || h.includes("amount") || h.includes("quantity") || h.includes("stock") || h.includes("cost")) && val) {
+        const cleaned = val.replace(/[₦$£€,\s]/g, "");
+        if (cleaned && isNaN(Number(cleaned)))
+          issues.push({ row: rowNum, column: header, issue: `"${val}" is not a valid number`, severity: "error" });
+        if (Number(cleaned) < 0)
+          issues.push({ row: rowNum, column: header, issue: "Negative values not allowed", severity: "warning" });
+      }
+    });
+
+    // Duplicate detection (by first column value)
+    const key = row[0]?.trim().toLowerCase();
+    if (key) {
+      if (seen.has(key)) {
+        issues.push({ row: rowNum, column: headers[0], issue: `Duplicate of row ${seen.get(key)}`, severity: "warning" });
+      } else {
+        seen.set(key, rowNum);
+      }
+    }
+
+    // Empty row check
+    if (row.every(cell => !cell?.trim()))
+      issues.push({ row: rowNum, column: "-", issue: "Empty row", severity: "warning" });
+  });
+
+  return issues;
+}
+
 export default function ImportPage() {
   const [type, setType] = useState<ImportType>("inventory");
   const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string[][]>([]);
+  const [allRows, setAllRows] = useState<string[][]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [totalRows, setTotalRows] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [job, setJob] = useState<ImportJob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showErrors, setShowErrors] = useState(false);
+  const [showIssues, setShowIssues] = useState(true);
+  const [previewPage, setPreviewPage] = useState(1);
+  const [rollingBack, setRollingBack] = useState(false);
+  const previewPageSize = 50;
   const fileRef = useRef<HTMLInputElement>(null);
   const { data: planStatus } = usePlanStatus();
+
+  const issues = useMemo(() =>
+    allRows.length > 0 ? validateRows(headers, allRows, type) : [],
+    [headers, allRows, type]
+  );
+  const errorCount = issues.filter(i => i.severity === "error").length;
+  const warningCount = issues.filter(i => i.severity === "warning").length;
+  const totalPreviewPages = Math.ceil(allRows.length / previewPageSize);
+  const previewRows = allRows.slice((previewPage - 1) * previewPageSize, previewPage * previewPageSize);
 
   const format = FORMATS[type];
   const canImport = hasPermission(format.permission);
@@ -102,7 +165,7 @@ export default function ImportPage() {
   // Poll the job status until it reaches a terminal state. The backend updates ProcessedRows every 200
   // rows, so a 1.5s interval gives smooth progress without hammering the server.
   useEffect(() => {
-    if (!job || job.status === "Completed" || job.status === "Failed") return;
+    if (!job || job.status === "Completed" || job.status === "Failed" || job.status === "RolledBack") return;
 
     const interval = setInterval(async () => {
       try {
@@ -148,10 +211,11 @@ export default function ImportPage() {
       setHeaders(hdrs);
       setTotalRows(lines.length - 1);
 
-      const rows = lines.slice(1, 11).map(line =>
+      const rows = lines.slice(1).map(line =>
         line.split(delim).map(v => v.trim().replace(/^"|"$/g, ""))
       );
-      setPreview(rows);
+      setAllRows(rows);
+      setPreviewPage(1);
     };
     reader.readAsText(f);
   }
@@ -193,15 +257,16 @@ export default function ImportPage() {
 
   function resetForNewImport() {
     setFile(null);
-    setPreview([]);
+    setAllRows([]);
     setHeaders([]);
     setTotalRows(0);
+    setPreviewPage(1);
     setJob(null);
     setError(null);
     if (fileRef.current) fileRef.current.value = "";
   }
 
-  const isTerminal = job?.status === "Completed" || job?.status === "Failed";
+  const isTerminal = job?.status === "Completed" || job?.status === "Failed" || job?.status === "RolledBack";
   const isProcessing = job && !isTerminal;
 
   return (
@@ -287,34 +352,114 @@ export default function ImportPage() {
         </Card>
       )}
 
-      {preview.length > 0 && !job && (
+      {allRows.length > 0 && !job && (
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-slate-700">Preview (first {Math.min(preview.length, 10)} of {totalRows} rows)</p>
+              <p className="text-sm font-semibold text-slate-700">
+                {totalRows} rows total — Page {previewPage} of {totalPreviewPages}
+              </p>
               <Badge variant="secondary">{totalRows} rows total</Badge>
             </div>
+
+            {issues.length > 0 && (
+              <div className={`rounded-lg px-3 py-2 mb-3 text-sm font-medium ${
+                errorCount > 0 ? "bg-red-50 text-red-700 border border-red-200" : "bg-amber-50 text-amber-700 border border-amber-200"
+              }`}>
+                {errorCount > 0 && <span>{errorCount} error{errorCount !== 1 ? "s" : ""}</span>}
+                {errorCount > 0 && warningCount > 0 && <span>, </span>}
+                {warningCount > 0 && <span>{warningCount} warning{warningCount !== 1 ? "s" : ""}</span>}
+                {errorCount > 0 && <span className="ml-2 text-xs font-normal">— Fix errors before importing</span>}
+              </div>
+            )}
+
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="text-xs w-10">#</TableHead>
                     {headers.map((h) => <TableHead key={h} className="text-xs">{h}</TableHead>)}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {preview.map((row, i) => (
-                    <TableRow key={i}>
-                      {row.map((cell, j) => (
-                        <TableCell key={j} className="text-xs text-slate-600">{cell || <span className="text-slate-300">—</span>}</TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
+                  {previewRows.map((row, i) => {
+                    const globalIdx = (previewPage - 1) * previewPageSize + i;
+                    const rowNum = globalIdx + 2;
+                    const rowIssues = issues.filter(iss => iss.row === rowNum);
+                    const hasError = rowIssues.some(iss => iss.severity === "error");
+                    const hasWarning = !hasError && rowIssues.some(iss => iss.severity === "warning");
+                    return (
+                      <TableRow
+                        key={i}
+                        className={hasError ? "bg-red-50" : hasWarning ? "bg-amber-50" : ""}
+                      >
+                        <TableCell className="text-xs text-slate-400">{rowNum}</TableCell>
+                        {row.map((cell, j) => {
+                          const cellIssue = rowIssues.find(iss => iss.column === headers[j]);
+                          return (
+                            <TableCell key={j} className="text-xs text-slate-600">
+                              <span>{cell || <span className="text-slate-300">—</span>}</span>
+                              {cellIssue && (
+                                <span className={`block text-[10px] mt-0.5 ${cellIssue.severity === "error" ? "text-red-500" : "text-amber-500"}`}>
+                                  {cellIssue.issue}
+                                </span>
+                              )}
+                            </TableCell>
+                          );
+                        })}
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
 
+            {totalPreviewPages > 1 && (
+              <div className="flex items-center justify-center gap-3 mt-3">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={previewPage <= 1}
+                  onClick={() => setPreviewPage(p => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft size={14} className="mr-1" /> Previous
+                </Button>
+                <span className="text-xs text-slate-500">
+                  Page {previewPage} of {totalPreviewPages}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={previewPage >= totalPreviewPages}
+                  onClick={() => setPreviewPage(p => Math.min(totalPreviewPages, p + 1))}
+                >
+                  Next <ChevronRight size={14} className="ml-1" />
+                </Button>
+              </div>
+            )}
+
+            {issues.length > 0 && (
+              <div className="border rounded-lg p-3 mt-3 space-y-1">
+                <button
+                  onClick={() => setShowIssues(!showIssues)}
+                  className="text-sm font-medium hover:underline"
+                >
+                  {showIssues ? "Hide" : "Show"} {issues.length} issue{issues.length !== 1 ? "s" : ""}: {errorCount} error{errorCount !== 1 ? "s" : ""}, {warningCount} warning{warningCount !== 1 ? "s" : ""}
+                </button>
+                {showIssues && (
+                  <div className="max-h-40 overflow-y-auto space-y-1 mt-1">
+                    {issues.map((issue, i) => (
+                      <p key={i} className={`text-xs ${issue.severity === "error" ? "text-red-600" : "text-amber-600"}`}>
+                        Row {issue.row}, {issue.column}: {issue.issue}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex items-center justify-between mt-4 pt-4 border-t">
-              <p className="text-sm text-slate-500">{totalRows} rows will be imported. This cannot be undone.</p>
+              <p className="text-sm text-slate-500">{totalRows} rows will be imported.</p>
               <Button onClick={handleImport} disabled={submitting || !canImport}>
                 {submitting ? "Queueing..." : `Import ${totalRows} Rows`}
               </Button>
@@ -334,7 +479,8 @@ export default function ImportPage() {
       {/* Active job — progress bar while running, final summary once terminal */}
       {job && (
         <Card className={
-          job.status === "Completed" && job.errorCount === 0 ? "border-emerald-200"
+          job.status === "RolledBack" ? "border-slate-300 bg-slate-50"
+            : job.status === "Completed" && job.errorCount === 0 ? "border-emerald-200"
             : job.status === "Completed" ? "border-amber-200"
             : job.status === "Failed" ? "border-red-200"
             : "border-sky-200"
@@ -347,11 +493,13 @@ export default function ImportPage() {
                 {job.status === "Completed" && job.errorCount === 0 && <CheckCircle size={18} className="text-emerald-500" />}
                 {job.status === "Completed" && job.errorCount > 0 && <AlertTriangle size={18} className="text-amber-500" />}
                 {job.status === "Failed" && <AlertTriangle size={18} className="text-red-500" />}
+                {job.status === "RolledBack" && <Clock size={18} className="text-slate-400" />}
                 <span className="text-sm font-semibold text-slate-900">
                   {job.status === "Queued" && "Queued — waiting to start"}
                   {job.status === "Running" && `Running — processing row ${job.processedRows.toLocaleString()} of ${job.totalRows.toLocaleString()}`}
                   {job.status === "Completed" && "Import complete"}
                   {job.status === "Failed" && "Import failed"}
+                  {job.status === "RolledBack" && "This import was rolled back"}
                 </span>
               </div>
               {isProcessing && (
@@ -415,11 +563,39 @@ export default function ImportPage() {
             {isTerminal && (
               <div className="pt-2 border-t flex items-center justify-between">
                 <p className="text-xs text-slate-400">
-                  A WhatsApp message has been sent to the business owner with a summary.
+                  {job.status === "RolledBack"
+                    ? "Products were deactivated and expenses were deleted."
+                    : "A WhatsApp message has been sent to the business owner with a summary."}
                 </p>
-                <Button size="sm" variant="outline" onClick={resetForNewImport}>
-                  Start another import
-                </Button>
+                <div className="flex items-center gap-2">
+                  {job.status === "Completed" && job.successCount > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-red-600 border-red-200 hover:bg-red-50"
+                      disabled={rollingBack}
+                      onClick={async () => {
+                        if (!confirm("Undo this entire import? Products will be deactivated and expenses deleted.")) return;
+                        setRollingBack(true);
+                        try {
+                          await api.post(`/import/rollback/${job.id}`);
+                          const { data } = await api.get<{ data: ImportJob }>(`/import/jobs/${job.id}`);
+                          if (data.data) setJob(data.data);
+                        } catch (err: unknown) {
+                          const ax = err as { response?: { data?: { errors?: string[] } } };
+                          alert(ax.response?.data?.errors?.[0] ?? "Rollback failed");
+                        } finally {
+                          setRollingBack(false);
+                        }
+                      }}
+                    >
+                      {rollingBack ? "Rolling back..." : "Undo Import"}
+                    </Button>
+                  )}
+                  <Button size="sm" variant="outline" onClick={resetForNewImport}>
+                    Start another import
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>

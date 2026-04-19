@@ -10,6 +10,7 @@ public class LedgerEntry
     public string? Notes { get; set; }
     public DateTime? DueDate { get; set; }
     public string Source { get; set; } = "Manual";
+    public Guid? ImportBatchId { get; set; }
     public Guid? RecordedByUserId { get; set; }
     public string? RecordedByName { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;

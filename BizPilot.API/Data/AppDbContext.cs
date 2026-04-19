@@ -66,6 +66,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.CurrentStock).HasPrecision(18, 4);
             e.Property(x => x.LowStockThreshold).HasPrecision(18, 4);
             e.Property(x => x.Version).IsRowVersion();
+            e.HasIndex(x => x.ImportBatchId).HasFilter("\"ImportBatchId\" IS NOT NULL");
             e.ToTable(t => t.HasCheckConstraint("CK_Product_CurrentStock_NonNegative", "\"CurrentStock\" >= 0"));
             e.HasOne(x => x.Business)
              .WithMany(x => x.Products)
@@ -118,6 +119,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.Category).HasMaxLength(100).HasDefaultValue("General");
             e.Property(x => x.ExpenseType).HasMaxLength(20).HasDefaultValue("operating");
             e.Property(x => x.PaidTo).HasMaxLength(200);
+            e.HasIndex(x => x.ImportBatchId).HasFilter("\"ImportBatchId\" IS NOT NULL");
             e.HasQueryFilter(x => !x.IsDeleted);
             e.HasOne(x => x.Business)
              .WithMany(x => x.Expenses)
@@ -131,6 +133,7 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.BusinessId, x.Name });
             e.Property(x => x.Name).HasMaxLength(200).IsRequired();
             e.Property(x => x.PhoneNumber).HasMaxLength(20);
+            e.HasIndex(x => x.ImportBatchId).HasFilter("\"ImportBatchId\" IS NOT NULL");
             e.HasOne(x => x.Business)
              .WithMany(x => x.Contacts)
              .HasForeignKey(x => x.BusinessId)
@@ -143,6 +146,7 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.BusinessId, x.ContactId });
             e.HasIndex(x => new { x.BusinessId, x.EntryType });
             e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.HasIndex(x => x.ImportBatchId).HasFilter("\"ImportBatchId\" IS NOT NULL");
             e.HasOne(x => x.Contact)
              .WithMany(x => x.LedgerEntries)
              .HasForeignKey(x => x.ContactId)

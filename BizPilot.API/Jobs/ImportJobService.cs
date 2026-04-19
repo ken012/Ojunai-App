@@ -178,7 +178,7 @@ public class ImportJobService
                 if (existing == null)
                 {
                     var (inferredCat, inferredSubcat) = CategoryInferrer.Infer(name!);
-                    await _products.CreateAsync(job.BusinessId, new CreateProductRequest
+                    var created = await _products.CreateAsync(job.BusinessId, new CreateProductRequest
                     {
                         Name = name!,
                         Unit = unit,
@@ -189,6 +189,10 @@ public class ImportJobService
                         Category = csvCategory ?? inferredCat,
                         Subcategory = csvSubcategory ?? inferredSubcat
                     }, user?.Id, user?.FullName);
+
+                    // Stamp the import batch so rollback can find these records
+                    var createdProduct = await _db.Products.FindAsync(created.Id);
+                    if (createdProduct != null) createdProduct.ImportBatchId = job.Id;
                 }
                 else
                 {
@@ -207,12 +211,15 @@ public class ImportJobService
                 var expenseCost = costPrice ?? existing?.CostPrice;
                 if (expenseCost.HasValue && expenseCost.Value > 0)
                 {
-                    await _expenses.CreateAsync(job.BusinessId, new CreateExpenseRequest
+                    var expDto = await _expenses.CreateAsync(job.BusinessId, new CreateExpenseRequest
                     {
                         Category = "Inventory",
                         Amount = qty.Value * expenseCost.Value,
                         Notes = $"Import: {qty.Value:0.##} {unit} of {name} @ {cs}{expenseCost.Value:N0}"
                     }, EntrySource.Import, user?.Id, user?.FullName);
+
+                    var createdExpense = await _db.Expenses.FindAsync(expDto.Id);
+                    if (createdExpense != null) createdExpense.ImportBatchId = job.Id;
                 }
 
                 job.SuccessCount++;
@@ -266,7 +273,8 @@ public class ImportJobService
                             BusinessId = job.BusinessId,
                             Name = customerName,
                             Type = ContactType.Customer,
-                            Source = EntrySource.Import
+                            Source = EntrySource.Import,
+                            ImportBatchId = job.Id
                         };
                         _db.Contacts.Add(contact);
                         await _db.SaveChangesAsync();
@@ -320,13 +328,16 @@ public class ImportJobService
                 var amount = CsvParser.ParseDecimal(row.GetValueOrDefault("amount"));
                 if (!ValidateAmount(amount, rowNum, $"category '{category}'", errors, cs)) continue;
 
-                await _expenses.CreateAsync(job.BusinessId, new CreateExpenseRequest
+                var expDto = await _expenses.CreateAsync(job.BusinessId, new CreateExpenseRequest
                 {
                     Category = category,
                     Amount = amount!.Value,
                     PaidTo = row.GetValueOrDefault("paidto"),
                     Notes = row.GetValueOrDefault("notes")
                 }, EntrySource.Import, user?.Id, user?.FullName);
+
+                var createdExpense = await _db.Expenses.FindAsync(expDto.Id);
+                if (createdExpense != null) createdExpense.ImportBatchId = job.Id;
 
                 job.SuccessCount++;
             }
@@ -458,7 +469,8 @@ public class ImportJobService
                         Name = name!.Trim(),
                         PhoneNumber = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim(),
                         Type = contactType,
-                        Source = EntrySource.Import
+                        Source = EntrySource.Import,
+                        ImportBatchId = job.Id
                     });
                 }
 
@@ -524,7 +536,8 @@ public class ImportJobService
                         Name = name!.Trim(),
                         PhoneNumber = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim(),
                         Type = contactType,
-                        Source = EntrySource.Import
+                        Source = EntrySource.Import,
+                        ImportBatchId = job.Id
                     };
                     _db.Contacts.Add(contact);
                     await _db.SaveChangesAsync();
@@ -540,6 +553,7 @@ public class ImportJobService
                     Amount = amount!.Value,
                     Notes = notes,
                     Source = EntrySource.Import,
+                    ImportBatchId = job.Id,
                     RecordedByUserId = user?.Id,
                     RecordedByName = user?.FullName
                 });

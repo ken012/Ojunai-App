@@ -10,6 +10,7 @@ public class Expense
     public string? Notes { get; set; }
     public string? PaidTo { get; set; }
     public string Source { get; set; } = "Manual";
+    public Guid? ImportBatchId { get; set; }
     public Guid? RecordedByUserId { get; set; }
     public string? RecordedByName { get; set; }
     public bool IsDeleted { get; set; } = false;
