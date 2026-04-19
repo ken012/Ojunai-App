@@ -145,11 +145,9 @@ public class SubscriptionController : BizPilotBaseController
         if (targetRank > currentRank)
             return BadRequest(ApiResponse<object>.Fail("Use the subscribe/upgrade button for upgrades — this endpoint handles downgrades only."));
 
-        var hasActiveSub = !string.IsNullOrEmpty(business.PaystackSubscriptionCode)
-                        || !string.IsNullOrEmpty(business.FlutterwaveSubscriptionId);
         var targetLabel = targetPlan![0..1].ToUpper() + targetPlan[1..];
 
-        if (hasActiveSub && business.SubscriptionEndsAt.HasValue && business.SubscriptionEndsAt > DateTime.UtcNow)
+        if (business.SubscriptionEndsAt.HasValue && business.SubscriptionEndsAt > DateTime.UtcNow)
         {
             business.PendingPlanChange = targetPlan;
             await _db.SaveChangesAsync();
