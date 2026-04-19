@@ -3,8 +3,9 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getStoredUser, getStoredBusiness } from "@/lib/auth";
+import { getStoredUser } from "@/lib/auth";
 import { api } from "@/lib/api";
+import { useBusiness, useUser, useDataSync } from "@/lib/data-sync";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -84,12 +85,22 @@ export default function SettingsPageWrapper() {
 }
 
 function SettingsPage() {
+  const syncBusiness = useBusiness();
+  const syncUser = useUser();
+  const { refresh: refreshSync } = useDataSync();
   const [user, setUser] = useState<ReturnType<typeof getStoredUser>>(null);
-  const [business, setBusiness] = useState<ReturnType<typeof getStoredBusiness>>(null);
+  const [business, setBusiness] = useState<ReturnType<typeof useBusiness>>(null);
   const [editing, setEditing] = useState(false);
   const [mounted, setMounted] = useState(false);
   const searchParams = useSearchParams();
   const [showSuccess, setShowSuccess] = useState(false);
+
+  useEffect(() => {
+    if (syncBusiness) setBusiness(syncBusiness);
+  }, [syncBusiness]);
+  useEffect(() => {
+    if (syncUser) setUser(syncUser);
+  }, [syncUser]);
 
   useEffect(() => {
     const status = searchParams.get("status");
@@ -120,10 +131,8 @@ function SettingsPage() {
 
   const cs = CURRENCY_META[(business?.currency ?? "NGN") as SupportedCurrency]?.symbol ?? business?.currency ?? "₦";
 
-  // Read localStorage only on client after mount (prevents hydration mismatch)
   if (!mounted && typeof window !== "undefined") {
     setUser(getStoredUser());
-    setBusiness(getStoredBusiness());
     setMounted(true);
   }
 
@@ -233,7 +242,7 @@ function SettingsPage() {
                     const { data } = await api.put<{ data: typeof business }>("/business", { [key]: e.target.checked });
                     const updated = data.data!;
                     setBusiness(updated);
-                    if (typeof window !== "undefined") localStorage.setItem("bp_business", JSON.stringify(updated));
+                    if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
                   } catch { /* silent */ }
                 }}
               />
@@ -253,7 +262,7 @@ function SettingsPage() {
       {hasPermission(Permission.ManageSettings) &&
       <ManageCategoriesCard business={business} onUpdate={(updated) => {
         setBusiness(updated);
-        if (typeof window !== "undefined") localStorage.setItem("bp_business", JSON.stringify(updated));
+        if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
       }} />}
 
       {/* User */}

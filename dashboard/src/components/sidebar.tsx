@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { logout, getStoredBusiness } from "@/lib/auth";
+import { logout } from "@/lib/auth";
+import { useBusiness } from "@/lib/data-sync";
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -34,7 +35,7 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const business = getStoredBusiness();
+  const business = useBusiness();
   const [open, setOpen] = useState(false);
 
   // Close drawer on route change

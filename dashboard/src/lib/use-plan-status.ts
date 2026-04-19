@@ -35,7 +35,7 @@ export function usePlanStatus() {
       const { data } = await api.get<{ data: PlanStatus }>("/business/plan-status");
       return data.data!;
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 60 * 1000,
   });
 }
 
