@@ -44,7 +44,20 @@ public class PaystackService
         var customerCode = business.PaystackCustomerCode;
         if (string.IsNullOrEmpty(customerCode))
         {
-            customerCode = await CreateCustomerAsync(email, business.Name, businessId);
+            try
+            {
+                customerCode = await CreateCustomerAsync(email, business.Name, businessId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to create Paystack customer for {Email}, attempting to fetch existing", email);
+                // Try to find existing customer by email lookup
+                var existing = await GetAsync($"/customer/{Uri.EscapeDataString(email)}");
+                if (existing.TryGetProperty("data", out var custData) && custData.TryGetProperty("customer_code", out var cc))
+                    customerCode = cc.GetString();
+                if (string.IsNullOrEmpty(customerCode))
+                    throw;
+            }
             business.PaystackCustomerCode = customerCode;
             await _db.SaveChangesAsync();
         }

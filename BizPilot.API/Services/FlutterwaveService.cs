@@ -57,7 +57,16 @@ public class FlutterwaveService
     public bool VerifyWebhook(string hash)
     {
         var secret = _config["Flutterwave:WebhookSecret"];
-        if (string.IsNullOrEmpty(secret)) return false;
+        if (string.IsNullOrEmpty(secret))
+        {
+            _logger.LogError("Flutterwave WebhookSecret not configured — all webhooks will be rejected");
+            return false;
+        }
+        if (string.IsNullOrEmpty(hash))
+        {
+            _logger.LogWarning("Flutterwave webhook received without verif-hash header");
+            return false;
+        }
         return CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(hash),
             Encoding.UTF8.GetBytes(secret));

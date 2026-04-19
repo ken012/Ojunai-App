@@ -16,13 +16,15 @@ public class SubscriptionController : BizPilotBaseController
     private readonly FlutterwaveService _flutterwave;
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
+    private readonly ILogger<SubscriptionController> _logger;
 
-    public SubscriptionController(PaystackService paystack, FlutterwaveService flutterwave, AppDbContext db, IConfiguration config)
+    public SubscriptionController(PaystackService paystack, FlutterwaveService flutterwave, AppDbContext db, IConfiguration config, ILogger<SubscriptionController> logger)
     {
         _paystack = paystack;
         _flutterwave = flutterwave;
         _db = db;
         _config = config;
+        _logger = logger;
     }
 
     /// <summary>
@@ -191,7 +193,10 @@ public class SubscriptionController : BizPilotBaseController
         if (string.IsNullOrEmpty(secret)) return StatusCode(500);
 
         if (!Request.Headers.TryGetValue("x-paystack-signature", out var signature))
+        {
+            _logger.LogWarning("Paystack webhook received without x-paystack-signature header");
             return Unauthorized();
+        }
 
         Request.Body.Position = 0;
         string body;
@@ -204,7 +209,10 @@ public class SubscriptionController : BizPilotBaseController
         var hashBytes = Encoding.UTF8.GetBytes(hash);
         var sigBytes = Encoding.UTF8.GetBytes(signature.ToString().ToLower());
         if (hashBytes.Length != sigBytes.Length || !CryptographicOperations.FixedTimeEquals(hashBytes, sigBytes))
+        {
+            _logger.LogWarning("Paystack webhook signature verification failed");
             return Unauthorized();
+        }
 
         using var payload = JsonDocument.Parse(body);
         await _paystack.HandleWebhookAsync(payload.RootElement);
@@ -220,7 +228,10 @@ public class SubscriptionController : BizPilotBaseController
         // Flutterwave sends a secret hash in this header for verification
         var hash = Request.Headers["verif-hash"].ToString();
         if (!_flutterwave.VerifyWebhook(hash))
+        {
+            _logger.LogWarning("Flutterwave webhook signature verification failed");
             return Unauthorized();
+        }
 
         Request.Body.Position = 0;
         string body;

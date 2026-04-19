@@ -43,6 +43,13 @@ public class RenewalReminderJobService
                 var localHour = TimeZoneInfo.ConvertTimeFromUtc(utcNow, tz).Hour;
                 if (localHour != ReminderHour) continue;
 
+                // Only send one reminder per day per business
+                var alreadySent = await _db.BillingEvents.AnyAsync(e =>
+                    e.BusinessId == biz.Id
+                    && e.EventType == "renewal.reminder"
+                    && e.CreatedAtUtc >= utcNow.Date);
+                if (alreadySent) continue;
+
                 var owner = biz.Users.FirstOrDefault(u => u.Role == UserRole.Owner && u.IsActive);
                 if (owner == null) continue;
 
@@ -83,6 +90,17 @@ public class RenewalReminderJobService
                     await _whatsApp.SendMessageAsync($"whatsapp:{owner.PhoneNumber}", message, biz.Id, owner.Id);
                     _logger.LogInformation("Sent renewal reminder ({DaysLeft}d) to {Business} on {Plan} (tz: {Tz})",
                         daysLeft, biz.Name, biz.Plan, biz.Timezone);
+
+                    _db.BillingEvents.Add(new BillingEvent
+                    {
+                        BusinessId = biz.Id,
+                        EventType = "renewal.reminder",
+                        Provider = biz.BillingProvider ?? "unknown",
+                        Plan = biz.Plan,
+                        Status = $"reminder_{daysLeft}d",
+                        CreatedAtUtc = DateTime.UtcNow
+                    });
+                    await _db.SaveChangesAsync();
                 }
             }
             catch (Exception ex)

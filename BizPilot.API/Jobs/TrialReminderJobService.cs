@@ -35,6 +35,13 @@ public class TrialReminderJobService
                 var localHour = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz).Hour;
                 if (localHour != 10) continue; // Only send at 10 AM local time
 
+                // Only send one reminder per day per business
+                var alreadySent = await _db.BillingEvents.AnyAsync(e =>
+                    e.BusinessId == biz.Id
+                    && e.EventType == "trial.reminder"
+                    && e.CreatedAtUtc >= now.Date);
+                if (alreadySent) continue;
+
                 var trial = PlanGuard.GetTrialStatus(biz);
                 if (trial is not (TrialStatus.Active or TrialStatus.Expired)) continue;
 
@@ -71,6 +78,17 @@ public class TrialReminderJobService
                 {
                     await _whatsApp.SendMessageAsync($"whatsapp:{owner.PhoneNumber}", message, biz.Id, owner.Id);
                     _logger.LogInformation("Sent trial reminder ({DaysLeft}d) to {Business} on {Plan} plan", daysLeft, biz.Name, biz.Plan);
+
+                    _db.BillingEvents.Add(new BillingEvent
+                    {
+                        BusinessId = biz.Id,
+                        EventType = "trial.reminder",
+                        Provider = "system",
+                        Plan = biz.Plan,
+                        Status = $"reminder_{daysLeft}d",
+                        CreatedAtUtc = DateTime.UtcNow
+                    });
+                    await _db.SaveChangesAsync();
                 }
             }
             catch (Exception ex)
