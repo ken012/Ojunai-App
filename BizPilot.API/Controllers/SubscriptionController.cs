@@ -66,6 +66,7 @@ public class SubscriptionController : BizPilotBaseController
         business.BillingProvider = provider.ToString().ToLower();
         business.BillingCycle = cycle;
         business.BillingCurrency = currency;
+        business.PendingPlanChange = null;
         await _db.SaveChangesAsync();
 
         if (provider == BillingConfig.BillingProvider.Paystack)

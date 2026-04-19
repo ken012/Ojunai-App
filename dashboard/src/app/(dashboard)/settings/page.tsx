@@ -751,6 +751,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
   const [subscribing, setSubscribing] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [subError, setSubError] = useState<string | null>(null);
+  const [pendingPayment, setPendingPayment] = useState(false);
   const [payMethodPick, setPayMethodPick] = useState<{ plan: string; result: Record<string, unknown> } | null>(null);
   const [failedVerify, setFailedVerify] = useState<{transactionId?: string; txRef?: string} | null>(null);
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
@@ -759,6 +760,23 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
   useEffect(() => {
     if (business?.currency) setSelectedCurrency(toBillingCurrency(business.currency));
   }, [business?.currency]);
+
+  // Poll plan-status every 10s while a mobile money payment is pending
+  useEffect(() => {
+    if (!pendingPayment) return;
+    const interval = setInterval(() => {
+      qc.invalidateQueries({ queryKey: ["plan-status"] });
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [pendingPayment, qc]);
+
+  // Auto-clear pending state when subscription activates
+  useEffect(() => {
+    if (pendingPayment && planStatus?.subscriptionStatus === "active") {
+      setPendingPayment(false);
+      setSubError(null);
+    }
+  }, [pendingPayment, planStatus?.subscriptionStatus]);
 
   const plan = planStatus?.plan ?? business?.plan ?? "starter";
   const details = PLAN_DETAILS[plan] ?? PLAN_DETAILS.starter;
@@ -872,7 +890,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
           const ax = err as { response?: { data?: { errors?: string[] } } };
           const msg = ax.response?.data?.errors?.[0] ?? "";
           if (msg.startsWith("PENDING:")) {
-            setSubError(msg.replace("PENDING:", ""));
+            setPendingPayment(true);
           } else {
             setFailedVerify({ transactionId: response.transaction_id?.toString(), txRef: response.tx_ref });
             setSubError("Payment received but verification failed.");
@@ -1046,6 +1064,15 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
         </ul>
 
         {subError && <p className="text-xs text-red-500">{subError}</p>}
+
+        {pendingPayment && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-sm text-amber-800">
+              Your payment is being processed. This usually takes 2-5 minutes for mobile money.
+              Your plan will activate automatically — you&apos;ll receive a WhatsApp confirmation.
+            </p>
+          </div>
+        )}
 
         {/* Payment method picker for Flutterwave */}
         {payMethodPick && (

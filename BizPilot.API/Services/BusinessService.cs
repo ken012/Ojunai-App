@@ -20,7 +20,19 @@ public class BusinessService : IBusinessService
 
         // Name is intentionally NOT editable — it's set at registration only.
         if (request.BusinessType != null) business.BusinessType = string.IsNullOrWhiteSpace(request.BusinessType) ? null : request.BusinessType.Trim();
-        if (!string.IsNullOrWhiteSpace(request.Currency)) business.Currency = request.Currency.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(request.Currency))
+        {
+            var newCurrency = request.Currency.Trim().ToUpperInvariant();
+            if (newCurrency != business.Currency)
+            {
+                var hasActiveSub = !string.IsNullOrEmpty(business.PaystackSubscriptionCode)
+                    || !string.IsNullOrEmpty(business.FlutterwaveSubscriptionId)
+                    || (business.SubscriptionEndsAt.HasValue && business.SubscriptionEndsAt > DateTime.UtcNow);
+                if (hasActiveSub)
+                    throw new InvalidOperationException("Cannot change currency while you have an active subscription. Cancel your subscription first.");
+            }
+            business.Currency = newCurrency;
+        }
         if (request.State != null) business.State = string.IsNullOrWhiteSpace(request.State) ? null : request.State.Trim();
         if (request.City != null) business.City = string.IsNullOrWhiteSpace(request.City) ? null : request.City.Trim();
         if (!string.IsNullOrWhiteSpace(request.Country))

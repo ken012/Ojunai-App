@@ -76,9 +76,6 @@ public class TrialReminderJobService
 
                 if (message != null)
                 {
-                    await _whatsApp.SendMessageAsync($"whatsapp:{owner.PhoneNumber}", message, biz.Id, owner.Id);
-                    _logger.LogInformation("Sent trial reminder ({DaysLeft}d) to {Business} on {Plan} plan", daysLeft, biz.Name, biz.Plan);
-
                     _db.BillingEvents.Add(new BillingEvent
                     {
                         BusinessId = biz.Id,
@@ -89,6 +86,9 @@ public class TrialReminderJobService
                         CreatedAtUtc = DateTime.UtcNow
                     });
                     await _db.SaveChangesAsync();
+
+                    await _whatsApp.SendMessageAsync($"whatsapp:{owner.PhoneNumber}", message, biz.Id, owner.Id);
+                    _logger.LogInformation("Sent trial reminder ({DaysLeft}d) to {Business} on {Plan} plan", daysLeft, biz.Name, biz.Plan);
                 }
             }
             catch (Exception ex)

@@ -87,10 +87,6 @@ public class RenewalReminderJobService
 
                 if (message != null)
                 {
-                    await _whatsApp.SendMessageAsync($"whatsapp:{owner.PhoneNumber}", message, biz.Id, owner.Id);
-                    _logger.LogInformation("Sent renewal reminder ({DaysLeft}d) to {Business} on {Plan} (tz: {Tz})",
-                        daysLeft, biz.Name, biz.Plan, biz.Timezone);
-
                     _db.BillingEvents.Add(new BillingEvent
                     {
                         BusinessId = biz.Id,
@@ -101,6 +97,10 @@ public class RenewalReminderJobService
                         CreatedAtUtc = DateTime.UtcNow
                     });
                     await _db.SaveChangesAsync();
+
+                    await _whatsApp.SendMessageAsync($"whatsapp:{owner.PhoneNumber}", message, biz.Id, owner.Id);
+                    _logger.LogInformation("Sent renewal reminder ({DaysLeft}d) to {Business} on {Plan} (tz: {Tz})",
+                        daysLeft, biz.Name, biz.Plan, biz.Timezone);
                 }
             }
             catch (Exception ex)
