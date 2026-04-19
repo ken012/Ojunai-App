@@ -85,6 +85,8 @@ export interface SaleDto extends SaleSummaryDto {
   paymentMethod?: string;
   notes?: string;
   items: SaleItemDto[];
+  contactBalance?: number | null;
+  dueDate?: string | null;
 }
 
 export interface SaleItemDto {

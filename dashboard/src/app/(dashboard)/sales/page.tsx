@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { hasPermission, Permission } from "@/lib/permissions";
 import { formatNaira, formatDateTime } from "@/lib/format";
-import type { PaginatedResult, SaleSummaryDto, ProductDto, ContactDto } from "@/lib/types";
+import type { PaginatedResult, SaleSummaryDto, SaleDto, ProductDto, ContactDto, ApiResponse } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +40,7 @@ function statusVariant(status: string) {
 export default function SalesPage() {
   const [page, setPage] = useState(1);
   const [recording, setRecording] = useState(false);
+  const [viewing, setViewing] = useState<SaleSummaryDto | null>(null);
   const [voiding, setVoiding] = useState<SaleSummaryDto | null>(null);
   const [returning, setReturning] = useState<SaleSummaryDto | null>(null);
   const [tab, setTab] = useState<"active" | "voided" | "returned">("active");
@@ -106,7 +107,11 @@ export default function SalesPage() {
                 </TableHeader>
                 <TableBody>
                   {data?.items.map((sale) => (
-                    <TableRow key={sale.id} className={tab !== "active" ? "opacity-60" : ""}>
+                    <TableRow
+                      key={sale.id}
+                      className={`cursor-pointer hover:bg-slate-50 ${tab !== "active" ? "opacity-60" : ""}`}
+                      onClick={() => setViewing(sale)}
+                    >
                       <TableCell className="text-xs text-slate-500">
                         {tab === "voided" && sale.deletedAtUtc
                           ? `Voided ${formatDateTime(sale.deletedAtUtc)}`
@@ -143,14 +148,14 @@ export default function SalesPage() {
                         {tab === "active" && hasPermission(Permission.VoidSales) && (
                           <div className="flex items-center justify-end gap-1">
                             <button
-                              onClick={() => setReturning(sale)}
+                              onClick={(e) => { e.stopPropagation(); setReturning(sale); }}
                               className="p-1 rounded hover:bg-amber-50 text-slate-500 hover:text-amber-600"
                               title="Return sale (customer returned product)"
                             >
                               <RotateCcw size={14} />
                             </button>
                             <button
-                              onClick={() => setVoiding(sale)}
+                              onClick={(e) => { e.stopPropagation(); setVoiding(sale); }}
                               className="p-1 rounded hover:bg-red-50 text-slate-500 hover:text-red-600"
                               title="Void sale (fix a mistake)"
                             >
@@ -211,6 +216,13 @@ export default function SalesPage() {
         sale={returning}
         open={returning !== null}
         onClose={() => setReturning(null)}
+      />
+      <SaleDetailDialog
+        sale={viewing}
+        open={viewing !== null}
+        onClose={() => setViewing(null)}
+        onVoid={hasPermission(Permission.VoidSales) ? (s) => { setViewing(null); setVoiding(s); } : undefined}
+        onReturn={hasPermission(Permission.VoidSales) ? (s) => { setViewing(null); setReturning(s); } : undefined}
       />
     </div>
   );
@@ -534,6 +546,135 @@ function ReturnSaleDialog({
           <Button onClick={handleReturn} disabled={processing} className="bg-amber-600 hover:bg-amber-700 text-white">
             {processing ? "Processing…" : "Return Sale"}
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SaleDetailDialog({
+  sale,
+  open,
+  onClose,
+  onVoid,
+  onReturn,
+}: {
+  sale: SaleSummaryDto | null;
+  open: boolean;
+  onClose: () => void;
+  onVoid?: (sale: SaleSummaryDto) => void;
+  onReturn?: (sale: SaleSummaryDto) => void;
+}) {
+  const { data: detail, isLoading } = useQuery({
+    queryKey: ["sale-detail", sale?.id],
+    queryFn: async () => {
+      const { data } = await api.get<ApiResponse<SaleDto>>(`/sales/${sale!.id}`);
+      return data.data!;
+    },
+    enabled: open && !!sale?.id,
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Sale Details</DialogTitle>
+        </DialogHeader>
+        {isLoading || !detail ? (
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-5" />
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-y-2 text-sm">
+              <span className="text-slate-500">Customer</span>
+              <span className="font-medium">{detail.customerName ?? "Walk-in"}</span>
+              <span className="text-slate-500">Date</span>
+              <span className="font-medium">{formatDateTime(detail.createdAtUtc)}</span>
+              <span className="text-slate-500">Recorded by</span>
+              <span className="font-medium">{detail.recordedByName ?? "\u2014"}</span>
+              <span className="text-slate-500">Source</span>
+              <span className="font-medium capitalize">{detail.source ?? "Manual"}</span>
+            </div>
+
+            <div>
+              <h4 className="text-xs font-semibold text-slate-500 uppercase mb-2">Items</h4>
+              <div className="space-y-1">
+                {detail.items.map((item) => (
+                  <div key={item.productId} className="flex justify-between text-sm">
+                    <span>
+                      {item.quantity} {item.unit} {item.productName} @ {formatNaira(item.unitPrice)}
+                    </span>
+                    <span className="font-medium">{formatNaira(item.totalPrice)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t pt-3 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="font-semibold">Total</span>
+                <span className="text-lg font-bold text-emerald-600">{formatNaira(detail.totalAmount)}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500">Payment Status</span>
+                <Badge variant={statusVariant(detail.paymentStatus)} className="text-xs">
+                  {detail.paymentStatus}
+                </Badge>
+              </div>
+              {detail.paymentMethod && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">Payment Method</span>
+                  <span>{detail.paymentMethod}</span>
+                </div>
+              )}
+            </div>
+
+            {detail.customerName && detail.contactBalance != null && detail.contactBalance > 0 && (
+              <div className="border-t pt-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">Customer Outstanding</span>
+                  <span className="font-semibold text-amber-600">{formatNaira(detail.contactBalance)}</span>
+                </div>
+                {detail.dueDate && (
+                  <div className="flex justify-between text-sm mt-1">
+                    <span className="text-slate-500">Earliest Due</span>
+                    <span>{formatDateTime(detail.dueDate)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {detail.notes && (
+              <div className="border-t pt-3">
+                <span className="text-xs text-slate-500">Notes</span>
+                <p className="text-sm mt-1">{detail.notes}</p>
+              </div>
+            )}
+          </div>
+        )}
+        <DialogFooter>
+          {sale && !sale.deletedAtUtc && onReturn && (
+            <Button
+              variant="outline"
+              onClick={() => onReturn(sale)}
+              className="text-amber-600 border-amber-200 hover:bg-amber-50"
+            >
+              <RotateCcw size={14} className="mr-1" /> Return
+            </Button>
+          )}
+          {sale && !sale.deletedAtUtc && onVoid && (
+            <Button
+              variant="outline"
+              onClick={() => onVoid(sale)}
+              className="text-red-600 border-red-200 hover:bg-red-50"
+            >
+              <Ban size={14} className="mr-1" /> Void
+            </Button>
+          )}
+          <Button variant="outline" onClick={onClose}>Close</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

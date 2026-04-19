@@ -387,6 +387,30 @@ public class SalesService : ISalesService
             .FirstOrDefaultAsync(s => s.Id == saleId && s.BusinessId == businessId)
             ?? throw new KeyNotFoundException("Sale not found.");
 
+        decimal? contactBalance = null;
+        DateTime? dueDate = null;
+
+        if (sale.ContactId.HasValue)
+        {
+            // Compute the contact's overall outstanding receivable balance:
+            // sum of Receivable entries minus sum of ReceivablePayment entries.
+            var ledgerEntries = await _db.LedgerEntries
+                .Where(e => e.BusinessId == businessId && e.ContactId == sale.ContactId.Value
+                    && (e.EntryType == Models.LedgerEntryType.Receivable || e.EntryType == Models.LedgerEntryType.ReceivablePayment))
+                .ToListAsync();
+
+            contactBalance = ledgerEntries.Sum(e =>
+                e.EntryType == Models.LedgerEntryType.Receivable ? e.Amount : -e.Amount);
+            if (contactBalance < 0) contactBalance = 0;
+
+            // Earliest due date from unpaid receivables for this contact.
+            dueDate = ledgerEntries
+                .Where(e => e.EntryType == Models.LedgerEntryType.Receivable && e.DueDate.HasValue)
+                .OrderBy(e => e.DueDate)
+                .Select(e => e.DueDate)
+                .FirstOrDefault();
+        }
+
         return new SaleDto
         {
             Id = sale.Id,
@@ -395,8 +419,11 @@ public class SalesService : ISalesService
             PaymentMethod = sale.PaymentMethod,
             Notes = sale.Notes,
             CustomerName = sale.Contact?.Name,
+            RecordedByName = sale.RecordedByName,
             Source = sale.Source,
             CreatedAtUtc = sale.CreatedAtUtc,
+            ContactBalance = contactBalance,
+            DueDate = dueDate,
             Items = sale.Items.Select(i => new SaleItemDto
             {
                 ProductId = i.ProductId,

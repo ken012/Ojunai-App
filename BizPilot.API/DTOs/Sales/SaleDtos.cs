@@ -27,9 +27,15 @@ public class SaleDto
     public string? PaymentMethod { get; set; }
     public string? Notes { get; set; }
     public string? CustomerName { get; set; }
+    public string? RecordedByName { get; set; }
+    public string? Source { get; set; } = "Manual";
     public List<SaleItemDto> Items { get; set; } = new();
-    public string Source { get; set; } = "Manual";
     public DateTime CreatedAtUtc { get; set; }
+
+    /// <summary>Contact's overall outstanding receivable balance (null if no contact linked).</summary>
+    public decimal? ContactBalance { get; set; }
+    /// <summary>Earliest unpaid receivable due date for this contact (null if none).</summary>
+    public DateTime? DueDate { get; set; }
 }
 
 public class SaleItemDto

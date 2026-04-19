@@ -117,6 +117,13 @@ public class WhatsAppService : IWhatsAppService
         "forget it", "wait", "actually no", "don't", "dont"
     };
 
+    // Affirmative keywords for confirmation-type pending actions (e.g. large sale confirmation).
+    private static readonly HashSet<string> ConfirmWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "yes", "yeah", "yep", "yup", "sure", "ok", "okay", "confirm", "go ahead",
+        "proceed", "do it", "y", "aye"
+    };
+
     /// <summary>
     /// Upsert a pending action for this (business, user). Overwrites any prior pending row — a user only
     /// ever has one "we're waiting on an answer" record at a time. The unique index on (BusinessId, UserId)
@@ -459,6 +466,32 @@ public class WhatsAppService : IWhatsAppService
                 await _db.SaveChangesAsync();
                 return;
             }
+
+            // Confirmation-type pending actions (e.g. large sale confirmation) are resolved directly
+            // from the stored payload — no need to round-trip through Claude. The user just says "yes".
+            if (pending.AwaitingField == "confirmation" && ConfirmWords.Contains(trimmedText))
+            {
+                await ClearPendingActionAsync(user.BusinessId, user.Id);
+                try
+                {
+                    var confirmReply = await ExecuteConfirmedActionAsync(user, pending);
+                    await SendMessageAsync(from, confirmReply, user.BusinessId, user.Id);
+                    log.ProcessingStatus = MessageProcessingStatus.Executed;
+                    log.ParsedIntent = $"{pending.Intent}_confirmed";
+
+                    // Fire proactive alerts after stock-affecting confirmed intents
+                    if (pending.Intent == "confirm_large_sale")
+                        await CheckAndSendAlertsAsync(from, user);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Confirmed action execution failed for {Intent}", pending.Intent);
+                    await SendMessageAsync(from, $"Sorry, couldn't complete that: {FriendlyErrorMessage(ex)}", user.BusinessId, user.Id);
+                    log.ProcessingStatus = MessageProcessingStatus.Failed;
+                }
+                await _db.SaveChangesAsync();
+                return;
+            }
         }
 
         // If there's a pending action, attach it to the context so Claude knows what we're waiting for.
@@ -769,6 +802,74 @@ public class WhatsAppService : IWhatsAppService
         };
     }
 
+    /// <summary>
+    /// Executes a previously confirmed pending action from its stored payload.
+    /// Currently supports confirm_large_sale — the sale data was serialized into the pending action
+    /// when the threshold check triggered, and is now replayed after the user said "yes".
+    /// </summary>
+    private async Task<string> ExecuteConfirmedActionAsync(User user, PendingAction pending)
+    {
+        return pending.Intent switch
+        {
+            "confirm_large_sale" => await ExecuteConfirmedSaleAsync(user.BusinessId, pending.PartialPayloadJson, user),
+            _ => "Sorry, I don't know how to process that confirmation."
+        };
+    }
+
+    private async Task<string> ExecuteConfirmedSaleAsync(Guid businessId, string payloadJson, User recordedBy)
+    {
+        var payload = JsonSerializer.Deserialize<JsonElement>(payloadJson);
+        var saleItems = new List<SaleItemRequest>();
+        foreach (var item in payload.GetProperty("items").EnumerateArray())
+        {
+            saleItems.Add(new SaleItemRequest
+            {
+                ProductId = Guid.Parse(item.GetProperty("productId").GetString()!),
+                Quantity = item.GetProperty("quantity").GetDecimal(),
+                UnitPrice = item.GetProperty("unitPrice").GetDecimal()
+            });
+        }
+
+        Guid? contactId = null;
+        if (payload.TryGetProperty("contactId", out var cIdEl) && cIdEl.ValueKind == JsonValueKind.String)
+            contactId = Guid.Parse(cIdEl.GetString()!);
+
+        var paymentStatus = PaymentStatus.Paid;
+        if (payload.TryGetProperty("paymentStatus", out var psEl) && psEl.ValueKind == JsonValueKind.String)
+            Enum.TryParse(psEl.GetString(), true, out paymentStatus);
+
+        string? paymentMethod = null;
+        if (payload.TryGetProperty("paymentMethod", out var pmEl) && pmEl.ValueKind == JsonValueKind.String)
+            paymentMethod = pmEl.GetString();
+
+        var sale = await _sales.CreateAsync(businessId, new CreateSaleRequest
+        {
+            Items = saleItems,
+            ContactId = contactId,
+            PaymentStatus = paymentStatus,
+            PaymentMethod = paymentMethod
+        }, EntrySource.WhatsApp, recordedBy.Id, recordedBy.FullName);
+
+        var lines = sale.Items.Select(i => $"• {i.Quantity} {i.Unit} of {i.ProductName} @ {_cs}{i.UnitPrice:N0} = {_cs}{i.TotalPrice:N0}");
+        var debtNote = "";
+
+        // Auto-create receivable for credit sales
+        if (paymentStatus != PaymentStatus.Paid && contactId.HasValue && sale.TotalAmount > 0)
+        {
+            await _ledger.CreateReceivableAsync(businessId, new DTOs.Ledger.CreateReceivableRequest
+            {
+                ContactId = contactId.Value,
+                Amount = sale.TotalAmount,
+                Notes = $"Credit sale"
+            }, EntrySource.WhatsApp, recordedBy.Id, recordedBy.FullName);
+
+            var contact = await _db.Contacts.FindAsync(contactId.Value);
+            debtNote = $"\n💰 {contact?.Name ?? "Customer"} now owes you {_cs}{sale.TotalAmount:N0}";
+        }
+
+        return $"✅ Sale confirmed and recorded!\n{string.Join("\n", lines)}\n\n*Total: {_cs}{sale.TotalAmount:N0}* ({sale.PaymentStatus}){debtNote}";
+    }
+
     private async Task<string> HandleCreateSaleAsync(Guid businessId, JsonElement ba, User? recordedBy = null)
     {
         var sellAll = ba.GetStringOrNull("sellAll") == "true";
@@ -898,6 +999,27 @@ public class WhatsAppService : IWhatsAppService
 
         var paymentStatusStr = ba.GetStringOrNull("paymentStatus") ?? "Paid";
         var paymentStatus = Enum.TryParse<PaymentStatus>(paymentStatusStr, true, out var ps) ? ps : PaymentStatus.Paid;
+        var paymentMethod = ba.GetStringOrNull("paymentMethod");
+
+        // Large sale confirmation gate: if the total exceeds the business's threshold, ask the user
+        // to confirm before executing. The sale data is stashed in a pending action and replayed
+        // when the user replies "yes". Only applies to WhatsApp sales (dashboard has a visual confirm).
+        var projectedTotal = saleItems.Sum(i => i.Quantity * i.UnitPrice);
+        var business = await _db.Businesses.FindAsync(businessId);
+        if (business != null && business.AlertLargeSale && business.LargeSaleThreshold > 0
+            && projectedTotal >= business.LargeSaleThreshold && recordedBy != null)
+        {
+            var pendingPayload = JsonSerializer.Serialize(new
+            {
+                items = saleItems.Select(i => new { productId = i.ProductId, quantity = i.Quantity, unitPrice = i.UnitPrice }),
+                contactId,
+                paymentStatus = paymentStatus.ToString(),
+                paymentMethod
+            });
+            var question = $"⚠️ This sale is for {_cs}{projectedTotal:N0} which exceeds your large sale threshold ({_cs}{business.LargeSaleThreshold:N0}). Confirm? (yes/no)";
+            await SetPendingActionAsync(businessId, recordedBy.Id, "confirm_large_sale", pendingPayload, "confirmation", question);
+            return question;
+        }
 
         // SalesService.CreateAsync opens its own transaction and handles atomicity internally
         // (sale items, stock decrements, inventory transactions all commit together or roll back together).
@@ -908,7 +1030,7 @@ public class WhatsAppService : IWhatsAppService
             Items = saleItems,
             ContactId = contactId,
             PaymentStatus = paymentStatus,
-            PaymentMethod = ba.GetStringOrNull("paymentMethod")
+            PaymentMethod = paymentMethod
         }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
 
         var lines = sale.Items.Select(i => $"• {i.Quantity} {i.Unit} of {i.ProductName} @ {_cs}{i.UnitPrice:N0} = {_cs}{i.TotalPrice:N0}");
