@@ -1240,10 +1240,21 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
         )}
 
         {planStatus?.pendingPlanChange && planStatus.subscriptionEndsAt && (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 flex items-center justify-between">
             <p className="text-sm text-blue-800">
               Scheduled to switch to {planStatus.pendingPlanChange.charAt(0).toUpperCase() + planStatus.pendingPlanChange.slice(1)} on {new Date(planStatus.subscriptionEndsAt).toLocaleDateString()}.
             </p>
+            <button
+              onClick={async () => {
+                try {
+                  await api.post("/subscription/cancel-pending-change");
+                  qc.invalidateQueries({ queryKey: ["plan-status"] });
+                } catch { /* silent */ }
+              }}
+              className="text-xs font-medium text-blue-700 hover:text-blue-900 whitespace-nowrap ml-3 underline"
+            >
+              Cancel downgrade
+            </button>
           </div>
         )}
 

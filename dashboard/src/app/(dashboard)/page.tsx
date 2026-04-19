@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { formatNaira, formatDateTime } from "@/lib/format";
+import { useBusiness } from "@/lib/data-sync";
 import type { DashboardOverviewDto, RecentActivityDto, DashboardInsightsDto, OutstandingBalanceDto } from "@/lib/types";
 import {
   AreaChart,
@@ -78,8 +79,10 @@ export default function DashboardPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const { data: planStatus } = usePlanStatus();
   const hasCharts = planStatus?.hasMonthlyCharts ?? true;
+  const biz = useBusiness();
 
-  const currencySymbol = (() => { try { const b = JSON.parse(localStorage.getItem("bp_business") || "{}"); const meta: Record<string, string> = { NGN: "\u20A6", GHS: "GH\u20B5", USD: "$", GBP: "\u00A3", KES: "KSh", ZAR: "R", TZS: "TSh", UGX: "USh", RWF: "RF", XAF: "FCFA", XOF: "CFA", EGP: "E\u00A3", ETB: "Br" }; return meta[b.currency?.toUpperCase()] ?? b.currency ?? "\u20A6"; } catch { return "\u20A6"; } })();
+  const currencyMeta: Record<string, string> = { NGN: "\u20A6", GHS: "GH\u20B5", USD: "$", GBP: "\u00A3", KES: "KSh", ZAR: "R", TZS: "TSh", UGX: "USh", RWF: "RF", XAF: "FCFA", XOF: "CFA", EGP: "E\u00A3", ETB: "Br" };
+  const currencySymbol = currencyMeta[biz?.currency?.toUpperCase() ?? "NGN"] ?? biz?.currency ?? "\u20A6";
 
   const toggleExpand = (key: string) => setExpanded(expanded === key ? null : key);
 

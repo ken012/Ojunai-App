@@ -164,6 +164,24 @@ public class SubscriptionController : BizPilotBaseController
         return Ok(ApiResponse<object>.Ok(null!, $"Plan changed to {targetLabel}."));
     }
 
+    [HttpPost("cancel-pending-change")]
+    [RequirePermission(Permission.ManageSettings)]
+    public async Task<ActionResult<ApiResponse<object>>> CancelPendingChange()
+    {
+        var business = await _db.Businesses.FindAsync(BusinessId);
+        if (business == null) return NotFound(ApiResponse<object>.Fail("Business not found."));
+
+        if (string.IsNullOrEmpty(business.PendingPlanChange))
+            return BadRequest(ApiResponse<object>.Fail("No pending plan change to cancel."));
+
+        var was = business.PendingPlanChange;
+        business.PendingPlanChange = null;
+        await _db.SaveChangesAsync();
+
+        var currentLabel = business.Plan[0..1].ToUpper() + business.Plan[1..];
+        return Ok(ApiResponse<object>.Ok(null!, $"Scheduled downgrade cancelled. You'll stay on {currentLabel}."));
+    }
+
     /// <summary>
     /// Verify a Flutterwave Inline checkout payment after the frontend JS SDK callback fires.
     /// Checks the transaction via Flutterwave API and activates the subscription.

@@ -222,6 +222,7 @@ public class PaystackService
         business.PaystackPlanCode = planCode;
         business.Plan = plan;
         business.SubscribedPlan = plan;
+        business.PendingPlanChange = null;
         business.SubscriptionStatus = "active";
         business.TrialEndsAt = null;
 
@@ -296,6 +297,7 @@ public class PaystackService
 
             business.Plan = plan;
             business.SubscribedPlan = plan;
+            business.PendingPlanChange = null;
             business.PaymentMethod = "card";
             business.IsAutoRenew = true;
             business.SubscriptionStatus = "active";

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { formatNaira, formatDateTime } from "@/lib/format";
+import { useBusiness } from "@/lib/data-sync";
 import type { PaginatedResult, ExpenseDto } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -41,9 +42,11 @@ function getCategoryClass(category: string) {
   return CATEGORY_COLORS[category] ?? "bg-slate-100 text-slate-700";
 }
 
-const currencySymbol = (() => { try { const b = JSON.parse(localStorage.getItem("bp_business") || "{}"); const meta: Record<string, string> = { NGN: "\u20A6", GHS: "GH\u20B5", USD: "$", GBP: "\u00A3", KES: "KSh", ZAR: "R", TZS: "TSh", UGX: "USh", RWF: "RF", XAF: "FCFA", XOF: "CFA", EGP: "E\u00A3", ETB: "Br" }; return meta[b.currency?.toUpperCase()] ?? b.currency ?? "\u20A6"; } catch { return "\u20A6"; } })();
+const CURRENCY_SYMBOLS: Record<string, string> = { NGN: "\u20A6", GHS: "GH\u20B5", USD: "$", GBP: "\u00A3", KES: "KSh", ZAR: "R", TZS: "TSh", UGX: "USh", RWF: "RF", XAF: "FCFA", XOF: "CFA", EGP: "E\u00A3", ETB: "Br" };
 
 export default function ExpensesPage() {
+  const biz = useBusiness();
+  const currencySymbol = CURRENCY_SYMBOLS[biz?.currency?.toUpperCase() ?? "NGN"] ?? biz?.currency ?? "\u20A6";
   const [page, setPage] = useState(1);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<ExpenseDto | null>(null);
@@ -197,6 +200,8 @@ export default function ExpensesPage() {
 
 function AddExpenseDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
+  const biz = useBusiness();
+  const currencySymbol = CURRENCY_SYMBOLS[biz?.currency?.toUpperCase() ?? "NGN"] ?? biz?.currency ?? "\u20A6";
   const [form, setForm] = useState({ category: "General", amount: "", paidTo: "", notes: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -271,6 +276,8 @@ function EditExpenseDialog({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
+  const biz = useBusiness();
+  const currencySymbol = CURRENCY_SYMBOLS[biz?.currency?.toUpperCase() ?? "NGN"] ?? biz?.currency ?? "\u20A6";
   const [form, setForm] = useState({ category: "", amount: "", paidTo: "", notes: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import { formatNaira } from "@/lib/format";
 import type { PaginatedResult, ProductDto, StockHoldDto } from "@/lib/types";
 import { CATEGORIES, CATEGORY_NAMES } from "@/lib/categories";
-import { getStoredBusiness } from "@/lib/auth";
+import { useBusiness } from "@/lib/data-sync";
 import { hasPermission, Permission } from "@/lib/permissions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -38,13 +38,8 @@ function CategoryPicker({
   onCategoryChange: (v: string) => void;
   onSubcategoryChange: (v: string) => void;
 }) {
-  const [customCats, setCustomCats] = useState<string[]>([]);
-  const [initialized, setInitialized] = useState(false);
-  if (!initialized && typeof window !== "undefined") {
-    const biz = getStoredBusiness() as { customCategories?: string[] } | null;
-    setCustomCats(biz?.customCategories ?? []);
-    setInitialized(true);
-  }
+  const syncBiz = useBusiness();
+  const customCats = syncBiz?.customCategories ?? [];
   const allCategoryNames = [...CATEGORY_NAMES, ...customCats.filter((c) => !CATEGORY_NAMES.includes(c))];
 
   const subcategories = CATEGORIES[category] ?? [];
