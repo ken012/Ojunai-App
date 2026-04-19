@@ -510,6 +510,7 @@ public class FlutterwaveService
         var paymentType = data.TryGetProperty("payment_type", out var pt) ? pt.GetString()?.ToLower() : null;
         var isCard = paymentType is "card" or null;
 
+        plan ??= business.Plan;
         business.Plan = plan;
         business.SubscribedPlan = plan;
         business.BillingProvider = "flutterwave";
