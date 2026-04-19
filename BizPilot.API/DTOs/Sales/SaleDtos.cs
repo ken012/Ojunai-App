@@ -47,6 +47,7 @@ public class SaleSummaryDto
     public Guid Id { get; set; }
     public decimal TotalAmount { get; set; }
     public string PaymentStatus { get; set; } = string.Empty;
+    public string? PaymentMethod { get; set; }
     public int ItemCount { get; set; }
     public string? ItemSummary { get; set; }
     public string? CustomerName { get; set; }

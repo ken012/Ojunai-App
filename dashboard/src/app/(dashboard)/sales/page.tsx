@@ -95,6 +95,7 @@ export default function SalesPage() {
                     <TableHead>Customer</TableHead>
                     <TableHead>Items</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Method</TableHead>
                     <TableHead>Source</TableHead>
                     <TableHead>By</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
@@ -121,6 +122,9 @@ export default function SalesPage() {
                         <Badge variant={statusVariant(sale.paymentStatus)} className="text-xs">
                           {sale.paymentStatus}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-slate-500">
+                        {sale.paymentMethod ?? <span className="text-slate-300">—</span>}
                       </TableCell>
                       <TableCell>
                         <SourceBadge source={sale.source} />
@@ -201,6 +205,7 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
   const [lines, setLines] = useState<SaleLine[]>([{ productId: "", quantity: "", unitPrice: "" }]);
   const [contactId, setContactId] = useState<string>("");
   const [paymentStatus, setPaymentStatus] = useState<"Paid" | "Unpaid" | "PartiallyPaid">("Paid");
+  const [paymentMethod, setPaymentMethod] = useState<string>("Cash");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -266,6 +271,7 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
         })),
         contactId: contactId || null,
         paymentStatus,
+        paymentMethod,
       });
       qc.invalidateQueries({ queryKey: ["sales"] });
       qc.invalidateQueries({ queryKey: ["products"] });
@@ -283,6 +289,7 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
     setLines([{ productId: "", quantity: "", unitPrice: "" }]);
     setContactId("");
     setPaymentStatus("Paid");
+    setPaymentMethod("Cash");
     setError(null);
     onClose();
   }
@@ -371,6 +378,19 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
               <option value="Paid">Paid</option>
               <option value="Unpaid">Unpaid (credit)</option>
               <option value="PartiallyPaid">Partially Paid</option>
+            </select>
+          </div>
+
+          <div>
+            <Label>Payment Method</Label>
+            <select
+              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm"
+              value={paymentMethod}
+              onChange={(e) => setPaymentMethod(e.target.value)}
+            >
+              <option value="Cash">Cash</option>
+              <option value="Card">Card</option>
+              <option value="Bank Transfer">Bank Transfer</option>
             </select>
           </div>
 

@@ -71,6 +71,7 @@ export interface SaleSummaryDto {
   id: string;
   totalAmount: number;
   paymentStatus: string;
+  paymentMethod?: string;
   itemCount: number;
   itemSummary?: string;
   customerName?: string;
