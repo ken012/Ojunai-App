@@ -61,6 +61,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     context.Token = cookieToken;
                 }
                 return Task.CompletedTask;
+            },
+            OnAuthenticationFailed = context =>
+            {
+                // Don't return 401 for expired/invalid cookies — let [AllowAnonymous] endpoints through
+                context.NoResult();
+                return Task.CompletedTask;
             }
         };
     });
