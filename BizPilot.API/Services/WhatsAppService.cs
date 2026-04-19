@@ -19,7 +19,7 @@ public class WhatsAppService : IWhatsAppService
     // In-memory rate limiter: phone → list of recent message timestamps
     private static readonly Dictionary<string, List<DateTime>> _rateLimits = new();
     private static readonly object _rateLimitLock = new();
-    private const int RateLimitMaxMessages = 15;
+    private const int RateLimitMaxMessages = 20;
     private static readonly TimeSpan RateLimitWindow = TimeSpan.FromMinutes(1);
 
     // Tracks which sales have already triggered a "big sale" alert so we don't re-fire the same alert on
