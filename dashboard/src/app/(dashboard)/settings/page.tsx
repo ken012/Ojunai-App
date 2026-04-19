@@ -92,7 +92,26 @@ function SettingsPage() {
   const [showSuccess, setShowSuccess] = useState(false);
 
   useEffect(() => {
-    if (searchParams.get("subscribed") === "true") {
+    const status = searchParams.get("status");
+    const txRef = searchParams.get("tx_ref");
+    const txId = searchParams.get("transaction_id");
+
+    if (status === "successful" && (txRef || txId)) {
+      window.history.replaceState({}, "", "/settings");
+      (async () => {
+        try {
+          await api.post("/subscription/verify-flutterwave", {
+            transactionId: txId ?? undefined,
+            txRef: txRef ?? undefined,
+          });
+          setShowSuccess(true);
+          setTimeout(() => setShowSuccess(false), 8000);
+        } catch {
+          setShowSuccess(true);
+          setTimeout(() => setShowSuccess(false), 8000);
+        }
+      })();
+    } else if (searchParams.get("subscribed") === "true") {
       setShowSuccess(true);
       window.history.replaceState({}, "", "/settings");
       setTimeout(() => setShowSuccess(false), 8000);
@@ -858,6 +877,9 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
 
     if (useCard && result.paymentPlanId) {
       config.payment_plan = result.paymentPlanId;
+      config.payment_options = "card";
+    } else if (useCard && !result.paymentPlanId) {
+      // Card selected but auto-renew plan creation failed — proceed without auto-renew
       config.payment_options = "card";
     } else {
       config.payment_options = "mobilemoney,banktransfer,ussd";

@@ -178,8 +178,19 @@ public class FlutterwaveService
         }
 
         // Sanitize payment method
-        var allowedMethods = new[] { "card", "mobilemoney", "banktransfer", "ussd", "accounttransfer" };
         var rawMethod = chargeData.TryGetProperty("payment_type", out var ptEl) ? ptEl.GetString()?.ToLower() : "card";
+
+        // Normalize provider-specific payment types to standard names
+        rawMethod = rawMethod switch
+        {
+            "mpesa" or "momo" or "momo_gh" or "momo_ug" or "mobilemoneygh" or "mobilemoneyuganda"
+                or "mobilemoneyfranco" or "mobilemoneyrwanda" or "mobilemoneykenya" or "mobilemoneyzambia" => "mobilemoney",
+            "bank_transfer" or "banktransfer_ng" => "banktransfer",
+            "ussd_transfer" => "ussd",
+            _ => rawMethod
+        };
+
+        var allowedMethods = new[] { "card", "mobilemoney", "banktransfer", "ussd", "accounttransfer" };
         var paymentMethod = allowedMethods.Contains(rawMethod) ? rawMethod : "card";
 
         // Card payments with a payment plan auto-renew; mobile money/bank transfer don't
@@ -451,20 +462,46 @@ public class FlutterwaveService
     {
         if (!payload.TryGetProperty("data", out var data)) return;
 
-        var status = data.TryGetProperty("status", out var s) ? s.GetString() : null;
-        if (status != "successful") return;
-
         var txRef = data.TryGetProperty("tx_ref", out var tr) ? tr.GetString() : null;
         var flwId = data.TryGetProperty("id", out var id) ? id.GetInt64().ToString() : null;
 
+        var status = data.TryGetProperty("status", out var s) ? s.GetString() : null;
+        if (status == "pending")
+        {
+            _logger.LogInformation("Flutterwave charge pending, awaiting confirmation: {TxRef}", txRef);
+            return;
+        }
+        if (status != "successful") return;
+
         // Extract metadata
-        if (!data.TryGetProperty("meta", out var meta)) return;
+        if (!data.TryGetProperty("meta", out var meta))
+        {
+            _logger.LogWarning("Flutterwave webhook missing meta for charge {TxRef}. Payment may need manual activation.", txRef);
+            return;
+        }
         var bizIdStr = meta.TryGetProperty("businessId", out var bi) ? bi.GetString() : null;
         var plan = meta.TryGetProperty("plan", out var pl) ? pl.GetString() : null;
         var billingCycle = meta.TryGetProperty("billingCycle", out var bc) ? bc.GetString() : null;
         var currency = meta.TryGetProperty("currency", out var cur) ? cur.GetString() : null;
 
-        if (!Guid.TryParse(bizIdStr, out var businessId) || string.IsNullOrEmpty(plan)) return;
+        if (!Guid.TryParse(bizIdStr, out var businessId))
+        {
+            _logger.LogWarning("Flutterwave webhook invalid/missing businessId in meta: {Value}, txRef: {TxRef}", bizIdStr, txRef);
+            return;
+        }
+        if (string.IsNullOrEmpty(plan))
+        {
+            _logger.LogWarning("Flutterwave webhook missing plan in meta, txRef: {TxRef}", txRef);
+            return;
+        }
+
+        var validPlans = new[] { "starter", "shop", "pro", "business" };
+        var validCycles = new[] { "monthly", "annual" };
+        if (plan != null && !validPlans.Contains(plan))
+        {
+            _logger.LogWarning("Flutterwave webhook invalid plan in meta: {Plan}, txRef: {TxRef}", plan, txRef);
+            return;
+        }
 
         // Idempotency check
         if (!string.IsNullOrEmpty(txRef))
@@ -510,6 +547,17 @@ public class FlutterwaveService
 
         // Detect payment method — Flutterwave returns "card", "mobilemoney", "banktransfer", etc.
         var paymentType = data.TryGetProperty("payment_type", out var pt) ? pt.GetString()?.ToLower() : null;
+
+        // Normalize provider-specific payment types to standard names
+        paymentType = paymentType switch
+        {
+            "mpesa" or "momo" or "momo_gh" or "momo_ug" or "mobilemoneygh" or "mobilemoneyuganda"
+                or "mobilemoneyfranco" or "mobilemoneyrwanda" or "mobilemoneykenya" or "mobilemoneyzambia" => "mobilemoney",
+            "bank_transfer" or "banktransfer_ng" => "banktransfer",
+            "ussd_transfer" => "ussd",
+            _ => paymentType
+        };
+
         var isCard = paymentType is "card" or null;
 
         plan ??= business.Plan;
@@ -521,7 +569,8 @@ public class FlutterwaveService
         business.FlutterwaveCustomerId = customerId;
         var allowedMethods = new[] { "card", "mobilemoney", "banktransfer", "ussd", "accounttransfer" };
         business.PaymentMethod = allowedMethods.Contains(paymentType) ? paymentType : "card";
-        business.IsAutoRenew = isCard;
+        var hasPaymentPlan = data.TryGetProperty("plan", out var planIdEl) && planIdEl.ValueKind == JsonValueKind.Number;
+        business.IsAutoRenew = isCard && hasPaymentPlan;
         business.SubscriptionStatus = "active";
         business.PendingPlanChange = null;
         business.TrialEndsAt = null;
