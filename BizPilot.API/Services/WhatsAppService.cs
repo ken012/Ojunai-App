@@ -34,6 +34,10 @@ public class WhatsAppService : IWhatsAppService
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<(Guid, Guid), DateTime> _alertedLowStock = new();
     private static readonly TimeSpan LowStockAlertCooldown = TimeSpan.FromMinutes(60);
 
+    // Per-phone-number lock to prevent concurrent message processing for the same user.
+    // Without this, two messages arriving in quick succession can read stale stock levels.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _phoneLocks = new();
+
     private string _cs = "{_cs}";
     private TimeZoneInfo _tz = TimeZoneInfo.Utc;
 
@@ -292,6 +296,12 @@ public class WhatsAppService : IWhatsAppService
             await SendMessageAsync(from, "⏳ You're sending messages too fast. Please wait a minute and try again.");
             return;
         }
+
+        // Acquire per-phone lock to prevent concurrent processing of messages from the same number.
+        var phoneLock = _phoneLocks.GetOrAdd(phone, _ => new SemaphoreSlim(1, 1));
+        await phoneLock.WaitAsync();
+        try
+        {
 
         // Only look up ACTIVE users attached to ACTIVE businesses. Deactivated staff / businesses are treated as unknown.
         var user = await _db.Users
@@ -558,6 +568,12 @@ public class WhatsAppService : IWhatsAppService
         }
 
         await _db.SaveChangesAsync();
+
+        } // end try (phoneLock)
+        finally
+        {
+            phoneLock.Release();
+        }
     }
 
     private async Task CheckAndSendAlertsAsync(string to, User user)
@@ -2534,7 +2550,8 @@ public class WhatsAppService : IWhatsAppService
         "📦 \"Check inventory\"\n" +
         "💰 \"Kofi owes me 20k\"\n" +
         "📊 \"What did I sell today?\"\n\n" +
-        "Type *help* for more commands (holds, staff, insights, bulk actions).";
+        "Type *help* for more commands (holds, staff, insights, bulk actions).\n\n" +
+        "_I'm an AI assistant. Please review what I record — say *undo* if anything looks wrong._";
 
     private static string HandleHelp() =>
         "📖 *More commands:*\n\n" +

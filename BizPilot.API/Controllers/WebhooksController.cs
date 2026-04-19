@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using BizPilot.API.Services.Interfaces;
+using Hangfire;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -41,32 +42,16 @@ public class WebhooksController : ControllerBase
         if (string.IsNullOrEmpty(form.Body))
         {
             // Media message (image, voice note, etc.) — reply with friendly message
-            _ = Task.Run(async () =>
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var whatsApp = scope.ServiceProvider.GetRequiredService<IWhatsAppService>();
-                await whatsApp.SendMessageAsync(form.From, "I can only process text messages for now. Please type your request.");
-            });
+            BackgroundJob.Enqueue<IWhatsAppService>(svc =>
+                svc.SendMessageAsync(form.From, "I can only process text messages for now. Please type your request.", null, null));
             return Content("<Response/>", "text/xml");
         }
 
         _logger.LogInformation("Inbound WhatsApp from {From}: {Body}", form.From, form.Body);
 
-        // Create a new scope so the DbContext isn't disposed before the task finishes
-        _ = Task.Run(async () =>
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var whatsApp = scope.ServiceProvider.GetRequiredService<IWhatsAppService>();
-            try
-            {
-                await whatsApp.HandleInboundAsync(form.From, form.MessageSid, form.Body);
-            }
-            catch (Exception ex)
-            {
-                var logger = scope.ServiceProvider.GetRequiredService<ILogger<WebhooksController>>();
-                logger.LogError(ex, "Error processing message {Sid}", form.MessageSid);
-            }
-        });
+        // Enqueue via Hangfire so the message is durable and retried on failure
+        BackgroundJob.Enqueue<IWhatsAppService>(svc =>
+            svc.HandleInboundAsync(form.From, form.MessageSid, form.Body));
 
         return Content("<Response/>", "text/xml");
     }

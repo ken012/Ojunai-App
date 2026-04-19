@@ -17,9 +17,20 @@ using System.Text.Json.Serialization;
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
 
+// ── Validate required configuration ──────────────────────────────────────────
+var requiredKeys = new[] { "ConnectionStrings:DefaultConnection", "Jwt:Secret", "Twilio:AccountSid" };
+foreach (var key in requiredKeys)
+{
+    if (string.IsNullOrEmpty(config[key]))
+        throw new InvalidOperationException($"Required configuration '{key}' is not set. Check environment variables.");
+}
+
 // ── Database ─────────────────────────────────────────────────────────────────
+var connString = config.GetConnectionString("DefaultConnection")!;
+if (!connString.Contains("Maximum Pool Size", StringComparison.OrdinalIgnoreCase))
+    connString += ";Maximum Pool Size=50;Minimum Pool Size=5";
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(config.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(connString));
 
 // ── JWT Authentication ────────────────────────────────────────────────────────
 var jwtSecret = config["Jwt:Secret"]
@@ -241,8 +252,18 @@ app.UseHangfireDashboard("/hangfire", new DashboardOptions
 
 app.MapControllers();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
-   .AllowAnonymous();
+app.MapGet("/health", async (AppDbContext db) =>
+{
+    try
+    {
+        await db.Database.CanConnectAsync();
+        return Results.Ok(new { status = "ok", database = "connected" });
+    }
+    catch
+    {
+        return Results.Json(new { status = "degraded", database = "disconnected" }, statusCode: 503);
+    }
+}).AllowAnonymous();
 
 // ── Run Migrations on Startup ─────────────────────────────────────────────────
 using (var scope = app.Services.CreateScope())
