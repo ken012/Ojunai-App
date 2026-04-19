@@ -9,5 +9,7 @@ public interface ISalesService
     Task<PaginatedResult<SaleSummaryDto>> GetAllAsync(Guid businessId, int page, int pageSize, DateTime? from, DateTime? to);
     Task<SaleDto> GetByIdAsync(Guid businessId, Guid saleId);
     Task VoidAsync(Guid businessId, Guid saleId, Guid? voidedByUserId = null, string? voidedByName = null);
+    Task ReturnAsync(Guid businessId, Guid saleId, Guid? returnedByUserId = null, string? returnedByName = null);
     Task<PaginatedResult<SaleSummaryDto>> GetVoidedAsync(Guid businessId, int page, int pageSize);
+    Task<PaginatedResult<SaleSummaryDto>> GetReturnedAsync(Guid businessId, int page, int pageSize);
 }

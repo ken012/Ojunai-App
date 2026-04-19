@@ -146,6 +146,9 @@ export interface DashboardOverviewDto {
   lowStockCount: number;
   salesTrend: TrendPointDto[];
   expenseTrend: TrendPointDto[];
+  monthlySales: number;
+  monthlyExpenses: number;
+  monthlyProfit: number;
 }
 
 export interface TrendPointDto {

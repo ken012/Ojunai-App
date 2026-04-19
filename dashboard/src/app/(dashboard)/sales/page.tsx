@@ -29,7 +29,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, Ban, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Ban, Trash2, RotateCcw } from "lucide-react";
 
 function statusVariant(status: string) {
   if (status === "Paid") return "default";
@@ -41,12 +41,13 @@ export default function SalesPage() {
   const [page, setPage] = useState(1);
   const [recording, setRecording] = useState(false);
   const [voiding, setVoiding] = useState<SaleSummaryDto | null>(null);
-  const [tab, setTab] = useState<"active" | "voided">("active");
+  const [returning, setReturning] = useState<SaleSummaryDto | null>(null);
+  const [tab, setTab] = useState<"active" | "voided" | "returned">("active");
 
   const { data, isLoading } = useQuery({
     queryKey: ["sales", tab, page],
     queryFn: async () => {
-      const endpoint = tab === "voided" ? "/sales/voided" : "/sales";
+      const endpoint = tab === "voided" ? "/sales/voided" : tab === "returned" ? "/sales/returned" : "/sales";
       const { data } = await api.get<{ data: PaginatedResult<SaleSummaryDto> }>(
         `${endpoint}?page=${page}&pageSize=20`
       );
@@ -66,10 +67,11 @@ export default function SalesPage() {
         )}
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => { setTab(v as "active" | "voided"); setPage(1); }}>
+      <Tabs value={tab} onValueChange={(v) => { setTab(v as "active" | "voided" | "returned"); setPage(1); }}>
         <TabsList>
           <TabsTrigger value="active">Active</TabsTrigger>
           <TabsTrigger value="voided">Voided</TabsTrigger>
+          <TabsTrigger value="returned">Returned</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -104,10 +106,12 @@ export default function SalesPage() {
                 </TableHeader>
                 <TableBody>
                   {data?.items.map((sale) => (
-                    <TableRow key={sale.id} className={tab === "voided" ? "opacity-60" : ""}>
+                    <TableRow key={sale.id} className={tab !== "active" ? "opacity-60" : ""}>
                       <TableCell className="text-xs text-slate-500">
                         {tab === "voided" && sale.deletedAtUtc
                           ? `Voided ${formatDateTime(sale.deletedAtUtc)}`
+                          : tab === "returned" && sale.deletedAtUtc
+                          ? `Returned ${formatDateTime(sale.deletedAtUtc)}`
                           : formatDateTime(sale.createdAtUtc)}
                       </TableCell>
                       <TableCell className="text-sm">
@@ -132,26 +136,35 @@ export default function SalesPage() {
                       <TableCell className="text-xs text-slate-500">
                         {sale.recordedByName ?? <span className="text-slate-300">—</span>}
                       </TableCell>
-                      <TableCell className={`text-right font-semibold ${tab === "voided" ? "text-slate-400 line-through" : "text-emerald-600"}`}>
+                      <TableCell className={`text-right font-semibold ${tab !== "active" ? "text-slate-400 line-through" : "text-emerald-600"}`}>
                         {formatNaira(sale.totalAmount)}
                       </TableCell>
                       <TableCell className="text-right">
                         {tab === "active" && hasPermission(Permission.VoidSales) && (
-                          <button
-                            onClick={() => setVoiding(sale)}
-                            className="p-1 rounded hover:bg-red-50 text-slate-500 hover:text-red-600"
-                            title="Void sale (restore stock)"
-                          >
-                            <Ban size={14} />
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => setReturning(sale)}
+                              className="p-1 rounded hover:bg-amber-50 text-slate-500 hover:text-amber-600"
+                              title="Return sale (customer returned product)"
+                            >
+                              <RotateCcw size={14} />
+                            </button>
+                            <button
+                              onClick={() => setVoiding(sale)}
+                              className="p-1 rounded hover:bg-red-50 text-slate-500 hover:text-red-600"
+                              title="Void sale (fix a mistake)"
+                            >
+                              <Ban size={14} />
+                            </button>
+                          </div>
                         )}
                       </TableCell>
                     </TableRow>
                   ))}
                   {data?.items.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-slate-400 text-sm">
-                        {tab === "voided" ? "No voided sales" : "No sales yet"}
+                      <TableCell colSpan={9} className="text-center py-8 text-slate-400 text-sm">
+                        {tab === "voided" ? "No voided sales" : tab === "returned" ? "No returned sales" : "No sales yet"}
                       </TableCell>
                     </TableRow>
                   )}
@@ -193,6 +206,11 @@ export default function SalesPage() {
         sale={voiding}
         open={voiding !== null}
         onClose={() => setVoiding(null)}
+      />
+      <ReturnSaleDialog
+        sale={returning}
+        open={returning !== null}
+        onClose={() => setReturning(null)}
       />
     </div>
   );
@@ -459,6 +477,62 @@ function VoidSaleDialog({
           <Button variant="outline" onClick={onClose} disabled={voiding}>Cancel</Button>
           <Button onClick={handleVoid} disabled={voiding} className="bg-red-600 hover:bg-red-700 text-white">
             {voiding ? "Voiding…" : "Void Sale"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReturnSaleDialog({
+  sale,
+  open,
+  onClose,
+}: {
+  sale: SaleSummaryDto | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleReturn() {
+    if (!sale) return;
+    setProcessing(true);
+    setError(null);
+    try {
+      await api.post(`/sales/${sale.id}/return`);
+      qc.invalidateQueries({ queryKey: ["sales"] });
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["low-stock"] });
+      onClose();
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      setError(ax.response?.data?.errors?.[0] ?? "Failed to return sale");
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Return Sale?</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-slate-600">
+          This will mark the sale of <strong>{formatNaira(sale?.totalAmount ?? 0)}</strong>
+          {sale?.customerName ? ` to ${sale.customerName}` : ""} as returned and <strong>restore the stock</strong> for each item.
+        </p>
+        <p className="text-xs text-slate-500">
+          Use this when a customer brings back a product. The sale will appear under the Returned tab.
+        </p>
+        {error && <p className="text-xs text-red-500">{error}</p>}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={processing}>Cancel</Button>
+          <Button onClick={handleReturn} disabled={processing} className="bg-amber-600 hover:bg-amber-700 text-white">
+            {processing ? "Processing…" : "Return Sale"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -79,6 +79,7 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.BusinessId, x.CreatedAtUtc });
             e.Property(x => x.TotalAmount).HasPrecision(18, 2);
             e.Property(x => x.PaymentMethod).HasMaxLength(50);
+            e.Property(x => x.DeleteReason).HasMaxLength(20);
             e.HasQueryFilter(x => !x.IsDeleted);
             e.HasOne(x => x.Business)
              .WithMany(x => x.Sales)

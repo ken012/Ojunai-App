@@ -253,6 +253,31 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* Monthly P&L Summary */}
+      <Card>
+        <CardContent className="p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">
+            Monthly P&L &mdash; {new Date().toLocaleDateString("en", { month: "long", year: "numeric" })}
+          </p>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-slate-600">Sales</span>
+              <span className="text-emerald-600 font-medium">{formatNaira(ov.monthlySales)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-600">Expenses</span>
+              <span className="text-red-500 font-medium">-{formatNaira(ov.monthlyExpenses)}</span>
+            </div>
+            <div className="border-t pt-2 flex justify-between font-semibold">
+              <span>Net Profit</span>
+              <span className={ov.monthlyProfit >= 0 ? "text-emerald-600" : "text-red-500"}>
+                {ov.monthlyProfit < 0 ? "-" : ""}{formatNaira(Math.abs(ov.monthlyProfit))}
+              </span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Expandable detail panels */}
       {expanded === "net" && (
         <Card className="border-sky-200 bg-sky-50/30">

@@ -46,6 +46,15 @@ public partial class ReportService : IReportService
         var salesTrend = await BuildSalesTrendAsync(businessId, sevenDaysAgo, todayUtc);
         var expenseTrend = await BuildExpenseTrendAsync(businessId, sevenDaysAgo, todayUtc);
 
+        // Monthly totals for P&L card (first day of current month to now)
+        var monthStart = new DateTime(todayUtc.Year, todayUtc.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var monthlySales = await _db.Sales
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= monthStart)
+            .SumAsync(s => s.TotalAmount);
+        var monthlyExpenses = await _db.Expenses
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= monthStart)
+            .SumAsync(e => e.Amount);
+
         return new DashboardOverviewDto
         {
             TodaySales = todaySales.Sum(s => s.TotalAmount),
@@ -55,7 +64,10 @@ public partial class ReportService : IReportService
             OutstandingPayables = Math.Max(0, outstandingPayables),
             LowStockCount = lowStockCount,
             SalesTrend = salesTrend,
-            ExpenseTrend = expenseTrend
+            ExpenseTrend = expenseTrend,
+            MonthlySales = monthlySales,
+            MonthlyExpenses = monthlyExpenses,
+            MonthlyProfit = monthlySales - monthlyExpenses
         };
     }
 

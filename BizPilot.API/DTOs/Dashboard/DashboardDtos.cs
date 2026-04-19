@@ -10,6 +10,9 @@ public class DashboardOverviewDto
     public int LowStockCount { get; set; }
     public List<TrendPointDto> SalesTrend { get; set; } = new();
     public List<TrendPointDto> ExpenseTrend { get; set; } = new();
+    public decimal MonthlySales { get; set; }
+    public decimal MonthlyExpenses { get; set; }
+    public decimal MonthlyProfit { get; set; }
 }
 
 public class TrendPointDto

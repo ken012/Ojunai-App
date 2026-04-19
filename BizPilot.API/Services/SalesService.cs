@@ -216,6 +216,81 @@ public class SalesService : ISalesService
             }
 
             sale.IsDeleted = true;
+            sale.DeleteReason = "voided";
+            sale.DeletedAtUtc = DateTime.UtcNow;
+
+            await _db.SaveChangesAsync();
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    public async Task ReturnAsync(Guid businessId, Guid saleId, Guid? returnedByUserId = null, string? returnedByName = null)
+    {
+        var sale = await _db.Sales
+            .Include(s => s.Items)
+            .Include(s => s.Contact)
+            .FirstOrDefaultAsync(s => s.Id == saleId && s.BusinessId == businessId)
+            ?? throw new KeyNotFoundException("Sale not found.");
+
+        if (sale.IsDeleted)
+            throw new InvalidOperationException("Sale is already voided or returned.");
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            var productIds = sale.Items.Select(i => i.ProductId).ToList();
+            var products = await _db.Products
+                .Where(p => productIds.Contains(p.Id) && p.BusinessId == businessId)
+                .ToDictionaryAsync(p => p.Id);
+
+            var saleSummary = string.Join(", ", sale.Items
+                .Where(i => products.ContainsKey(i.ProductId))
+                .Select(i => $"{i.Quantity:0.##} {products[i.ProductId].Unit} {products[i.ProductId].Name}"));
+            var customerNote = sale.Contact != null ? $" to {sale.Contact.Name}" : "";
+            var business = await _db.Businesses.FindAsync(businessId);
+            var cs = BillingConfig.Symbol(business?.Currency);
+
+            foreach (var item in sale.Items)
+            {
+                if (products.TryGetValue(item.ProductId, out var product))
+                {
+                    product.CurrentStock += item.Quantity;
+                    _db.InventoryTransactions.Add(new InventoryTransaction
+                    {
+                        BusinessId = businessId,
+                        ProductId = item.ProductId,
+                        Type = InventoryTransactionType.Adjustment,
+                        Quantity = item.Quantity,
+                        Notes = $"Returned sale: {item.Quantity:0.##} {product.Unit} {product.Name} ({cs}{item.TotalPrice:N0}) returned to stock",
+                        RecordedByUserId = returnedByUserId ?? sale.RecordedByUserId,
+                        RecordedByName = returnedByName ?? sale.RecordedByName
+                    });
+                }
+            }
+
+            // Reverse any receivable created for this credit sale
+            if (sale.PaymentStatus != PaymentStatus.Paid && sale.ContactId.HasValue && sale.TotalAmount > 0)
+            {
+                _db.LedgerEntries.Add(new LedgerEntry
+                {
+                    BusinessId = businessId,
+                    ContactId = sale.ContactId.Value,
+                    EntryType = LedgerEntryType.ReceivablePayment,
+                    Amount = sale.TotalAmount,
+                    Notes = $"Returned sale{customerNote}: {saleSummary} ({cs}{sale.TotalAmount:N0}) — receivable reversed",
+                    Source = "Adjustment",
+                    RecordedByUserId = returnedByUserId,
+                    RecordedByName = returnedByName
+                });
+            }
+
+            sale.IsDeleted = true;
+            sale.DeleteReason = "returned";
             sale.DeletedAtUtc = DateTime.UtcNow;
 
             await _db.SaveChangesAsync();
@@ -234,7 +309,45 @@ public class SalesService : ISalesService
             .IgnoreQueryFilters()
             .Include(s => s.Contact)
             .Include(s => s.Items).ThenInclude(i => i.Product)
-            .Where(s => s.BusinessId == businessId && s.IsDeleted);
+            .Where(s => s.BusinessId == businessId && s.IsDeleted && (s.DeleteReason == null || s.DeleteReason == "voided"));
+
+        var total = await query.CountAsync();
+        var items = await query
+            .OrderByDescending(s => s.DeletedAtUtc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(s => new SaleSummaryDto
+            {
+                Id = s.Id,
+                TotalAmount = s.TotalAmount,
+                PaymentStatus = s.PaymentStatus.ToString(),
+                PaymentMethod = s.PaymentMethod,
+                ItemCount = s.Items.Count,
+                ItemSummary = string.Join(", ", s.Items.Select(i => $"{i.Quantity:0.##} {i.Product.Unit} {i.Product.Name}")),
+                CustomerName = s.Contact != null ? s.Contact.Name : null,
+                RecordedByName = s.RecordedByName,
+                Source = s.Source,
+                CreatedAtUtc = s.CreatedAtUtc,
+                DeletedAtUtc = s.DeletedAtUtc
+            })
+            .ToListAsync();
+
+        return new PaginatedResult<SaleSummaryDto>
+        {
+            Items = items,
+            TotalCount = total,
+            Page = page,
+            PageSize = pageSize
+        };
+    }
+
+    public async Task<PaginatedResult<SaleSummaryDto>> GetReturnedAsync(Guid businessId, int page, int pageSize)
+    {
+        var query = _db.Sales
+            .IgnoreQueryFilters()
+            .Include(s => s.Contact)
+            .Include(s => s.Items).ThenInclude(i => i.Product)
+            .Where(s => s.BusinessId == businessId && s.IsDeleted && s.DeleteReason == "returned");
 
         var total = await query.CountAsync();
         var items = await query

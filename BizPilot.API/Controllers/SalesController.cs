@@ -108,12 +108,30 @@ public class SalesController : BizPilotBaseController
         return Ok(ApiResponse<object>.Ok(null!, "Sale voided. Stock restored."));
     }
 
+    [HttpPost("{id:guid}/return")]
+    [RequirePermission(Permission.VoidSales)]
+    public async Task<ActionResult<ApiResponse<object>>> Return(Guid id)
+    {
+        var user = await _db.Users.FindAsync(UserId);
+        await _sales.ReturnAsync(BusinessId, id, user?.Id, user?.FullName);
+        return Ok(ApiResponse<object>.Ok(null!, "Sale returned. Stock restored."));
+    }
+
     [HttpGet("voided")]
     [RequirePermission(Permission.VoidSales)]
     public async Task<ActionResult<ApiResponse<PaginatedResult<SaleSummaryDto>>>> GetVoided(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
         var result = await _sales.GetVoidedAsync(BusinessId, page, pageSize);
+        return Ok(ApiResponse<PaginatedResult<SaleSummaryDto>>.Ok(result));
+    }
+
+    [HttpGet("returned")]
+    [RequirePermission(Permission.VoidSales)]
+    public async Task<ActionResult<ApiResponse<PaginatedResult<SaleSummaryDto>>>> GetReturned(
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    {
+        var result = await _sales.GetReturnedAsync(BusinessId, page, pageSize);
         return Ok(ApiResponse<PaginatedResult<SaleSummaryDto>>.Ok(result));
     }
 }

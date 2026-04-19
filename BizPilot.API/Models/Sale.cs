@@ -13,6 +13,7 @@ public class Sale
     public Guid? RecordedByUserId { get; set; }
     public string? RecordedByName { get; set; }
     public bool IsDeleted { get; set; } = false;
+    public string? DeleteReason { get; set; }
     public DateTime? DeletedAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
