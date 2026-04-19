@@ -50,6 +50,10 @@ public class FlutterwaveService
             case "subscription.cancelled":
                 await HandleSubscriptionCancelled(payload);
                 break;
+            case "transfer.reversed":
+            case "charge.refund":
+                await HandleRefundAsync(payload);
+                break;
         }
     }
 
@@ -425,6 +429,70 @@ public class FlutterwaveService
             _logger.LogWarning(ex, "Failed to fetch Flutterwave subscription for {Email}", email);
         }
         return null;
+    }
+
+    private async Task HandleRefundAsync(JsonElement payload)
+    {
+        if (!payload.TryGetProperty("data", out var data)) return;
+
+        var txRef = data.TryGetProperty("tx_ref", out var tr) ? tr.GetString() : null;
+
+        Guid businessId = Guid.Empty;
+        if (data.TryGetProperty("meta", out var meta) && meta.TryGetProperty("businessId", out var bi))
+            Guid.TryParse(bi.GetString(), out businessId);
+
+        if (businessId == Guid.Empty)
+        {
+            _logger.LogWarning("Flutterwave refund with no businessId: {TxRef}", txRef);
+            return;
+        }
+
+        var business = await _db.Businesses.FindAsync(businessId);
+        if (business == null) return;
+
+        business.SubscriptionStatus = "cancelled";
+        business.FlutterwaveSubscriptionId = null;
+
+        _db.BillingEvents.Add(new BillingEvent
+        {
+            BusinessId = business.Id,
+            EventType = "payment.refunded",
+            Provider = "flutterwave",
+            Plan = business.Plan,
+            TransactionRef = txRef,
+            Status = "refunded",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        if (business.SubscriptionEndsAt == null || business.SubscriptionEndsAt <= DateTime.UtcNow)
+        {
+            business.Plan = "starter";
+            business.SubscribedPlan = "starter";
+            business.SubscriptionEndsAt = null;
+        }
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogWarning("Flutterwave refund for {Business}: status={Status}", business.Name, business.SubscriptionStatus);
+
+        try
+        {
+            var owner = await _db.Users.FirstOrDefaultAsync(u =>
+                u.BusinessId == businessId && u.Role == UserRole.Owner && u.IsActive);
+            if (owner != null)
+            {
+                var whatsApp = _serviceProvider.GetRequiredService<IWhatsAppService>();
+                await whatsApp.SendMessageAsync(
+                    $"whatsapp:{owner.PhoneNumber}",
+                    "Your recent payment has been refunded. Your subscription has been cancelled. " +
+                    "Visit app.bizpilot-ai.com/settings to resubscribe.",
+                    businessId, owner.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send refund notification for {Business}", business.Name);
+        }
     }
 
     private async Task HandleSubscriptionCancelled(JsonElement payload)

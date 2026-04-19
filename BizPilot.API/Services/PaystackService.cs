@@ -141,6 +141,13 @@ public class PaystackService
                 // A recurring charge failed. Paystack retries automatically. We just log for visibility.
                 await HandlePaymentFailed(data);
                 break;
+            case "charge.dispute.create":
+            case "charge.dispute.remind":
+                await HandleDisputeAsync(data);
+                break;
+            case "refund.processed":
+                await HandleRefundAsync(data);
+                break;
         }
     }
 
@@ -357,6 +364,84 @@ public class PaystackService
         await _db.SaveChangesAsync();
 
         _logger.LogInformation("Subscription cancelled: {Business}, access until {EndsAt}", business.Name, business.SubscriptionEndsAt);
+    }
+
+    private async Task HandleDisputeAsync(JsonElement data)
+    {
+        if (!data.TryGetProperty("metadata", out var meta)) return;
+        if (!meta.TryGetProperty("businessId", out var bizIdEl)) return;
+        if (!Guid.TryParse(bizIdEl.GetString(), out var businessId)) return;
+
+        var business = await _db.Businesses.FindAsync(businessId);
+        if (business == null) return;
+
+        _logger.LogWarning("Payment dispute for {Business} on {Plan}", business.Name, business.Plan);
+
+        _db.BillingEvents.Add(new BillingEvent
+        {
+            BusinessId = business.Id,
+            EventType = "payment.disputed",
+            Provider = "paystack",
+            Plan = business.Plan,
+            Status = "disputed",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        await _db.SaveChangesAsync();
+    }
+
+    private async Task HandleRefundAsync(JsonElement data)
+    {
+        if (!data.TryGetProperty("metadata", out var meta)) return;
+        if (!meta.TryGetProperty("businessId", out var bizIdEl)) return;
+        if (!Guid.TryParse(bizIdEl.GetString(), out var businessId)) return;
+
+        var business = await _db.Businesses.FindAsync(businessId);
+        if (business == null) return;
+
+        business.SubscriptionStatus = "cancelled";
+        business.PaystackSubscriptionCode = null;
+        business.PaystackPlanCode = null;
+
+        _db.BillingEvents.Add(new BillingEvent
+        {
+            BusinessId = business.Id,
+            EventType = "payment.refunded",
+            Provider = "paystack",
+            Plan = business.Plan,
+            Status = "refunded",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        if (business.SubscriptionEndsAt == null || business.SubscriptionEndsAt <= DateTime.UtcNow)
+        {
+            business.Plan = "starter";
+            business.SubscribedPlan = "starter";
+            business.SubscriptionEndsAt = null;
+        }
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogWarning("Refund processed for {Business}: downgraded to {Plan}", business.Name, business.Plan);
+
+        // Notify owner via WhatsApp
+        try
+        {
+            var owner = await _db.Users.FirstOrDefaultAsync(u =>
+                u.BusinessId == businessId && u.Role == UserRole.Owner && u.IsActive);
+            if (owner != null)
+            {
+                var whatsApp = _serviceProvider.GetRequiredService<IWhatsAppService>();
+                await whatsApp.SendMessageAsync(
+                    $"whatsapp:{owner.PhoneNumber}",
+                    "Your recent payment has been refunded. Your subscription has been cancelled. " +
+                    "Visit app.bizpilot-ai.com/settings to resubscribe.",
+                    businessId, owner.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send refund notification for {Business}", business.Name);
+        }
     }
 
     private async Task HandlePaymentFailed(JsonElement data)

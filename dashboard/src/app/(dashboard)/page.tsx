@@ -153,10 +153,10 @@ export default function DashboardPage() {
       {planStatus?.subscriptionStatus?.toLowerCase() === "past_due" && (
         <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3">
           <p className="text-sm text-red-800">
-            Your last payment failed. Update your payment method to keep your {planStatus.plan.charAt(0).toUpperCase() + planStatus.plan.slice(1)} plan.
+            Your last payment failed. Resubscribe to keep your {planStatus.plan.charAt(0).toUpperCase() + planStatus.plan.slice(1)} plan features.
           </p>
           <a href="/settings" className="text-sm font-semibold text-red-700 hover:text-red-900 whitespace-nowrap ml-4">
-            Update now &rarr;
+            Fix payment &rarr;
           </a>
         </div>
       )}
@@ -165,7 +165,7 @@ export default function DashboardPage() {
       {planStatus?.subscriptionStatus?.toLowerCase() === "grace" && (
         <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3">
           <p className="text-sm text-red-800">
-            Your subscription has expired. You have a few days of grace before access is restricted.
+            Your {planStatus.plan.charAt(0).toUpperCase() + planStatus.plan.slice(1)} subscription has expired. Resubscribe within 3 days to keep access.
           </p>
           <a href="/settings" className="text-sm font-semibold text-red-700 hover:text-red-900 whitespace-nowrap ml-4">
             Renew now &rarr;

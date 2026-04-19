@@ -12,6 +12,8 @@ namespace BizPilot.API.Controllers;
 [Route("api/subscription")]
 public class SubscriptionController : BizPilotBaseController
 {
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, DateTime> _lastInitialize = new();
+
     private readonly PaystackService _paystack;
     private readonly FlutterwaveService _flutterwave;
     private readonly AppDbContext _db;
@@ -46,6 +48,10 @@ public class SubscriptionController : BizPilotBaseController
     [RequirePermission(Permission.ManageSettings)]
     public async Task<ActionResult<ApiResponse<object>>> Initialize([FromBody] InitializeSubscriptionRequest request)
     {
+        if (_lastInitialize.TryGetValue(BusinessId, out var last) && (DateTime.UtcNow - last).TotalSeconds < 10)
+            return BadRequest(ApiResponse<object>.Fail("Please wait a moment before trying again."));
+        _lastInitialize[BusinessId] = DateTime.UtcNow;
+
         var business = await _db.Businesses.FindAsync(BusinessId);
         if (business == null) return NotFound(ApiResponse<object>.Fail("Business not found."));
         if (!business.IsBillable) return BadRequest(ApiResponse<object>.Fail("This account is not billable."));
