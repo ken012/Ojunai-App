@@ -14,7 +14,7 @@ export interface PaginatedResult<T> {
 }
 
 export interface AuthResponse {
-  token: string;
+  token?: string;
   expiresAt: string;
   mustChangePassword?: boolean;
   user: UserDto;

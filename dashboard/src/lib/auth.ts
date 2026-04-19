@@ -4,7 +4,6 @@ import type { AuthResponse, UserDto, BusinessDto } from "./types";
 const SESSION_TIMEOUT_MS = 12 * 60 * 60 * 1000; // 12 hours
 
 function storeAuth(auth: AuthResponse) {
-  localStorage.setItem("bp_token", auth.token);
   localStorage.setItem("bp_user", JSON.stringify(auth.user));
   localStorage.setItem("bp_business", JSON.stringify(auth.business));
   localStorage.setItem("bp_auth_time", Date.now().toString());
@@ -33,7 +32,7 @@ export function getStoredBusiness(): BusinessDto | null {
 
 export function isAuthenticated(): boolean {
   if (typeof window === "undefined") return false;
-  if (!localStorage.getItem("bp_token")) return false;
+  if (!localStorage.getItem("bp_user")) return false;
   if (isSessionExpired()) { clearAuth(); return false; }
   return true;
 }
@@ -62,13 +61,13 @@ export async function register(payload: {
 }
 
 function clearAuth() {
-  localStorage.removeItem("bp_token");
   localStorage.removeItem("bp_user");
   localStorage.removeItem("bp_business");
   localStorage.removeItem("bp_auth_time");
 }
 
-export function logout() {
+export async function logout() {
+  try { await api.post("/auth/logout"); } catch {}
   clearAuth();
   window.location.href = "/login";
 }

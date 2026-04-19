@@ -24,6 +24,7 @@ public class AuthController : BizPilotBaseController
     public async Task<ActionResult<ApiResponse<AuthResponse>>> Register([FromBody] RegisterOwnerRequest request)
     {
         var result = await _auth.RegisterOwnerAsync(request);
+        SetAuthCookie(result.Token, result.ExpiresAt);
         return Ok(ApiResponse<AuthResponse>.Ok(result, "Business registered successfully."));
     }
 
@@ -33,7 +34,34 @@ public class AuthController : BizPilotBaseController
     public async Task<ActionResult<ApiResponse<AuthResponse>>> Login([FromBody] LoginRequest request)
     {
         var result = await _auth.LoginAsync(request);
+        SetAuthCookie(result.Token, result.ExpiresAt);
         return Ok(ApiResponse<AuthResponse>.Ok(result));
+    }
+
+    [HttpPost("logout")]
+    public IActionResult Logout()
+    {
+        Response.Cookies.Append("bp_auth", "", new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+            Expires = DateTimeOffset.UtcNow.AddDays(-1),
+            Path = "/"
+        });
+        return Ok(ApiResponse<object>.Ok(null!, "Logged out."));
+    }
+
+    private void SetAuthCookie(string token, DateTime expiresAt)
+    {
+        Response.Cookies.Append("bp_auth", token, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Strict,
+            Expires = new DateTimeOffset(expiresAt, TimeSpan.Zero),
+            Path = "/"
+        });
     }
 
     [HttpGet("me")]
