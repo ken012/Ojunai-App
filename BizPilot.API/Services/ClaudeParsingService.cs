@@ -93,11 +93,20 @@ public class ClaudeParsingService : IClaudeParsingService
         }
     }
 
+    private static string SanitizeForPrompt(string? input)
+    {
+        if (string.IsNullOrEmpty(input)) return "";
+        // Strip newlines, control chars, and excessive length to prevent prompt injection
+        var cleaned = input.Replace("\n", " ").Replace("\r", " ").Replace("\t", " ");
+        cleaned = new string(cleaned.Where(c => !char.IsControl(c)).ToArray());
+        return cleaned.Length > 100 ? cleaned[..100] : cleaned;
+    }
+
     private static string BuildSystemPrompt(BusinessContext context)
     {
         var products = string.Join(", ", context.Products.Select(p =>
-            $"{p.Name} ({p.CurrentStock} {p.Unit}{(p.Category != null ? $", {p.Category}" : "")})" ));
-        var contacts = string.Join(", ", context.Contacts.Select(c => $"{c.Name} ({c.Type})"));
+            $"{SanitizeForPrompt(p.Name)} ({p.CurrentStock} {p.Unit}{(p.Category != null ? $", {SanitizeForPrompt(p.Category)}" : "")})" ));
+        var contacts = string.Join(", ", context.Contacts.Select(c => $"{SanitizeForPrompt(c.Name)} ({c.Type})"));
 
         // When the product list is truncated (large inventory), tell Claude so it doesn't assume the
         // list is exhaustive. It should still emit intents referencing products not in the prompt —
