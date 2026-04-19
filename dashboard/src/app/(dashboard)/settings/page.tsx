@@ -708,6 +708,7 @@ type PlanStatus = {
   isAutoRenew: boolean;
   paymentMethod: string | null;
   subscriptionStatus: string;
+  pendingPlanChange: string | null;
 };
 
 function PlanCard({ business }: { business: BusinessShape | null }) {
@@ -1192,6 +1193,14 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
                 Switch to annual and save {discount}% — renew once a year instead of every month.
               </p>
             )}
+          </div>
+        )}
+
+        {planStatus?.pendingPlanChange && planStatus.subscriptionEndsAt && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+            <p className="text-sm text-blue-800">
+              Scheduled to switch to {planStatus.pendingPlanChange.charAt(0).toUpperCase() + planStatus.pendingPlanChange.slice(1)} on {new Date(planStatus.subscriptionEndsAt).toLocaleDateString()}.
+            </p>
           </div>
         )}
 

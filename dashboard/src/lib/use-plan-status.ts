@@ -25,6 +25,7 @@ export type PlanStatus = {
   isAutoRenew: boolean;
   paymentMethod: string | null;
   subscriptionStatus: string;
+  pendingPlanChange: string | null;
 };
 
 export function usePlanStatus() {

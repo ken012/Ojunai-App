@@ -140,11 +140,11 @@ public class FlutterwaveService
         if (!string.IsNullOrEmpty(verifiedTxRef))
         {
             var parts = verifiedTxRef.Split('-');
-            if (parts.Length >= 5 && parts[0] == "bizpilot"
-                && validPlans.Contains(parts[^3]) && validCycles.Contains(parts[^2]))
+            if (parts.Length == 5 && parts[0] == "bizpilot" && parts[1].Length == 32
+                && validPlans.Contains(parts[2]) && validCycles.Contains(parts[3]))
             {
-                plan = parts[^3];
-                billingCycle = parts[^2];
+                plan = parts[2];
+                billingCycle = parts[3];
             }
         }
 
@@ -461,10 +461,37 @@ public class FlutterwaveService
             var exists = await _db.PaystackEventLogs.AnyAsync(e => e.EventId == txRef);
             if (exists) { _logger.LogInformation("Duplicate Flutterwave event {TxRef}, skipping", txRef); return; }
             _db.PaystackEventLogs.Add(new PaystackEventLog { EventId = txRef, EventType = "flutterwave.charge.completed" });
+            await _db.SaveChangesAsync();
         }
 
         var business = await _db.Businesses.FindAsync(businessId);
         if (business == null) { _logger.LogWarning("No business for Flutterwave payment {TxRef}", txRef); return; }
+
+        // Verify amount matches expected price
+        var chargeAmount = data.TryGetProperty("amount", out var chgAmtEl) ? chgAmtEl.GetDecimal() : (decimal?)null;
+        if (!Enum.TryParse<BillingConfig.BillingCycle>(billingCycle ?? "monthly", true, out var verifyBc))
+            verifyBc = BillingConfig.BillingCycle.Monthly;
+        var expectedCharge = BillingConfig.GetPrice(plan ?? "starter", verifyBc, currency ?? business.Currency);
+        if (expectedCharge.HasValue && chargeAmount.HasValue && Math.Abs(chargeAmount.Value - expectedCharge.Value) > 1)
+        {
+            _logger.LogWarning("Flutterwave webhook amount mismatch: paid {Paid}, expected {Expected} for {Plan}/{Currency}",
+                chargeAmount.Value, expectedCharge.Value, plan, currency);
+            _db.BillingEvents.Add(new BillingEvent
+            {
+                BusinessId = businessId,
+                EventType = "payment.rejected",
+                Provider = "flutterwave",
+                Plan = plan,
+                Amount = chargeAmount,
+                Currency = currency,
+                TransactionRef = txRef,
+                Status = "rejected",
+                ErrorDetails = $"Amount mismatch: paid {chargeAmount}, expected {expectedCharge}",
+                CreatedAtUtc = DateTime.UtcNow
+            });
+            await _db.SaveChangesAsync();
+            return;
+        }
 
         var customerEmail = data.TryGetProperty("customer", out var cust)
             && cust.TryGetProperty("email", out var em) ? em.GetString() : null;
@@ -504,7 +531,6 @@ public class FlutterwaveService
             if (subId != null) business.FlutterwaveSubscriptionId = subId;
         }
 
-        var chargeAmount = data.TryGetProperty("amount", out var chgAmt) ? chgAmt.GetDecimal() : (decimal?)null;
         _db.BillingEvents.Add(new BillingEvent
         {
             BusinessId = businessId,

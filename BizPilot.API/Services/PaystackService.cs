@@ -211,8 +211,17 @@ public class PaystackService
         business.SubscribedPlan = plan;
         business.SubscriptionStatus = "active";
         business.TrialEndsAt = null;
+
+        var isAnnualSub = business.BillingCycle?.Equals("annual", StringComparison.OrdinalIgnoreCase) == true;
+        business.SubscriptionEndsAt = isAnnualSub ? DateTime.UtcNow.AddYears(1) : DateTime.UtcNow.AddMonths(1);
+
         if (nextPayment != null && DateTime.TryParse(nextPayment, out var next))
-            business.SubscriptionEndsAt = next;
+        {
+            var diff = Math.Abs((next - business.SubscriptionEndsAt.Value).TotalDays);
+            if (diff > 3)
+                _logger.LogWarning("Paystack next_payment_date {Next} differs from calculated {Calculated} by {Diff} days",
+                    next, business.SubscriptionEndsAt, diff);
+        }
 
         _db.BillingEvents.Add(new BillingEvent
         {
@@ -255,6 +264,19 @@ public class PaystackService
                 {
                     _logger.LogWarning("Paystack charge amount mismatch for {Business}: charged {cs}{Charged}, expected {cs}{Expected}",
                         business.Name, BillingConfig.Symbol(business.Currency), chargedNaira, BillingConfig.Symbol(business.Currency), expectedPrice);
+                    _db.BillingEvents.Add(new BillingEvent
+                    {
+                        BusinessId = business.Id,
+                        EventType = "payment.rejected",
+                        Provider = "paystack",
+                        Plan = plan,
+                        Amount = chargedNaira,
+                        Currency = "NGN",
+                        Status = "rejected",
+                        ErrorDetails = $"Amount mismatch: paid {chargedNaira}, expected {expectedPrice}",
+                        CreatedAtUtc = DateTime.UtcNow
+                    });
+                    await _db.SaveChangesAsync();
                     return;
                 }
             }
@@ -268,7 +290,7 @@ public class PaystackService
             var baseDate = (business.SubscriptionEndsAt.HasValue && business.SubscriptionEndsAt > DateTime.UtcNow)
                 ? business.SubscriptionEndsAt.Value
                 : DateTime.UtcNow;
-            business.SubscriptionEndsAt = baseDate.AddDays(32);
+            business.SubscriptionEndsAt = baseDate.AddMonths(1);
 
             // Store customer code if not yet stored
             if (string.IsNullOrEmpty(business.PaystackCustomerCode) && data.TryGetProperty("customer", out var cust))

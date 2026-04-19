@@ -147,7 +147,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Payment failed banner */}
-      {planStatus?.subscriptionStatus === "past_due" && (
+      {planStatus?.subscriptionStatus?.toLowerCase() === "past_due" && (
         <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3">
           <p className="text-sm text-red-800">
             Your last payment failed. Update your payment method to keep your {planStatus.plan.charAt(0).toUpperCase() + planStatus.plan.slice(1)} plan.
@@ -159,7 +159,7 @@ export default function DashboardPage() {
       )}
 
       {/* Grace period banner */}
-      {planStatus?.subscriptionStatus === "grace" && (
+      {planStatus?.subscriptionStatus?.toLowerCase() === "grace" && (
         <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3">
           <p className="text-sm text-red-800">
             Your subscription has expired. You have a few days of grace before access is restricted.
