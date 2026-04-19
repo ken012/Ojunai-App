@@ -15,9 +15,9 @@ api.interceptors.response.use(
     if (err.response?.status === 401 && typeof window !== "undefined") {
       // Don't redirect during login/register/password-reset flow — let the page show the error
       const path = window.location.pathname;
-      const authPages = ["/login", "/register", "/forgot-password", "/change-password"];
-      const isAuthPage = authPages.some((p) => path.startsWith(p));
-      if (!isAuthPage) {
+      const skipRedirect = ["/login", "/register", "/forgot-password", "/change-password", "/admin"];
+      const shouldSkip = skipRedirect.some((p) => path.startsWith(p));
+      if (!shouldSkip) {
         localStorage.removeItem("bp_user");
         localStorage.removeItem("bp_business");
         localStorage.removeItem("bp_auth_time");
