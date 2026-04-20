@@ -1,22 +1,37 @@
+using System.Text.RegularExpressions;
+
 namespace BizPilot.API.Common;
 
 public static class CategoryInferrer
 {
     private static readonly List<(string Category, string Subcategory, string[] Keywords)> Map = new()
     {
+        // Jewelry & Accessories — MUST be before other categories to prevent false matches
+        ("Jewelry & Accessories", "Rings", new[] { " ring", "signet ring", "engagement ring", "wedding ring" }),
+        ("Jewelry & Accessories", "Necklaces", new[] { "necklace", "chain", "choker", "pendant" }),
+        ("Jewelry & Accessories", "Earrings", new[] { "earring", "stud", "hoop earring" }),
+        ("Jewelry & Accessories", "Bracelets", new[] { "bracelet", "bangle", "wristband", "charm bracelet" }),
+        ("Jewelry & Accessories", "Watches", new[] { "watch", "wristwatch", "timepiece" }),
+        ("Jewelry & Accessories", "Anklets", new[] { "anklet", "ankle chain", "ankle bracelet" }),
+        ("Jewelry & Accessories", "Brooches & Pins", new[] { "brooch", "lapel pin", "badge pin" }),
+        ("Jewelry & Accessories", "Cufflinks & Tie", new[] { "cufflink", "tie clip", "tie pin" }),
+        ("Jewelry & Accessories", "Gemstones", new[] { "diamond", "ruby", "emerald", "sapphire", "amethyst", "opal", "topaz", "pearl", "garnet", "turquoise", "onyx", "quartz" }),
+        ("Jewelry & Accessories", "Precious Metals", new[] { "gold ", "silver ", "platinum ", "rose gold", "sterling", "14k", "18k", "24k", "karat" }),
+        ("Jewelry & Accessories", "Fashion Accessories", new[] { "jewelry", "jewellery", "accessory", "accessories", "trinket", "ornament" }),
+
         // Food & Beverages
         ("Food & Beverages", "Grains & Rice", new[] { "rice", "garri", "wheat", "flour", "semolina", "oats", "couscous", "millet", "sorghum", "maize", "corn", "beans" }),
         ("Food & Beverages", "Snacks", new[] { "biscuit", "cookie", "chips", "chin chin", "puff puff", "popcorn", "crackers", "nuts", "candy", "chocolate", "sweet", "snack" }),
         ("Food & Beverages", "Drinks", new[] { "juice", "water", "soda", "coke", "fanta", "pepsi", "malt", "zobo", "yogurt", "milk drink", "beer", "wine", "spirit", "drink" }),
         ("Food & Beverages", "Frozen Foods", new[] { "frozen", "ice cream" }),
-        ("Food & Beverages", "Dairy Products", new[] { "milk", "cheese", "butter", "cream", "yoghurt", "egg" }),
+        ("Food & Beverages", "Dairy Products", new[] { "milk", "cheese", "butter", "yoghurt", "egg" }),
         ("Food & Beverages", "Meat & Fish", new[] { "meat", "beef", "chicken", "fish", "turkey", "goat", "pork", "suya", "kilishi", "crayfish", "prawn", "shrimp" }),
-        ("Food & Beverages", "Spices & Seasoning", new[] { "pepper", "salt", "maggi", "knorr", "curry", "thyme", "ginger", "garlic", "onion", "tomato paste", "seasoning", "spice" }),
+        ("Food & Beverages", "Spices & Seasoning", new[] { "pepper", "maggi", "knorr", "curry", "thyme", "ginger", "garlic", "onion", "tomato paste", "seasoning", "spice" }),
         ("Food & Beverages", "Condiments & Sauces", new[] { "ketchup", "mayonnaise", "mayo", "mustard", "sauce", "vinegar", "salad cream", "salad dressing", "soy sauce", "chili sauce", "hot sauce" }),
-        ("Food & Beverages", "Tea & Coffee", new[] { "tea", "coffee", "cocoa", "milo", "bournvita", "ovaltine", "green tea", "lipton", "nescafe" }),
+        ("Food & Beverages", "Tea & Coffee", new[] { "tea bag", "coffee", "cocoa", "milo", "bournvita", "ovaltine", "green tea", "lipton", "nescafe" }),
         ("Food & Beverages", "Sugar & Sweeteners", new[] { "sugar", "honey", "syrup", "sweetener", "brown sugar", "cube sugar" }),
-        ("Food & Beverages", "Canned & Packaged Goods", new[] { "sardine", "tin", "canned", "noodle", "indomie", "spaghetti", "pasta", "baked beans" }),
-        ("Food & Beverages", "Bakery Items", new[] { "bread", "cake", "pie", "pastry", "doughnut", "croissant", "muffin" }),
+        ("Food & Beverages", "Canned & Packaged Goods", new[] { "sardine", "canned", "noodle", "indomie", "spaghetti", "pasta", "baked beans", "tin fish", "tin tomato" }),
+        ("Food & Beverages", "Bakery Items", new[] { "bread", "cake", "pastry", "doughnut", "croissant", "muffin" }),
         ("Food & Beverages", "Produce", new[] { "yam", "plantain", "cassava", "potato", "vegetable", "carrot", "cabbage", "lettuce", "palm oil", "groundnut", "pounded yam" }),
 
         // Beauty & Personal Care
@@ -96,43 +111,39 @@ public static class CategoryInferrer
         ("Industrial & Bulk Supplies", "Raw Materials", new[] { "rubber", "plastic", "chemical", "resin" }),
     };
 
+    // Short keywords that must match as whole words to avoid false positives
+    // e.g., "pen" should not match "pendant", "bra" should not match "bracelet"
+    private static readonly HashSet<string> WholeWordOnly = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "pen", "bra", "ink", "tin", "tie", "cap", "mat", "tap", "rod", "saw",
+        "mop", "bin", "fan", "led", "egg", "pie", "tea", "oil", "gel", "salt",
+        "cream", "lace", "ring"
+    };
+
+    private static bool MatchesKeyword(string text, string keyword)
+    {
+        if (keyword.Length <= 4 || WholeWordOnly.Contains(keyword.Trim()))
+        {
+            // Use word boundary matching for short/ambiguous keywords
+            var pattern = @"(?<![a-z])" + Regex.Escape(keyword.Trim()) + @"(?![a-z])";
+            return Regex.IsMatch(text, pattern, RegexOptions.IgnoreCase);
+        }
+        return text.Contains(keyword, StringComparison.OrdinalIgnoreCase);
+    }
+
     public static (string? Category, string? Subcategory) Infer(string productName)
     {
         if (string.IsNullOrWhiteSpace(productName)) return (null, null);
-        var lower = productName.ToLowerInvariant();
+        var lower = " " + productName.ToLowerInvariant() + " ";
 
         foreach (var (category, subcategory, keywords) in Map)
         {
             foreach (var keyword in keywords)
             {
-                if (lower.Contains(keyword))
+                if (MatchesKeyword(lower, keyword))
                     return (category, subcategory);
             }
         }
-
-        // Fallback: if no keyword match, use broad terms
-        if (lower.Contains("cream") || lower.Contains("oil") || lower.Contains("gel") || lower.Contains("mask") || lower.Contains("serum") || lower.Contains("scrub") || lower.Contains("wash"))
-            return ("Beauty & Personal Care", "Skin Care");
-        if (lower.Contains("brush") || lower.Contains("sponge") || lower.Contains("applicator") || lower.Contains("tweezer"))
-            return ("Beauty & Personal Care", "Makeup");
-        if (lower.Contains("wear") || lower.Contains("cloth") || lower.Contains("fashion"))
-            return ("Clothing & Apparel", null);
-        if (lower.Contains("food") || lower.Contains("snack") || lower.Contains("drink") || lower.Contains("eat"))
-            return ("Food & Beverages", null);
-        if (lower.Contains("phone") || lower.Contains("device") || lower.Contains("digital") || lower.Contains("tech"))
-            return ("Electronics", null);
-        if (lower.Contains("baby") || lower.Contains("kid") || lower.Contains("child") || lower.Contains("infant"))
-            return ("Baby & Kids", null);
-        if (lower.Contains("tool") || lower.Contains("hardware") || lower.Contains("fix") || lower.Contains("repair"))
-            return ("Tools & Hardware", null);
-        if (lower.Contains("office") || lower.Contains("stationery") || lower.Contains("school"))
-            return ("Office & Stationery", null);
-        if (lower.Contains("home") || lower.Contains("kitchen") || lower.Contains("house") || lower.Contains("clean"))
-            return ("Home & Kitchen", null);
-        if (lower.Contains("health") || lower.Contains("medical") || lower.Contains("wellness") || lower.Contains("fitness"))
-            return ("Health & Wellness", null);
-        if (lower.Contains("farm") || lower.Contains("agric") || lower.Contains("seed") || lower.Contains("crop"))
-            return ("Agriculture & Farming", null);
 
         return (null, null);
     }

@@ -88,6 +88,18 @@ export const CATEGORIES: Record<string, string[]> = {
     "Wholesale Goods",
     "Raw Materials",
   ],
+  "Jewelry & Accessories": [
+    "Rings",
+    "Necklaces",
+    "Earrings",
+    "Bracelets",
+    "Watches",
+    "Anklets",
+    "Brooches & Pins",
+    "Cufflinks & Tie",
+    "Gemstones",
+    "Fashion Accessories",
+  ],
   "General / Other": [],
 };
 
