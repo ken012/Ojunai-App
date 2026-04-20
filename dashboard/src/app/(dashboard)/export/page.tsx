@@ -475,7 +475,7 @@ export default function ExportPage() {
     try {
       const [overviewRes, dailyRes, cashRes, lowStockRes, receivablesRes] = await Promise.all([
         api.get<{ data: DashboardOverviewDto }>("/dashboard/overview"),
-        api.get<{ data: DailySummaryDto }>("/reports/daily-summary"),
+        api.get<{ data: DailySummaryDto }>("/reports/daily"),
         api.get<{ data: CashPositionDto }>("/reports/cash-position"),
         api.get<{ data: ProductDto[] }>("/products/low-stock"),
         api.get<{ data: OutstandingBalanceDto[] }>("/ledger/balances?type=receivable"),
@@ -568,7 +568,8 @@ export default function ExportPage() {
       }
 
       printRichReport("Monthly Business Report", sections, bizName);
-    } catch {
+    } catch (err) {
+      console.error("Monthly report error:", err);
       alert("Failed to generate monthly report. Please try again.");
     } finally {
       setReportLoading(false);
