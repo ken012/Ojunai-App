@@ -39,8 +39,33 @@ public class ExpenseService : IExpenseService
 
         if (from.HasValue) query = query.Where(e => e.CreatedAtUtc >= from.Value);
         if (to.HasValue) query = query.Where(e => e.CreatedAtUtc <= to.Value);
-        if (!string.IsNullOrEmpty(expenseType))
-            query = query.Where(e => e.ExpenseType == expenseType);
+        if (expenseType == "cogs")
+        {
+            // Inventory Expenses: explicitly tagged as cogs OR category matches inventory keywords
+            query = query.Where(e => e.ExpenseType == "cogs"
+                || EF.Functions.ILike(e.Category, "%inventory%")
+                || EF.Functions.ILike(e.Category, "%stock%")
+                || EF.Functions.ILike(e.Category, "%goods%")
+                || EF.Functions.ILike(e.Category, "%supplies%")
+                || EF.Functions.ILike(e.Category, "%raw material%")
+                || EF.Functions.ILike(e.Category, "%materials%")
+                || EF.Functions.ILike(e.Category, "%merchandise%")
+                || EF.Functions.ILike(e.Category, "%purchase%")
+                || EF.Functions.ILike(e.Category, "%restock%"));
+        }
+        else if (expenseType == "operating")
+        {
+            query = query.Where(e => e.ExpenseType != "cogs"
+                && !EF.Functions.ILike(e.Category, "%inventory%")
+                && !EF.Functions.ILike(e.Category, "%stock%")
+                && !EF.Functions.ILike(e.Category, "%goods%")
+                && !EF.Functions.ILike(e.Category, "%supplies%")
+                && !EF.Functions.ILike(e.Category, "%raw material%")
+                && !EF.Functions.ILike(e.Category, "%materials%")
+                && !EF.Functions.ILike(e.Category, "%merchandise%")
+                && !EF.Functions.ILike(e.Category, "%purchase%")
+                && !EF.Functions.ILike(e.Category, "%restock%"));
+        }
 
         var total = await query.CountAsync();
         var items = await query

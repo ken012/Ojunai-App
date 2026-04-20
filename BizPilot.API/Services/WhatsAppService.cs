@@ -1062,9 +1062,14 @@ public class WhatsAppService : IWhatsAppService
         if (!amount.HasValue || amount.Value <= 0)
             return "I couldn't identify the amount. Please include how much was spent.";
 
+        var category = ba.GetStringOrNull("category") ?? "General";
+        var inventoryKeywords = new[] { "inventory", "stock", "goods", "supplies", "raw material", "materials", "merchandise", "purchase", "restock" };
+        var isInventoryExpense = inventoryKeywords.Any(k => category.Contains(k, StringComparison.OrdinalIgnoreCase));
+
         var expense = await _expenses.CreateAsync(businessId, new DTOs.Expenses.CreateExpenseRequest
         {
-            Category = ba.GetStringOrNull("category") ?? "General",
+            Category = category,
+            ExpenseType = isInventoryExpense ? "cogs" : "operating",
             Amount = amount.Value,
             Notes = ba.GetStringOrNull("notes"),
             PaidTo = ba.GetStringOrNull("paidTo")
