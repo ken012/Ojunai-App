@@ -682,6 +682,28 @@ public class WhatsAppService : IWhatsAppService
         {
             var alertMsg = $"🔔 *Alerts*\n{string.Join("\n", alerts)}";
             await SendMessageAsync(to, alertMsg, businessId, user.Id);
+
+            // Send large sale alerts to Owner and Admins (not just the staff who recorded it)
+            if (business.AlertLargeSale && alerts.Any(a => a.Contains("Big sale!")))
+            {
+                var managers = await _db.Users
+                    .Where(u => u.BusinessId == businessId && u.IsActive
+                        && (u.Role == UserRole.Owner || u.Role == UserRole.Admin)
+                        && u.Id != user.Id)
+                    .ToListAsync();
+
+                var staffName = user.FullName ?? "A staff member";
+                var managerAlert = $"🔔 *Alerts*\n💰 *Big sale!* {_cs}{(await _db.Sales.Where(s => s.BusinessId == businessId).OrderByDescending(s => s.CreatedAtUtc).Select(s => s.TotalAmount).FirstOrDefaultAsync()):N0} recorded by {staffName}";
+
+                foreach (var mgr in managers)
+                {
+                    try
+                    {
+                        await SendMessageAsync($"whatsapp:{mgr.PhoneNumber}", managerAlert, businessId, mgr.Id);
+                    }
+                    catch { /* don't let one failed send block others */ }
+                }
+            }
         }
     }
 
