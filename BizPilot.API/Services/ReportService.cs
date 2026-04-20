@@ -607,6 +607,10 @@ public partial class ReportService : IReportService
                     }
                 }
 
+                // Filter by requested type so "Adjustments" tab only shows adjustments
+                if (type == "adjustment" && activityType != "adjustment") continue;
+                if (type == "payment" && activityType != "payment_received" && activityType != "payment_made") continue;
+
                 activities.Add(new ActivityFeedDto
                 {
                     Id = e.Id,
