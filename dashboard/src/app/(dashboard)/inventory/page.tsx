@@ -21,7 +21,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { AlertTriangle, Package, Pencil, Trash2, Lock, Unlock, ShoppingCart, Ban, Minus, RotateCcw } from "lucide-react";
+import { AlertTriangle, Package, Pencil, Trash2, Lock, Unlock, ShoppingCart, Ban, Minus } from "lucide-react";
 import { formatDateTime } from "@/lib/format";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { UpgradeInline } from "@/components/upgrade-prompt";
@@ -784,108 +784,6 @@ function StockOutDialog({ product, open, onClose }: { product: ProductDto | null
   );
 }
 
-// ─── Return Product dialog ──────────────────────────────────────────────────
-function ReturnDialog({ open, onClose, products }: { open: boolean; onClose: () => void; products: ProductDto[] }) {
-  const qc = useQueryClient();
-  const [productId, setProductId] = useState("");
-  const [qty, setQty] = useState("");
-  const [customerName, setCustomerName] = useState("");
-  const [notes, setNotes] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const selected = products.find((p) => p.id === productId);
-
-  async function handleSave() {
-    if (!productId || !qty) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await api.post("/inventory/return", {
-        productId,
-        quantity: Number(qty),
-        customerName: customerName || null,
-        notes: notes || null,
-      });
-      qc.invalidateQueries({ queryKey: ["products"] });
-      qc.invalidateQueries({ queryKey: ["low-stock"] });
-      handleClose();
-    } catch (err: unknown) {
-      const ax = err as { response?: { data?: { errors?: string[] } } };
-      setError(ax.response?.data?.errors?.[0] ?? "Failed to process return");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function handleClose() {
-    setProductId("");
-    setQty("");
-    setCustomerName("");
-    setNotes("");
-    setError(null);
-    onClose();
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Return Product</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <Label>Product</Label>
-            <select
-              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
-              value={productId}
-              onChange={(e) => setProductId(e.target.value)}
-            >
-              <option value="">Select product</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>{p.name} ({p.currentStock} {p.unit})</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <Label>Quantity Returned</Label>
-            <Input
-              type="number"
-              value={qty}
-              onChange={(e) => setQty(e.target.value)}
-              placeholder={selected ? `in ${selected.unit}` : ""}
-              min={1}
-            />
-          </div>
-          <div>
-            <Label>Customer Name (optional)</Label>
-            <Input
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="Who returned it?"
-            />
-          </div>
-          <div>
-            <Label>Reason (optional)</Label>
-            <Input
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Defective, wrong size"
-            />
-          </div>
-          {error && <p className="text-xs text-red-500">{error}</p>}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={saving}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving || !productId || !qty}>
-            {saving ? "Processing..." : "Process Return"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ─── Wastage dialog ────────────────────────────────────────────────────────
 function WastageDialog({ open, onClose, products }: { open: boolean; onClose: () => void; products: ProductDto[] }) {
   const qc = useQueryClient();
@@ -994,7 +892,6 @@ export default function InventoryPage() {
   const [deleting, setDeleting] = useState<ProductDto | null>(null);
   const [damaging, setDamaging] = useState<ProductDto | null>(null);
   const [removingStock, setRemovingStock] = useState<ProductDto | null>(null);
-  const [returning, setReturning] = useState(false);
   const [wastaging, setWastaging] = useState(false);
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
@@ -1092,9 +989,6 @@ export default function InventoryPage() {
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => setWastaging(true)} className="text-orange-600 border-orange-200 hover:bg-orange-50">
               <Ban size={14} className="mr-1" /> Wastage
-            </Button>
-            <Button variant="outline" onClick={() => setReturning(true)}>
-              <RotateCcw size={14} className="mr-1" /> Return
             </Button>
             {hasHolds && (
               <Button variant="outline" onClick={() => setAddingHold(true)}>
@@ -1344,11 +1238,6 @@ export default function InventoryPage() {
         product={removingStock}
         open={removingStock !== null}
         onClose={() => setRemovingStock(null)}
-      />
-      <ReturnDialog
-        open={returning}
-        onClose={() => setReturning(false)}
-        products={allProducts}
       />
       <WastageDialog
         open={wastaging}
