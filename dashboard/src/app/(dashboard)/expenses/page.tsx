@@ -44,6 +44,17 @@ function getCategoryClass(category: string) {
 
 const CURRENCY_SYMBOLS: Record<string, string> = { NGN: "\u20A6", GHS: "GH\u20B5", USD: "$", GBP: "\u00A3", KES: "KSh", ZAR: "R", TZS: "TSh", UGX: "USh", RWF: "RF", XAF: "FCFA", XOF: "CFA", EGP: "E\u00A3", ETB: "Br" };
 
+const OPERATING_CATEGORIES = [
+  "Salary", "Rent", "Transport", "Utilities", "Fuel", "Airtime", "Internet",
+  "Office Supplies", "Maintenance", "Marketing", "Insurance", "Taxes",
+  "Professional Services", "Subscriptions", "Cleaning", "Security", "General",
+];
+
+const INVENTORY_CATEGORIES = [
+  "Inventory Purchase", "Stock Replenishment", "Raw Materials", "Goods for Resale",
+  "Supplies", "Merchandise", "Packaging", "Shipping & Freight",
+];
+
 export default function ExpensesPage() {
   const [page, setPage] = useState(1);
   const [expenseTab, setExpenseTab] = useState<"operating" | "cogs">("operating");
@@ -283,12 +294,33 @@ function AddExpenseDialog({ open, onClose, defaultExpenseType }: { open: boolean
           </div>
           <div>
             <Label>Category</Label>
-            <Input value={form.category} onChange={(e) => {
-              const cat = e.target.value;
-              const inventoryCategories = ["inventory", "stock", "goods", "supplies", "raw materials", "materials", "merchandise"];
-              const isInventory = inventoryCategories.some(ic => cat.toLowerCase().includes(ic));
-              setForm({ ...form, category: cat, expenseType: isInventory ? "cogs" : form.expenseType });
-            }} placeholder={form.expenseType === "cogs" ? "e.g. Inventory, Stock, Raw Materials" : "e.g. Transport, Fuel, Rent"} />
+            <select
+              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
+              value={(form.expenseType === "cogs" ? INVENTORY_CATEGORIES : OPERATING_CATEGORIES).includes(form.category) ? form.category : "Other"}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "Other") {
+                  setForm({ ...form, category: "" });
+                } else {
+                  const inventoryKeywords = ["inventory", "stock", "goods", "supplies", "raw material", "materials", "merchandise", "purchase", "restock"];
+                  const isInventory = inventoryKeywords.some(k => val.toLowerCase().includes(k));
+                  setForm({ ...form, category: val, expenseType: isInventory ? "cogs" : form.expenseType });
+                }
+              }}
+            >
+              {(form.expenseType === "cogs" ? INVENTORY_CATEGORIES : OPERATING_CATEGORIES).map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+              <option value="Other">Other</option>
+            </select>
+            {!(form.expenseType === "cogs" ? INVENTORY_CATEGORIES : OPERATING_CATEGORIES).includes(form.category) && (
+              <Input
+                className="mt-2"
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                placeholder="Enter custom category"
+              />
+            )}
           </div>
           <div>
             <Label>Amount ({currencySymbol})</Label>
@@ -374,7 +406,26 @@ function EditExpenseDialog({
         <div className="space-y-3">
           <div>
             <Label>Category</Label>
-            <Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+            {(() => {
+              const expType = expense?.expenseType ?? "operating";
+              const cats = expType === "cogs" ? INVENTORY_CATEGORIES : OPERATING_CATEGORIES;
+              const isPreset = cats.includes(form.category);
+              return (
+                <>
+                  <select
+                    className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
+                    value={isPreset ? form.category : "Other"}
+                    onChange={(e) => setForm({ ...form, category: e.target.value === "Other" ? "" : e.target.value })}
+                  >
+                    {cats.map((c) => <option key={c} value={c}>{c}</option>)}
+                    <option value="Other">Other</option>
+                  </select>
+                  {!isPreset && (
+                    <Input className="mt-2" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="Enter custom category" />
+                  )}
+                </>
+              );
+            })()}
           </div>
           <div>
             <Label>Amount ({currencySymbol})</Label>
