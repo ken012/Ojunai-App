@@ -120,6 +120,68 @@ public class AdminController : ControllerBase
     }
 
     // ═════════════════════════════════════════════════════════════════════════════
+    // PRODUCT RECATEGORIZATION
+    // ═════════════════════════════════════════════════════════════════════════════
+
+    [HttpPost("recategorize-products")]
+    public async Task<IActionResult> RecategorizeProducts(
+        [FromQuery] string key,
+        [FromQuery] Guid? businessId = null,
+        [FromQuery] bool aggressive = false)
+    {
+        var auth = ValidateAdminKey(key);
+        if (auth != null) return auth;
+
+        var query = _db.Products.Where(p => p.IsActive);
+        if (businessId.HasValue)
+            query = query.Where(p => p.BusinessId == businessId.Value);
+
+        var products = await query.ToListAsync();
+        var changes = new List<object>();
+        var recategorized = 0;
+
+        foreach (var product in products)
+        {
+            // Safe mode: only touch uncategorized or obviously wrong categories
+            if (!aggressive && product.Category != null
+                && product.Category != "Uncategorized"
+                && product.Category != "General / Other")
+                continue;
+
+            var (newCat, newSub) = Common.CategoryInferrer.Infer(product.Name);
+            if (newCat == null) continue;
+
+            var oldCat = product.Category ?? "Uncategorized";
+            var oldSub = product.Subcategory;
+
+            if (newCat == oldCat && newSub == oldSub) continue;
+
+            changes.Add(new
+            {
+                product = product.Name,
+                from = oldSub != null ? $"{oldCat} / {oldSub}" : oldCat,
+                to = newSub != null ? $"{newCat} / {newSub}" : newCat,
+            });
+
+            product.Category = newCat;
+            product.Subcategory = newSub;
+            recategorized++;
+        }
+
+        if (recategorized > 0)
+            await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            mode = aggressive ? "aggressive" : "safe",
+            total = products.Count,
+            recategorized,
+            unchanged = products.Count - recategorized,
+            changes,
+        });
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════
     // BILLING ADMIN — subscription overview and event audit log
     // ═════════════════════════════════════════════════════════════════════════════
 
