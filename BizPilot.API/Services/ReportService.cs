@@ -467,11 +467,11 @@ public partial class ReportService : IReportService
                 {
                     Id = s.Id,
                     RefId = MakeRef(s.Id, "SL"),
-                    Type = s.IsDeleted ? "sale_voided" : "sale",
+                    Type = s.IsDeleted ? (s.DeleteReason == "returned" ? "sale_returned" : "sale_voided") : "sale",
                     Description = $"Sold {itemSummary} for {cs}{s.TotalAmount:N0}"
                         + (s.Contact != null ? $" to {s.Contact.Name}" : "")
                         + (s.PaymentStatus != PaymentStatus.Paid ? $" ({s.PaymentStatus})" : "")
-                        + (s.IsDeleted ? " [VOIDED]" : ""),
+                        + (s.IsDeleted ? (s.DeleteReason == "returned" ? " [RETURNED]" : " [VOIDED]") : ""),
                     Amount = s.TotalAmount,
                     ContactName = s.Contact?.Name,
                     RecordedBy = s.RecordedByName,
@@ -488,14 +488,16 @@ public partial class ReportService : IReportService
                     {
                         Id = s.Id,
                         RefId = MakeRef(s.Id, "SL"),
-                        Type = "void_event",
-                        Description = $"Sale voided: {itemSummary} ({cs}{s.TotalAmount:N0})"
+                        Type = s.DeleteReason == "returned" ? "return_event" : "void_event",
+                        Description = (s.DeleteReason == "returned"
+                            ? $"Sale returned: {itemSummary} ({cs}{s.TotalAmount:N0})"
+                            : $"Sale voided: {itemSummary} ({cs}{s.TotalAmount:N0})")
                             + (s.Contact != null ? $" — {s.Contact.Name}" : "")
                             + $" — stock returned",
                         Amount = s.TotalAmount,
                         ContactName = s.Contact?.Name,
                         RecordedBy = s.RecordedByName,
-                        Source = "Void",
+                        Source = s.DeleteReason == "returned" ? "Return" : "Void",
                         Details = $"Original sale {MakeRef(s.Id, "SL")} from {s.CreatedAtUtc:dd MMM yyyy HH:mm}",
                         CreatedAtUtc = s.DeletedAtUtc.Value
                     });
