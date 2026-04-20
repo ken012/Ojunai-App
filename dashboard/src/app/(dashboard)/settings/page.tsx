@@ -201,11 +201,6 @@ function SettingsPage() {
           </div>
           <Separator />
           <div className="flex justify-between">
-            <span className="text-sm text-slate-500">Large Sale Alert</span>
-            <span className="text-sm font-mono">{cs}{(business?.largeSaleThreshold && business.largeSaleThreshold > 0 ? business.largeSaleThreshold : 100000).toLocaleString()}</span>
-          </div>
-          <Separator />
-          <div className="flex justify-between">
             <span className="text-sm text-slate-500">Status</span>
             <Badge variant={business?.isActive ? "default" : "secondary"}>
               {business?.isActive ? "Active" : "Inactive"}
@@ -230,7 +225,6 @@ function SettingsPage() {
           {[
             { key: "alertLowStock" as const, label: "Low Stock Alerts", desc: "When a product drops below its threshold after a sale" },
             { key: "alertDailySummary" as const, label: "Daily Summary", desc: "Sales, expenses, and net sent at 8 PM daily" },
-            { key: "alertLargeSale" as const, label: "Large Sale Alert", desc: `When a sale exceeds ${cs}${(business?.largeSaleThreshold && business.largeSaleThreshold > 0 ? business.largeSaleThreshold : 100000).toLocaleString()}` },
           ].map(({ key, label, desc }) => (
             <label key={key} className="flex items-start gap-3 cursor-pointer">
               <input
@@ -252,6 +246,45 @@ function SettingsPage() {
               </div>
             </label>
           ))}
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+              checked={business?.alertLargeSale ?? true}
+              onChange={async (e) => {
+                try {
+                  const { data } = await api.put<{ data: typeof business }>("/business", { alertLargeSale: e.target.checked });
+                  const updated = data.data!;
+                  setBusiness(updated);
+                  if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                } catch { /* silent */ }
+              }}
+            />
+            <div>
+              <p className="text-sm font-medium text-slate-700">Large Sale Alert</p>
+              <p className="text-xs text-slate-400">Get notified when a sale exceeds the threshold</p>
+            </div>
+          </label>
+          {business?.alertLargeSale && (
+            <div className="ml-7">
+              <Label className="text-xs">Alert Threshold</Label>
+              <Input
+                type="number"
+                value={business?.largeSaleThreshold?.toString() ?? "100000"}
+                placeholder="e.g. 100000"
+                onChange={async (e) => {
+                  const val = Number(e.target.value);
+                  try {
+                    const { data } = await api.put<{ data: typeof business }>("/business", { largeSaleThreshold: val || 100000 });
+                    const updated = data.data!;
+                    setBusiness(updated);
+                    if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                  } catch { /* silent */ }
+                }}
+              />
+              <p className="text-xs text-slate-400 mt-1">Alert when a sale exceeds {cs}{(business?.largeSaleThreshold ?? 100000).toLocaleString()}</p>
+            </div>
+          )}
         </CardContent>
       </Card>}
 
@@ -1385,7 +1418,6 @@ function EditBusinessDialog({
     city: "",
     state: "",
     country: "",
-    largeSaleThreshold: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1399,7 +1431,6 @@ function EditBusinessDialog({
       city: business.city ?? "",
       state: business.state ?? "",
       country: business.country ?? "",
-      largeSaleThreshold: business.largeSaleThreshold?.toString() ?? "100000",
     });
     setInitialized(true);
   }
@@ -1415,7 +1446,6 @@ function EditBusinessDialog({
         city: form.city,
         state: form.state,
         country: form.country,
-        largeSaleThreshold: form.largeSaleThreshold ? Number(form.largeSaleThreshold) : null,
       });
       onSaved(data.data!);
       handleClose();
@@ -1428,7 +1458,7 @@ function EditBusinessDialog({
   }
 
   function handleClose() {
-    setForm({ businessType: "", currency: "NGN", city: "", state: "", country: "", largeSaleThreshold: "" });
+    setForm({ businessType: "", currency: "NGN", city: "", state: "", country: "" });
     setError(null);
     setInitialized(false);
     onClose();
@@ -1506,16 +1536,6 @@ function EditBusinessDialog({
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
-          </div>
-          <div>
-            <Label>Large Sale Alert Threshold</Label>
-            <Input
-              type="number"
-              value={form.largeSaleThreshold}
-              onChange={(e) => setForm({ ...form, largeSaleThreshold: e.target.value })}
-              placeholder="100000"
-            />
-            <p className="text-xs text-slate-400 mt-1">Get a WhatsApp alert when a sale exceeds this amount.</p>
           </div>
           {error && <p className="text-xs text-red-500">{error}</p>}
         </div>
