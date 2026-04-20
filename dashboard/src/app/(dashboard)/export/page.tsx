@@ -26,7 +26,6 @@ import type {
   ExpenseDto,
   ProductDto,
   ContactDto,
-  ActivityFeedDto,
   PaginatedActivityResult,
   MonthlyPnlDto,
   DashboardOverviewDto,
