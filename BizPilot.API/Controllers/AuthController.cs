@@ -1,8 +1,11 @@
 using BizPilot.API.Common;
+using BizPilot.API.Data;
 using BizPilot.API.DTOs.Auth;
+using BizPilot.API.Services;
 using BizPilot.API.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace BizPilot.API.Controllers;
 
@@ -10,11 +13,15 @@ namespace BizPilot.API.Controllers;
 public class AuthController : BizPilotBaseController
 {
     private readonly IAuthService _auth;
+    private readonly AuthService _authConcrete;
+    private readonly AppDbContext _db;
     private readonly IWhatsAppService _whatsApp;
 
-    public AuthController(IAuthService auth, IWhatsAppService whatsApp)
+    public AuthController(IAuthService auth, AppDbContext db, IWhatsAppService whatsApp)
     {
         _auth = auth;
+        _authConcrete = (AuthService)auth;
+        _db = db;
         _whatsApp = whatsApp;
     }
 
@@ -75,6 +82,15 @@ public class AuthController : BizPilotBaseController
     public async Task<ActionResult<ApiResponse<object>>> ChangePassword([FromBody] ChangePasswordRequest request)
     {
         await _auth.ChangePasswordAsync(UserId, request.CurrentPassword, request.NewPassword);
+
+        // Re-issue JWT cookie with the new TokenVersion so the session doesn't expire
+        var user = await _db.Users.Include(u => u.Business).FirstOrDefaultAsync(u => u.Id == UserId);
+        if (user != null)
+        {
+            var response = _authConcrete.BuildAuthResponsePublic(user, user.Business, overrideMustChange: false);
+            SetAuthCookie(response.Token!, response.ExpiresAt);
+        }
+
         return Ok(ApiResponse<object>.Ok(null!, "Password changed successfully."));
     }
 

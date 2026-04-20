@@ -214,6 +214,9 @@ public class AuthService : IAuthService
         await _db.SaveChangesAsync();
     }
 
+    public AuthResponse BuildAuthResponsePublic(User user, Business business, bool? overrideMustChange = null)
+        => BuildAuthResponse(user, business, overrideMustChange);
+
     private AuthResponse BuildAuthResponse(User user, Business business, bool? overrideMustChange = null)
     {
         var token = GenerateJwt(user, business.Id);
