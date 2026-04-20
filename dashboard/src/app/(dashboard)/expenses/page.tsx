@@ -57,7 +57,7 @@ const INVENTORY_CATEGORIES = [
 
 export default function ExpensesPage() {
   const [page, setPage] = useState(1);
-  const [expenseTab, setExpenseTab] = useState<"operating" | "cogs">("operating");
+  const [expenseTab, setExpenseTab] = useState<"all" | "operating" | "cogs">("all");
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<ExpenseDto | null>(null);
   const [deleting, setDeleting] = useState<ExpenseDto | null>(null);
@@ -66,7 +66,7 @@ export default function ExpensesPage() {
     queryKey: ["expenses", page, expenseTab],
     queryFn: async () => {
       const { data } = await api.get<{ data: PaginatedResult<ExpenseDto> }>(
-        `/expenses?page=${page}&pageSize=20&expenseType=${expenseTab}`
+        `/expenses?page=${page}&pageSize=20${expenseTab !== "all" ? `&expenseType=${expenseTab}` : ""}`
       );
       return data.data!;
     },
@@ -86,6 +86,16 @@ export default function ExpensesPage() {
 
       {/* Expense Type Tabs */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit">
+        <button
+          onClick={() => { setExpenseTab("all"); setPage(1); }}
+          className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+            expenseTab === "all"
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          All
+        </button>
         <button
           onClick={() => { setExpenseTab("operating"); setPage(1); }}
           className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
@@ -113,7 +123,7 @@ export default function ExpensesPage() {
           <Card>
             <CardContent className="p-5">
               <p className="text-xs text-slate-500 uppercase tracking-wide">
-                {expenseTab === "operating" ? "Operating Expenses" : "Inventory Expenses"}
+                {expenseTab === "all" ? "All Expenses" : expenseTab === "operating" ? "Operating Expenses" : "Inventory Expenses"}
               </p>
               <p className="text-2xl font-bold text-red-500 mt-1">{formatNaira(totalOnPage)}</p>
               <p className="text-xs text-slate-400">This page</p>
@@ -219,7 +229,7 @@ export default function ExpensesPage() {
         </CardContent>
       </Card>
 
-      <AddExpenseDialog open={adding} onClose={() => setAdding(false)} defaultExpenseType={expenseTab} />
+      <AddExpenseDialog open={adding} onClose={() => setAdding(false)} defaultExpenseType={expenseTab === "all" ? "operating" : expenseTab} />
       <EditExpenseDialog
         expense={editing}
         open={editing !== null}
