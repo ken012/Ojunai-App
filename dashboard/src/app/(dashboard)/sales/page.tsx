@@ -576,7 +576,7 @@ function SaleDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Sale Details</DialogTitle>
         </DialogHeader>
@@ -600,8 +600,8 @@ function SaleDetailDialog({
             </div>
 
             <div>
-              <h4 className="text-xs font-semibold text-slate-500 uppercase mb-2">Items</h4>
-              <div className="space-y-1">
+              <h4 className="text-xs font-semibold text-slate-500 uppercase mb-2">Items ({detail.items.length})</h4>
+              <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
                 {detail.items.map((item) => (
                   <div key={item.productId} className="flex justify-between text-sm">
                     <span>
