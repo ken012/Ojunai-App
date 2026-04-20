@@ -18,6 +18,8 @@
 | Failed payments | `/admin/metrics/failed-payments?key=KEY` |
 | Billing overview | `/admin/billing-overview?key=KEY` |
 | Billing event log | `/admin/billing-events?key=KEY` |
+| Recategorize products | `POST /admin/recategorize-products?key=KEY` |
+| Rollback import | `POST /import/rollback/{jobId}` |
 | AI misparse rate | `/admin/telemetry/misparse-rate?key=KEY` |
 | AI confidence | `/admin/telemetry/confidence-distribution?key=KEY` |
 | AI retry patterns | `/admin/telemetry/retry-patterns?key=KEY` |
@@ -330,6 +332,82 @@ Three tabs on the Sales page:
 - **Active** — current sales with void and return buttons
 - **Voided** — sales voided due to mistakes (stock restored)
 - **Returned** — sales returned by customers (stock restored, tracked separately)
+
+---
+
+## Product Management
+
+### POST /admin/recategorize-products
+
+**Purpose:** Fix miscategorized products by re-running the auto-detection logic on existing inventory.
+
+**Parameters:**
+- `key` (required)
+- `businessId` (optional) — limit to one business
+- `aggressive` (optional, default false) — if true, re-categorizes ALL products including manually set ones. If false (safe mode), only touches Uncategorized / "General / Other" products.
+
+**Usage:**
+
+Safe mode (only fixes uncategorized products):
+```
+POST /admin/recategorize-products?key=KEY
+```
+
+Aggressive mode (re-categorizes everything):
+```
+POST /admin/recategorize-products?key=KEY&aggressive=true
+```
+
+For a specific business:
+```
+POST /admin/recategorize-products?key=KEY&businessId=UUID&aggressive=true
+```
+
+**Returns:**
+```json
+{
+  "mode": "aggressive",
+  "total": 200,
+  "recategorized": 45,
+  "unchanged": 155,
+  "changes": [
+    { "product": "Gold Amethyst Ring", "from": "Uncategorized", "to": "Jewelry & Accessories / Rings" },
+    { "product": "Gold Diamond Bracelet", "from": "Clothing & Apparel / Underwear", "to": "Jewelry & Accessories / Bracelets" }
+  ]
+}
+```
+
+**When to use:**
+- After deploying an updated CategoryInferrer (new categories or improved keyword matching)
+- After a CSV import produced wrong categories
+- To clean up a specific business's inventory
+
+---
+
+## CSV Import Management
+
+### POST /import/rollback/{jobId}
+
+**Purpose:** Undo an entire CSV import batch. Requires ManageSettings permission (Owner/Admin only).
+
+**What it does:**
+- Products created by the import: deactivated (`IsActive = false`)
+- Expenses created by the import: soft-deleted
+- Contacts and ledger entries: left untouched (too risky to delete)
+- Job status set to "RolledBack"
+
+**Usage:** Available via the dashboard Import page — click "Undo Import" on a completed import card. Or via API:
+```
+POST /import/rollback/{jobId}
+```
+
+**Returns:**
+```json
+{
+  "success": true,
+  "message": "Import rolled back. 45 records affected."
+}
+```
 
 ---
 
