@@ -302,7 +302,7 @@ function AddExpenseDialog({ open, onClose, defaultExpenseType }: { open: boolean
                 if (val === "Other") {
                   setForm({ ...form, category: "" });
                 } else {
-                  const inventoryKeywords = ["inventory", "stock", "goods", "supplies", "raw material", "materials", "merchandise", "purchase", "restock"];
+                  const inventoryKeywords = ["inventory", "stock", "goods for", "raw material", "merchandise", "replenish", "restock"];
                   const isInventory = inventoryKeywords.some(k => val.toLowerCase().includes(k));
                   setForm({ ...form, category: val, expenseType: isInventory ? "cogs" : form.expenseType });
                 }
