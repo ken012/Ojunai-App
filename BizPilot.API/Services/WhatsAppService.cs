@@ -798,6 +798,7 @@ public class WhatsAppService : IWhatsAppService
             "help" => HandleHelp(),
             "show_roles" => HandleShowRoles(),
             "show_reports" => HandleShowReports(),
+            "get_export_link" => HandleGetExportLink(),
             _ => HandleUnknown()
         };
     }
@@ -1689,6 +1690,9 @@ public class WhatsAppService : IWhatsAppService
         if (topProduct != null)
             sb.AppendLine($"🏆 Top today: {topProduct.Name} ({_cs}{topProduct.Rev:N0})");
 
+        sb.AppendLine();
+        sb.AppendLine("📥 Download full report: app.bizpilot-ai.com/export");
+
         return sb.ToString().TrimEnd();
     }
 
@@ -1702,7 +1706,7 @@ public class WhatsAppService : IWhatsAppService
     {
         var s = await _reports.GetWeeklySummaryAsync(businessId, null);
         var top = s.TopProducts.Count > 0 ? $"\n🏆 Top: {s.TopProducts[0].ProductName} ({_cs}{s.TopProducts[0].TotalRevenue:N0})" : "";
-        return $"📊 *This Week ({s.WeekStart} – {s.WeekEnd})*\nSales: {_cs}{s.TotalSales:N0}\nExpenses: {_cs}{s.TotalExpenses:N0}\nEst. Profit: {_cs}{s.EstimatedProfit:N0}" + top;
+        return $"📊 *This Week ({s.WeekStart} – {s.WeekEnd})*\nSales: {_cs}{s.TotalSales:N0}\nExpenses: {_cs}{s.TotalExpenses:N0}\nEst. Profit: {_cs}{s.EstimatedProfit:N0}" + top + "\n\n📥 Download full report: app.bizpilot-ai.com/export";
     }
 
     private async Task<string> HandleGetAllStockAsync(Guid businessId, JsonElement ba)
@@ -1773,7 +1777,7 @@ public class WhatsAppService : IWhatsAppService
                 : $"• {b.ContactName}: {_cs}{b.TotalPayable:N0}");
 
         var countNote = balances.Count > 1 ? $" ({balances.Count} contacts)" : "";
-        return $"{title}{countNote}\n{string.Join("\n", lines)}\n\n*Total: {_cs}{total:N0}*";
+        return $"{title}{countNote}\n{string.Join("\n", lines)}\n\n*Total: {_cs}{total:N0}*\n\n📥 Download full report: app.bizpilot-ai.com/export";
     }
 
     private async Task<string> HandleGetContactBalanceAsync(Guid businessId, JsonElement ba)
@@ -1805,7 +1809,7 @@ public class WhatsAppService : IWhatsAppService
     private async Task<string> HandleGetProfitEstimateAsync(Guid businessId)
     {
         var pos = await _reports.GetCashPositionAsync(businessId);
-        return $"📈 *This Month*\nSales: {_cs}{pos.TotalSalesThisMonth:N0}\nExpenses: {_cs}{pos.TotalExpensesThisMonth:N0}\nEst. Cash In: {_cs}{pos.EstimatedCashIn:N0}\nReceivables: {_cs}{pos.OutstandingReceivables:N0}\nPayables: {_cs}{pos.OutstandingPayables:N0}\n*Net: {_cs}{pos.NetPosition:N0}*";
+        return $"📈 *This Month*\nSales: {_cs}{pos.TotalSalesThisMonth:N0}\nExpenses: {_cs}{pos.TotalExpensesThisMonth:N0}\nEst. Cash In: {_cs}{pos.EstimatedCashIn:N0}\nReceivables: {_cs}{pos.OutstandingReceivables:N0}\nPayables: {_cs}{pos.OutstandingPayables:N0}\n*Net: {_cs}{pos.NetPosition:N0}*\n\n📥 Download full report: app.bizpilot-ai.com/export";
     }
 
     private async Task<string> HandleGetProductSalesTodayAsync(Guid businessId, JsonElement ba)
@@ -2734,7 +2738,21 @@ public class WhatsAppService : IWhatsAppService
         "• \"What did Mary sell\" — staff sales\n" +
         "• \"Who sold rice\" — which staff sold a product\n\n" +
         "📋 *Activity:*\n" +
-        "• \"Today's transactions\" — full log with times + buyers";
+        "• \"Today's transactions\" — full log with times + buyers\n\n" +
+        "📥 *Export:*\n" +
+        "• \"Export my data\" — get link to download reports";
+
+    private static string HandleGetExportLink() =>
+        "📥 *Export Your Data*\n\n" +
+        "Download your sales, expenses, inventory, and more from the dashboard:\n\n" +
+        "👉 app.bizpilot-ai.com/export\n\n" +
+        "Available exports:\n" +
+        "• Sales & revenue (CSV or PDF)\n" +
+        "• Expenses breakdown\n" +
+        "• Inventory / products\n" +
+        "• Contacts & balances\n" +
+        "• Monthly P&L\n" +
+        "• Tax-ready package for your accountant";
 
     private static string HandleUnknown() =>
         "I didn't quite get that. Try:\n\n" +

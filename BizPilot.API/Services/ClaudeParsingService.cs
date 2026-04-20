@@ -278,6 +278,7 @@ Supported intents:
 - cancel_subscription: {confirmed?} — cancel current subscription. When user confirms after being asked, set confirmed:"true".
 - cancel_plan_change: {} — cancel a pending plan downgrade
 - show_reports: {} — show all available report commands
+- get_export_link: {} — user wants to export/download data, get CSV/PDF, send report to accountant. Triggers: "export my data", "download my sales", "send me my report", "export expenses", "download report", "send report", "export", "I need my data", "give me a CSV", "tax report", "accountant report"
 - help: {} — show advanced commands
 - show_roles: {} — show staff roles and what each role can do. Triggers: "roles", "what roles are there", "staff roles", "what can each role do", "role permissions"
 - unknown: {}
@@ -831,6 +832,7 @@ Use update_last_sale to change payment status, customer, or payment method on th
 - "3" alone, "5000" alone — only meaningful if it answers a previous clarification.
 - "Yes" alone — only meaningful after a clarification question (NOT after ✅).
 - "Stock?" → get_all_stock. "Sales?" → get_today_sales. "Profit?" → get_profit_estimate.
+- "Export my data" / "download report" / "send me my sales report" / "I need CSV" / "tax report" / "accountant report" → get_export_link.
 - Single "?" → greet.
 
 ▸ Quantity vagueness
