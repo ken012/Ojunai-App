@@ -19,6 +19,7 @@ import {
   X,
   Activity,
   FileUp,
+  Download,
 } from "lucide-react";
 
 const navItems = [
@@ -29,6 +30,7 @@ const navItems = [
   { href: "/contacts", label: "Contacts & Ledger", icon: Users },
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/activity", label: "Activity", icon: Activity },
+  { href: "/export", label: "Export & Share", icon: Download },
   { href: "/import", label: "Import", icon: FileUp },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
