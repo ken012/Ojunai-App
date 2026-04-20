@@ -123,7 +123,7 @@ public class AdminController : ControllerBase
     // PRODUCT RECATEGORIZATION
     // ═════════════════════════════════════════════════════════════════════════════
 
-    [HttpPost("recategorize-products")]
+    [HttpGet("recategorize-products")]
     public async Task<IActionResult> RecategorizeProducts(
         [FromQuery] string key,
         [FromQuery] Guid? businessId = null,
