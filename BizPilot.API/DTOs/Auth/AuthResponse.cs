@@ -36,5 +36,7 @@ public class BusinessDto
     public bool AlertLowStock { get; set; } = true;
     public bool AlertDailySummary { get; set; } = true;
     public bool AlertLargeSale { get; set; } = true;
+    public bool ConfirmLargeSales { get; set; }
+    public decimal ConfirmLargeSaleThreshold { get; set; }
     public bool IsActive { get; set; }
 }

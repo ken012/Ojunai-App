@@ -43,6 +43,8 @@ export interface BusinessDto {
   alertLowStock?: boolean;
   alertDailySummary?: boolean;
   alertLargeSale?: boolean;
+  confirmLargeSales?: boolean;
+  confirmLargeSaleThreshold?: number;
   plan?: string;
   subscribedPlan?: string;
   trialEndsAt?: string;

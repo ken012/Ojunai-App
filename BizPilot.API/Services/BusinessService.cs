@@ -41,6 +41,8 @@ public class BusinessService : IBusinessService
         if (request.AlertLowStock.HasValue) business.AlertLowStock = request.AlertLowStock.Value;
         if (request.AlertDailySummary.HasValue) business.AlertDailySummary = request.AlertDailySummary.Value;
         if (request.AlertLargeSale.HasValue) business.AlertLargeSale = request.AlertLargeSale.Value;
+        if (request.ConfirmLargeSales.HasValue) business.ConfirmLargeSales = request.ConfirmLargeSales.Value;
+        if (request.ConfirmLargeSaleThreshold.HasValue) business.ConfirmLargeSaleThreshold = request.ConfirmLargeSaleThreshold.Value;
 
         await _db.SaveChangesAsync();
         return ToDto(business);
@@ -73,6 +75,8 @@ public class BusinessService : IBusinessService
         AlertLowStock = b.AlertLowStock,
         AlertDailySummary = b.AlertDailySummary,
         AlertLargeSale = b.AlertLargeSale,
+        ConfirmLargeSales = b.ConfirmLargeSales,
+        ConfirmLargeSaleThreshold = b.ConfirmLargeSaleThreshold,
         IsActive = b.IsActive
     };
 }

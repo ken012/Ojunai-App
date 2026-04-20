@@ -14,4 +14,6 @@ public class UpdateBusinessRequest
     public bool? AlertLowStock { get; set; }
     public bool? AlertDailySummary { get; set; }
     public bool? AlertLargeSale { get; set; }
+    public bool? ConfirmLargeSales { get; set; }
+    public decimal? ConfirmLargeSaleThreshold { get; set; }
 }

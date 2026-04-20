@@ -255,6 +255,57 @@ function SettingsPage() {
         </CardContent>
       </Card>}
 
+      {/* WhatsApp Sale Confirmation */}
+      {hasPermission(Permission.ManageSettings) && <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            WhatsApp Sale Confirmation
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-slate-400">When enabled, the WhatsApp bot will ask for confirmation before recording sales above the threshold.</p>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+              checked={business?.confirmLargeSales ?? false}
+              onChange={async (e) => {
+                try {
+                  const { data } = await api.put<{ data: typeof business }>("/business", { confirmLargeSales: e.target.checked });
+                  const updated = data.data!;
+                  setBusiness(updated);
+                  if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                } catch { /* silent */ }
+              }}
+            />
+            <div>
+              <p className="text-sm font-medium text-slate-700">Confirm large sales via WhatsApp</p>
+              <p className="text-xs text-slate-400">Bot will ask &quot;Confirm?&quot; before recording sales above the threshold</p>
+            </div>
+          </label>
+          {business?.confirmLargeSales && (
+            <div>
+              <Label className="text-xs">Confirmation Threshold</Label>
+              <Input
+                type="number"
+                value={business?.confirmLargeSaleThreshold?.toString() ?? ""}
+                placeholder="e.g. 500000"
+                onChange={async (e) => {
+                  const val = Number(e.target.value);
+                  try {
+                    const { data } = await api.put<{ data: typeof business }>("/business", { confirmLargeSaleThreshold: val || 0 });
+                    const updated = data.data!;
+                    setBusiness(updated);
+                    if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                  } catch { /* silent */ }
+                }}
+              />
+              <p className="text-xs text-slate-400 mt-1">Sales above {cs}{(business?.confirmLargeSaleThreshold ?? 0).toLocaleString()} will require WhatsApp confirmation</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>}
+
       {/* Team Members — Owner/Admin only */}
       {hasPermission(Permission.ManageStaff) && <TeamMembersCard />}
 
@@ -535,6 +586,8 @@ type BusinessShape = {
   alertLowStock?: boolean;
   alertDailySummary?: boolean;
   alertLargeSale?: boolean;
+  confirmLargeSales?: boolean;
+  confirmLargeSaleThreshold?: number;
   plan?: string;
   trialEndsAt?: string;
   isActive: boolean;

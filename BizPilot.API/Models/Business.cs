@@ -33,6 +33,8 @@ public class Business
     public bool AlertLowStock { get; set; } = true;
     public bool AlertDailySummary { get; set; } = true;
     public bool AlertLargeSale { get; set; } = true;
+    public bool ConfirmLargeSales { get; set; } = false;
+    public decimal ConfirmLargeSaleThreshold { get; set; } = 0;
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 

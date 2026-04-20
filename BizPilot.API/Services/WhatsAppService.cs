@@ -1007,8 +1007,8 @@ public class WhatsAppService : IWhatsAppService
         // when the user replies "yes". Only applies to WhatsApp sales (dashboard has a visual confirm).
         var projectedTotal = saleItems.Sum(i => i.Quantity * i.UnitPrice);
         var business = await _db.Businesses.FindAsync(businessId);
-        if (business != null && business.AlertLargeSale && business.LargeSaleThreshold > 0
-            && projectedTotal >= business.LargeSaleThreshold && recordedBy != null)
+        if (business != null && business.ConfirmLargeSales && business.ConfirmLargeSaleThreshold > 0
+            && projectedTotal >= business.ConfirmLargeSaleThreshold && recordedBy != null)
         {
             var pendingPayload = JsonSerializer.Serialize(new
             {
@@ -1017,7 +1017,7 @@ public class WhatsAppService : IWhatsAppService
                 paymentStatus = paymentStatus.ToString(),
                 paymentMethod
             });
-            var question = $"⚠️ This sale is for {_cs}{projectedTotal:N0} which exceeds your large sale threshold ({_cs}{business.LargeSaleThreshold:N0}). Confirm? (yes/no)";
+            var question = $"⚠️ This sale is for {_cs}{projectedTotal:N0} which exceeds your confirmation threshold ({_cs}{business.ConfirmLargeSaleThreshold:N0}). Confirm? (yes/no)";
             await SetPendingActionAsync(businessId, recordedBy.Id, "confirm_large_sale", pendingPayload, "confirmation", question);
             return question;
         }
