@@ -985,7 +985,7 @@ function WastageDialog({ open, onClose, products }: { open: boolean; onClose: ()
 }
 
 // ─── Main page ───────────────────────────────────────────────────────────────
-type StockFilter = "all" | "low" | "sufficient";
+type StockFilter = "all" | "low" | "sufficient" | "wastage";
 
 export default function InventoryPage() {
   const [adding, setAdding] = useState(false);
@@ -1071,7 +1071,9 @@ export default function InventoryPage() {
     return Array.from(cats).sort();
   }, [allProducts]);
 
+  const isWastageView = stockFilter === "wastage";
   const filteredProducts = useMemo(() => {
+    if (stockFilter === "wastage") return [];
     let items = allProducts;
     if (stockFilter === "low") items = items.filter((p) => lowStockIds.has(p.id));
     if (stockFilter === "sufficient") items = items.filter((p) => !lowStockIds.has(p.id));
@@ -1178,7 +1180,7 @@ export default function InventoryPage() {
       )}
 
       {/* Clickable summary cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card
           className={`cursor-pointer transition-all ${stockFilter === "all" ? "ring-2 ring-sky-500" : "hover:shadow-md"}`}
           onClick={() => setStockFilter("all")}
@@ -1207,6 +1209,16 @@ export default function InventoryPage() {
             <Package size={20} className="mx-auto text-emerald-400 mb-1" />
             <p className="text-xl font-bold text-emerald-600">{sufficientCount}</p>
             <p className="text-xs text-slate-500">Sufficient</p>
+          </CardContent>
+        </Card>
+        <Card
+          className={`cursor-pointer transition-all ${stockFilter === "wastage" ? "ring-2 ring-orange-500" : "hover:shadow-md"}`}
+          onClick={() => setStockFilter("wastage")}
+        >
+          <CardContent className="p-4 text-center">
+            <Ban size={20} className="mx-auto text-orange-400 mb-1" />
+            <p className="text-xl font-bold text-orange-600">{lossesData?.length ?? "—"}</p>
+            <p className="text-xs text-slate-500">Wasted / Damaged</p>
           </CardContent>
         </Card>
       </div>
@@ -1239,7 +1251,7 @@ export default function InventoryPage() {
         </div>
 
       {/* Wastage & Damaged History */}
-      {lossesData && lossesData.length > 0 && (
+      {(isWastageView || (!isWastageView && lossesData && lossesData.length > 0)) && (
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-2 mb-3">
@@ -1249,7 +1261,7 @@ export default function InventoryPage() {
               </h3>
             </div>
             <div className="space-y-2">
-              {lossesData.slice(0, 8).map((entry) => (
+              {(isWastageView ? lossesData ?? [] : (lossesData ?? []).slice(0, 8)).map((entry) => (
                 <div
                   key={entry.id}
                   className="flex items-center justify-between border rounded-lg px-3 py-2"

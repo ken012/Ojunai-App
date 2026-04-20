@@ -93,7 +93,7 @@ export default function ExpensesPage() {
               : "text-slate-500 hover:text-slate-700"
           }`}
         >
-          Cost of Goods Sold
+          Inventory Expenses
         </button>
       </div>
 
@@ -102,7 +102,7 @@ export default function ExpensesPage() {
           <Card>
             <CardContent className="p-5">
               <p className="text-xs text-slate-500 uppercase tracking-wide">
-                {expenseTab === "operating" ? "Operating Expenses" : "Cost of Goods Sold"}
+                {expenseTab === "operating" ? "Operating Expenses" : "Inventory Expenses"}
               </p>
               <p className="text-2xl font-bold text-red-500 mt-1">{formatNaira(totalOnPage)}</p>
               <p className="text-xs text-slate-400">This page</p>
@@ -278,12 +278,17 @@ function AddExpenseDialog({ open, onClose, defaultExpenseType }: { open: boolean
               onChange={(e) => setForm({ ...form, expenseType: e.target.value as "operating" | "cogs" })}
             >
               <option value="operating">Operating Expense</option>
-              <option value="cogs">Cost of Goods Sold</option>
+              <option value="cogs">Inventory Expenses</option>
             </select>
           </div>
           <div>
             <Label>Category</Label>
-            <Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="e.g. Transport, Fuel, Rent" />
+            <Input value={form.category} onChange={(e) => {
+              const cat = e.target.value;
+              const inventoryCategories = ["inventory", "stock", "goods", "supplies", "raw materials", "materials", "merchandise"];
+              const isInventory = inventoryCategories.some(ic => cat.toLowerCase().includes(ic));
+              setForm({ ...form, category: cat, expenseType: isInventory ? "cogs" : form.expenseType });
+            }} placeholder={form.expenseType === "cogs" ? "e.g. Inventory, Stock, Raw Materials" : "e.g. Transport, Fuel, Rent"} />
           </div>
           <div>
             <Label>Amount ({currencySymbol})</Label>
