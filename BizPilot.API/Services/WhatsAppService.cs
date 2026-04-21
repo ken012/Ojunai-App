@@ -820,7 +820,7 @@ public class WhatsAppService : IWhatsAppService
             "help" => HandleHelp(),
             "show_roles" => HandleShowRoles(),
             "show_reports" => HandleShowReports(),
-            "get_export_link" => HandleGetExportLink(),
+            "get_export_link" => HandleGetExportLink(businessId, ba),
             _ => HandleUnknown()
         };
     }
@@ -2751,17 +2751,53 @@ public class WhatsAppService : IWhatsAppService
         "📥 *Export:*\n" +
         "• \"Export my data\" — get link to download reports";
 
-    private static string HandleGetExportLink() =>
-        "📥 *Export Your Data*\n\n" +
-        "Download your sales, expenses, inventory, and more from the dashboard:\n\n" +
-        "👉 app.bizpilot-ai.com/export\n\n" +
-        "Available exports:\n" +
-        "• Sales & revenue (CSV or PDF)\n" +
-        "• Expenses breakdown\n" +
-        "• Inventory / products\n" +
-        "• Contacts & balances\n" +
-        "• Monthly P&L\n" +
-        "• Tax-ready package for your accountant";
+    private string HandleGetExportLink(Guid businessId, JsonElement ba)
+    {
+        var reportType = ba.GetStringOrNull("reportType");
+
+        if (string.IsNullOrWhiteSpace(reportType))
+        {
+            return "📥 *Export Your Data*\n\n" +
+                   "Which report would you like as a PDF?\n\n" +
+                   "• *Sales report* — all sales for this month\n" +
+                   "• *Expenses report* — all expenses for this month\n" +
+                   "• *Monthly P&L* — profit & loss statement\n\n" +
+                   "Just say which one! e.g. \"Export my sales\"\n\n" +
+                   "For more export options (CSV, tax package, etc.):\n" +
+                   "👉 app.bizpilot-ai.com/export";
+        }
+
+        var validTypes = new HashSet<string> { "sales", "expenses", "monthly-pnl" };
+        if (!validTypes.Contains(reportType))
+        {
+            return $"I can generate PDF reports for sales, expenses, or monthly P&L.\n\n" +
+                   $"Try: \"Export my sales\" or \"Monthly P&L report\"\n\n" +
+                   $"For other exports: 👉 app.bizpilot-ai.com/export";
+        }
+
+        var now = DateTime.UtcNow;
+        var from = new DateOnly(now.Year, now.Month, 1);
+        var to = DateOnly.FromDateTime(now);
+
+        var secret = _config["Jwt:Secret"]!;
+        var baseUrl = _config["App:BaseUrl"] ?? "https://api.bizpilot-ai.com";
+        var token = ExportTokenHelper.GenerateToken(businessId, reportType, from, to, secret);
+        var downloadUrl = $"{baseUrl}/api/export/download?token={Uri.EscapeDataString(token)}";
+
+        var label = reportType switch
+        {
+            "sales" => "Sales Report",
+            "expenses" => "Expenses Report",
+            "monthly-pnl" => "Profit & Loss Statement",
+            _ => "Report"
+        };
+
+        return $"📥 *Your {label} is ready!*\n\n" +
+               $"Tap to download (link expires in 24 hours):\n" +
+               $"👉 {downloadUrl}\n\n" +
+               $"Covers: {from:dd MMM yyyy} – {to:dd MMM yyyy}\n\n" +
+               $"Need a different date range or format? Visit app.bizpilot-ai.com/export";
+    }
 
     private static string HandleUnknown() =>
         "I didn't quite get that. Try:\n\n" +
