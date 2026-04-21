@@ -72,7 +72,7 @@ export default function ExpensesPage() {
     },
   });
 
-  const totalOnPage = data?.items.reduce((s, e) => s + e.amount, 0) ?? 0;
+  const totalAmount = data?.totalAmount ?? 0;
 
   return (
     <div className="space-y-6">
@@ -125,8 +125,8 @@ export default function ExpensesPage() {
               <p className="text-xs text-slate-500 uppercase tracking-wide">
                 {expenseTab === "all" ? "All Expenses" : expenseTab === "operating" ? "Operating Expenses" : "Inventory Expenses"}
               </p>
-              <p className="text-2xl font-bold text-red-500 mt-1">{formatNaira(totalOnPage)}</p>
-              <p className="text-xs text-slate-400">This page</p>
+              <p className="text-2xl font-bold text-red-500 mt-1">{formatNaira(totalAmount)}</p>
+              <p className="text-xs text-slate-400">Total</p>
             </CardContent>
           </Card>
           <Card>

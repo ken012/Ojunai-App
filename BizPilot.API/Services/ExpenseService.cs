@@ -64,6 +64,7 @@ public class ExpenseService : IExpenseService
         }
 
         var total = await query.CountAsync();
+        var totalAmount = await query.SumAsync(e => e.Amount);
         var items = await query
             .OrderByDescending(e => e.CreatedAtUtc)
             .Skip((page - 1) * pageSize)
@@ -75,6 +76,7 @@ public class ExpenseService : IExpenseService
         {
             Items = items,
             TotalCount = total,
+            TotalAmount = totalAmount,
             Page = page,
             PageSize = pageSize
         };
