@@ -85,9 +85,11 @@ public class SalesController : BizPilotBaseController
     [RequirePermission(Permission.ViewOwnReports)]
     public async Task<ActionResult<ApiResponse<PaginatedResult<SaleSummaryDto>>>> GetAll(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
-        [FromQuery] DateTime? from = null, [FromQuery] DateTime? to = null)
+        [FromQuery] DateTime? from = null, [FromQuery] DateTime? to = null,
+        [FromQuery] string? paymentStatus = null, [FromQuery] string? paymentMethod = null,
+        [FromQuery] string? source = null, [FromQuery] Guid? customerId = null)
     {
-        var result = await _sales.GetAllAsync(BusinessId, page, pageSize, from, to);
+        var result = await _sales.GetAllAsync(BusinessId, page, pageSize, from, to, paymentStatus, paymentMethod, source, customerId);
         return Ok(ApiResponse<PaginatedResult<SaleSummaryDto>>.Ok(result));
     }
 

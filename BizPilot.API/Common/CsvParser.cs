@@ -190,6 +190,11 @@ public static class CsvParser
         ["mobile"] = "phonenumber",
         ["tel"] = "phonenumber",
 
+        // PaymentMethod
+        ["paymentmethod"] = "paymentmethod",
+        ["payment method"] = "paymentmethod",
+        ["method"] = "paymentmethod",
+
         // Ledger fields
         ["ledgertype"] = "ledgertype",
         ["ledger type"] = "ledgertype",

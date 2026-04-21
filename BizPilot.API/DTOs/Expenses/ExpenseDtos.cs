@@ -9,6 +9,7 @@ public class CreateExpenseRequest
     [MaxLength(500)] public string? Notes { get; set; }
     [MaxLength(200)] public string? PaidTo { get; set; }
     [MaxLength(20)] public string? ExpenseType { get; set; }
+    [MaxLength(50)] public string? PaymentMethod { get; set; }
     public DateTime? ExpenseDate { get; set; }
 }
 
@@ -19,6 +20,7 @@ public class UpdateExpenseRequest
     [MaxLength(500)] public string? Notes { get; set; }
     [MaxLength(200)] public string? PaidTo { get; set; }
     [MaxLength(20)] public string? ExpenseType { get; set; }
+    [MaxLength(50)] public string? PaymentMethod { get; set; }
 }
 
 public class ExpenseDto
@@ -29,6 +31,7 @@ public class ExpenseDto
     public decimal Amount { get; set; }
     public string? Notes { get; set; }
     public string? PaidTo { get; set; }
+    public string? PaymentMethod { get; set; }
     public string Source { get; set; } = "Manual";
     public DateTime CreatedAtUtc { get; set; }
 }

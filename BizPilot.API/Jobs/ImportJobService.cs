@@ -308,6 +308,7 @@ public class ImportJobService
                     errors.Add($"Row {rowNum}: Unknown payment status '{statusStr}' for '{name}'. Use: Paid, Unpaid, or PartiallyPaid. Defaulting to Paid.");
                 }
                 var status = Enum.TryParse<PaymentStatus>(statusStr, true, out var ps) ? ps : PaymentStatus.Paid;
+                var paymentMethod = row.GetValueOrDefault("paymentmethod");
 
                 await _sales.CreateAsync(job.BusinessId, new CreateSaleRequest
                 {
@@ -317,6 +318,7 @@ public class ImportJobService
                     },
                     ContactId = contactId,
                     PaymentStatus = status,
+                    PaymentMethod = paymentMethod,
                     SaleDate = saleDate
                 }, EntrySource.Import, user?.Id, user?.FullName);
 
@@ -356,6 +358,8 @@ public class ImportJobService
 
                 var expenseType = row.GetValueOrDefault("expensetype") ?? "operating";
 
+                var paymentMethod = row.GetValueOrDefault("paymentmethod");
+
                 // Direct entity creation — skips service-layer SaveChangesAsync per row
                 var expense = new Expense
                 {
@@ -364,6 +368,7 @@ public class ImportJobService
                     ExpenseType = expenseType,
                     Amount = amount!.Value,
                     PaidTo = row.GetValueOrDefault("paidto"),
+                    PaymentMethod = paymentMethod,
                     Notes = row.GetValueOrDefault("notes"),
                     Source = EntrySource.Import,
                     RecordedByUserId = user?.Id,

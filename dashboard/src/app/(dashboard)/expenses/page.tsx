@@ -61,12 +61,13 @@ export default function ExpensesPage() {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<ExpenseDto | null>(null);
   const [deleting, setDeleting] = useState<ExpenseDto | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState("");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["expenses", page, expenseTab],
+    queryKey: ["expenses", page, expenseTab, categoryFilter],
     queryFn: async () => {
       const { data } = await api.get<{ data: PaginatedResult<ExpenseDto> }>(
-        `/expenses?page=${page}&pageSize=20${expenseTab !== "all" ? `&expenseType=${expenseTab}` : ""}`
+        `/expenses?page=${page}&pageSize=20${expenseTab !== "all" ? `&expenseType=${expenseTab}` : ""}${categoryFilter ? `&category=${categoryFilter}` : ""}`
       );
       return data.data!;
     },
@@ -118,6 +119,16 @@ export default function ExpensesPage() {
         </button>
       </div>
 
+      <div className="flex items-center gap-3 flex-wrap">
+        <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
+          className="h-8 px-2 rounded-md border border-slate-200 text-xs">
+          <option value="">All Categories</option>
+          {(expenseTab === "cogs" ? INVENTORY_CATEGORIES : expenseTab === "operating" ? OPERATING_CATEGORIES : [...OPERATING_CATEGORIES, ...INVENTORY_CATEGORIES]).map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+      </div>
+
       {data && (
         <div className="grid grid-cols-2 gap-4">
           <Card>
@@ -156,6 +167,7 @@ export default function ExpensesPage() {
                     <TableHead>Category</TableHead>
                     <TableHead>Paid To</TableHead>
                     <TableHead>Notes</TableHead>
+                    <TableHead>Method</TableHead>
                     <TableHead>Source</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
                     <TableHead></TableHead>
@@ -177,6 +189,9 @@ export default function ExpensesPage() {
                       </TableCell>
                       <TableCell className="text-sm text-slate-500 max-w-xs truncate">
                         {expense.notes ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-xs text-slate-500">
+                        {expense.paymentMethod ?? <span className="text-slate-300">—</span>}
                       </TableCell>
                       <TableCell>
                         <SourceBadge source={expense.source} />
@@ -248,7 +263,7 @@ function AddExpenseDialog({ open, onClose, defaultExpenseType }: { open: boolean
   const qc = useQueryClient();
   const biz = useBusiness();
   const currencySymbol = CURRENCY_SYMBOLS[biz?.currency?.toUpperCase() ?? "NGN"] ?? biz?.currency ?? "\u20A6";
-  const [form, setForm] = useState({ category: "General", amount: "", paidTo: "", notes: "", expenseType: defaultExpenseType });
+  const [form, setForm] = useState({ category: "General", amount: "", paidTo: "", notes: "", expenseType: defaultExpenseType, paymentMethod: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -267,6 +282,7 @@ function AddExpenseDialog({ open, onClose, defaultExpenseType }: { open: boolean
         paidTo: form.paidTo || undefined,
         notes: form.notes || undefined,
         expenseType: form.expenseType,
+        paymentMethod: form.paymentMethod || undefined,
       });
       qc.invalidateQueries({ queryKey: ["expenses"] });
       handleClose();
@@ -279,7 +295,7 @@ function AddExpenseDialog({ open, onClose, defaultExpenseType }: { open: boolean
   }
 
   function handleClose() {
-    setForm({ category: "General", amount: "", paidTo: "", notes: "", expenseType: defaultExpenseType });
+    setForm({ category: "General", amount: "", paidTo: "", notes: "", expenseType: defaultExpenseType, paymentMethod: "" });
     setError(null);
     onClose();
   }
@@ -344,6 +360,19 @@ function AddExpenseDialog({ open, onClose, defaultExpenseType }: { open: boolean
             <Label>Notes (optional)</Label>
             <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </div>
+          <div>
+            <Label>Payment Method (optional)</Label>
+            <select
+              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
+              value={form.paymentMethod}
+              onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}
+            >
+              <option value="">Not specified</option>
+              <option value="Cash">Cash</option>
+              <option value="Card">Card</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+            </select>
+          </div>
           {error && <p className="text-xs text-red-500">{error}</p>}
         </div>
         <DialogFooter>
@@ -367,7 +396,7 @@ function EditExpenseDialog({
   const qc = useQueryClient();
   const biz = useBusiness();
   const currencySymbol = CURRENCY_SYMBOLS[biz?.currency?.toUpperCase() ?? "NGN"] ?? biz?.currency ?? "\u20A6";
-  const [form, setForm] = useState({ category: "", amount: "", paidTo: "", notes: "" });
+  const [form, setForm] = useState({ category: "", amount: "", paidTo: "", notes: "", paymentMethod: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -377,6 +406,7 @@ function EditExpenseDialog({
       amount: expense.amount.toString(),
       paidTo: expense.paidTo ?? "",
       notes: expense.notes ?? "",
+      paymentMethod: expense.paymentMethod ?? "",
     });
   }
 
@@ -390,6 +420,7 @@ function EditExpenseDialog({
         amount: form.amount ? Number(form.amount) : null,
         paidTo: form.paidTo,
         notes: form.notes,
+        paymentMethod: form.paymentMethod || undefined,
       });
       qc.invalidateQueries({ queryKey: ["expenses"] });
       handleClose();
@@ -402,7 +433,7 @@ function EditExpenseDialog({
   }
 
   function handleClose() {
-    setForm({ category: "", amount: "", paidTo: "", notes: "" });
+    setForm({ category: "", amount: "", paidTo: "", notes: "", paymentMethod: "" });
     setError(null);
     onClose();
   }
@@ -452,6 +483,19 @@ function EditExpenseDialog({
           <div>
             <Label>Notes</Label>
             <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          </div>
+          <div>
+            <Label>Payment Method</Label>
+            <select
+              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
+              value={form.paymentMethod}
+              onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}
+            >
+              <option value="">Not specified</option>
+              <option value="Cash">Cash</option>
+              <option value="Card">Card</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+            </select>
           </div>
           {error && <p className="text-xs text-red-500">{error}</p>}
         </div>

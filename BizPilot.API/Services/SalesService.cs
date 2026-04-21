@@ -135,7 +135,8 @@ public class SalesService : ISalesService
     }
 
     public async Task<PaginatedResult<SaleSummaryDto>> GetAllAsync(
-        Guid businessId, int page, int pageSize, DateTime? from, DateTime? to)
+        Guid businessId, int page, int pageSize, DateTime? from, DateTime? to,
+        string? paymentStatus = null, string? paymentMethod = null, string? source = null, Guid? customerId = null)
     {
         var query = _db.Sales
             .Include(s => s.Contact)
@@ -144,6 +145,14 @@ public class SalesService : ISalesService
 
         if (from.HasValue) query = query.Where(s => s.CreatedAtUtc >= from.Value);
         if (to.HasValue) query = query.Where(s => s.CreatedAtUtc <= to.Value);
+        if (!string.IsNullOrEmpty(paymentStatus) && Enum.TryParse<PaymentStatus>(paymentStatus, true, out var ps))
+            query = query.Where(s => s.PaymentStatus == ps);
+        if (!string.IsNullOrEmpty(paymentMethod))
+            query = query.Where(s => s.PaymentMethod == paymentMethod);
+        if (!string.IsNullOrEmpty(source))
+            query = query.Where(s => s.Source == source);
+        if (customerId.HasValue)
+            query = query.Where(s => s.ContactId == customerId);
 
         var total = await query.CountAsync();
         var items = await query

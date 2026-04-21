@@ -44,14 +44,19 @@ export default function SalesPage() {
   const [voiding, setVoiding] = useState<SaleSummaryDto | null>(null);
   const [returning, setReturning] = useState<SaleSummaryDto | null>(null);
   const [tab, setTab] = useState<"active" | "voided" | "returned">("active");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [methodFilter, setMethodFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["sales", tab, page],
+    queryKey: ["sales", tab, page, statusFilter, methodFilter, sourceFilter],
     queryFn: async () => {
       const endpoint = tab === "voided" ? "/sales/voided" : tab === "returned" ? "/sales/returned" : "/sales";
-      const { data } = await api.get<{ data: PaginatedResult<SaleSummaryDto> }>(
-        `${endpoint}?page=${page}&pageSize=20`
-      );
+      let url = `${endpoint}?page=${page}&pageSize=20`;
+      if (statusFilter) url += `&paymentStatus=${statusFilter}`;
+      if (methodFilter) url += `&paymentMethod=${methodFilter}`;
+      if (sourceFilter) url += `&source=${sourceFilter}`;
+      const { data } = await api.get<{ data: PaginatedResult<SaleSummaryDto> }>(url);
       return data.data!;
     },
   });
@@ -75,6 +80,30 @@ export default function SalesPage() {
           <TabsTrigger value="returned">Returned</TabsTrigger>
         </TabsList>
       </Tabs>
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+          className="h-8 px-2 rounded-md border border-slate-200 text-xs">
+          <option value="">All Statuses</option>
+          <option value="Paid">Paid</option>
+          <option value="Unpaid">Unpaid</option>
+          <option value="PartiallyPaid">Partially Paid</option>
+        </select>
+        <select value={methodFilter} onChange={(e) => { setMethodFilter(e.target.value); setPage(1); }}
+          className="h-8 px-2 rounded-md border border-slate-200 text-xs">
+          <option value="">All Methods</option>
+          <option value="Cash">Cash</option>
+          <option value="Card">Card</option>
+          <option value="Bank Transfer">Bank Transfer</option>
+        </select>
+        <select value={sourceFilter} onChange={(e) => { setSourceFilter(e.target.value); setPage(1); }}
+          className="h-8 px-2 rounded-md border border-slate-200 text-xs">
+          <option value="">All Sources</option>
+          <option value="WhatsApp">WhatsApp</option>
+          <option value="Manual">Dashboard</option>
+          <option value="Import">Import</option>
+        </select>
+      </div>
 
       <Card>
         <CardHeader className="pb-2">

@@ -79,6 +79,45 @@ public class LedgerService : ILedgerService
         };
         _db.LedgerEntries.Add(entry);
         await _db.SaveChangesAsync();
+
+        // After saving the receivable payment, update related sale statuses
+        if (entry.EntryType == LedgerEntryType.ReceivablePayment)
+        {
+            var contactSales = await _db.Sales
+                .Where(s => s.BusinessId == businessId && s.ContactId == entry.ContactId
+                    && s.PaymentStatus != PaymentStatus.Paid && !s.IsDeleted)
+                .OrderBy(s => s.CreatedAtUtc)
+                .ToListAsync();
+
+            if (contactSales.Count > 0)
+            {
+                // Calculate total payments for this contact
+                var totalReceivable = await _db.LedgerEntries
+                    .Where(e => e.BusinessId == businessId && e.ContactId == entry.ContactId && e.EntryType == LedgerEntryType.Receivable)
+                    .SumAsync(e => e.Amount);
+                var totalPaid = await _db.LedgerEntries
+                    .Where(e => e.BusinessId == businessId && e.ContactId == entry.ContactId && e.EntryType == LedgerEntryType.ReceivablePayment)
+                    .SumAsync(e => e.Amount);
+
+                var remaining = totalReceivable - totalPaid;
+
+                if (remaining <= 0)
+                {
+                    // Fully paid — mark all unpaid sales as Paid
+                    foreach (var sale in contactSales)
+                        sale.PaymentStatus = PaymentStatus.Paid;
+                }
+                else if (totalPaid > 0)
+                {
+                    // Partial payment — mark oldest sale as PartiallyPaid
+                    foreach (var sale in contactSales)
+                        sale.PaymentStatus = PaymentStatus.PartiallyPaid;
+                }
+
+                await _db.SaveChangesAsync();
+            }
+        }
+
         return await ToDtoAsync(entry);
     }
 

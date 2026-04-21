@@ -9,6 +9,7 @@ public class Expense
     public decimal Amount { get; set; }
     public string? Notes { get; set; }
     public string? PaidTo { get; set; }
+    public string? PaymentMethod { get; set; }
     public string Source { get; set; } = "Manual";
     public Guid? ImportBatchId { get; set; }
     public Guid? RecordedByUserId { get; set; }

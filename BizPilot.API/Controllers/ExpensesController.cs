@@ -27,9 +27,9 @@ public class ExpensesController : BizPilotBaseController
     public async Task<ActionResult<ApiResponse<PaginatedResult<ExpenseDto>>>> GetAll(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
         [FromQuery] DateTime? from = null, [FromQuery] DateTime? to = null,
-        [FromQuery] string? expenseType = null)
+        [FromQuery] string? expenseType = null, [FromQuery] string? category = null)
     {
-        var result = await _expenses.GetAllAsync(BusinessId, page, pageSize, from, to, expenseType);
+        var result = await _expenses.GetAllAsync(BusinessId, page, pageSize, from, to, expenseType, category);
         return Ok(ApiResponse<PaginatedResult<ExpenseDto>>.Ok(result));
     }
 

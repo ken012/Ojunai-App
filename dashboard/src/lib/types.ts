@@ -108,6 +108,7 @@ export interface ExpenseDto {
   amount: number;
   notes?: string;
   paidTo?: string;
+  paymentMethod?: string;
   source?: string;
   createdAtUtc: string;
 }

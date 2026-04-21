@@ -23,6 +23,7 @@ public class ExpenseService : IExpenseService
             Amount = request.Amount,
             Notes = request.Notes,
             PaidTo = request.PaidTo,
+            PaymentMethod = request.PaymentMethod,
             Source = source,
             RecordedByUserId = recordedByUserId,
             RecordedByName = recordedByName,
@@ -34,12 +35,14 @@ public class ExpenseService : IExpenseService
     }
 
     public async Task<PaginatedResult<ExpenseDto>> GetAllAsync(
-        Guid businessId, int page, int pageSize, DateTime? from, DateTime? to, string? expenseType = null)
+        Guid businessId, int page, int pageSize, DateTime? from, DateTime? to, string? expenseType = null, string? category = null)
     {
         var query = _db.Expenses.Where(e => e.BusinessId == businessId);
 
         if (from.HasValue) query = query.Where(e => e.CreatedAtUtc >= from.Value);
         if (to.HasValue) query = query.Where(e => e.CreatedAtUtc <= to.Value);
+        if (!string.IsNullOrEmpty(category))
+            query = query.Where(e => EF.Functions.ILike(e.Category, category));
         if (expenseType == "cogs")
         {
             // Inventory Expenses: explicitly tagged as cogs OR category matches inventory keywords
@@ -93,6 +96,7 @@ public class ExpenseService : IExpenseService
         if (request.Amount.HasValue && request.Amount.Value > 0) expense.Amount = request.Amount.Value;
         if (request.Notes != null) expense.Notes = request.Notes;
         if (request.PaidTo != null) expense.PaidTo = request.PaidTo;
+        if (request.PaymentMethod != null) expense.PaymentMethod = request.PaymentMethod;
 
         await _db.SaveChangesAsync();
         return ToDto(expense);
@@ -116,6 +120,7 @@ public class ExpenseService : IExpenseService
         Amount = e.Amount,
         Notes = e.Notes,
         PaidTo = e.PaidTo,
+        PaymentMethod = e.PaymentMethod,
         Source = e.Source,
         CreatedAtUtc = e.CreatedAtUtc
     };
