@@ -18,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Upload, Download, Copy, CheckCircle, AlertTriangle, Clock, ChevronLeft, ChevronRight, History, Undo2 } from "lucide-react";
+import { Upload, Download, Copy, CheckCircle, AlertTriangle, Clock, ChevronLeft, ChevronRight, History, Undo2, Trash2 } from "lucide-react";
 
 type ImportType = "inventory" | "sales" | "expenses" | "contacts" | "contacts-ledger";
 
@@ -411,6 +411,7 @@ export default function ImportPage() {
                   <TableRow>
                     <TableHead className="text-xs w-10">#</TableHead>
                     {headers.map((h) => <TableHead key={h} className="text-xs">{h}</TableHead>)}
+                    <TableHead className="text-xs w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -448,6 +449,15 @@ export default function ImportPage() {
                             </TableCell>
                           );
                         })}
+                        <TableCell className="p-0 text-center">
+                          <button
+                            onClick={() => setAllRows(prev => prev.filter((_, idx) => idx !== globalIdx))}
+                            className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500"
+                            title="Remove row"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </TableCell>
                       </TableRow>
                     );
                   })}
