@@ -205,8 +205,8 @@ public class PdfExportService : IPdfExportService
     private static void DataCell(TableDescriptor table, string text, bool alignRight = false)
     {
         var cell = table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(4);
+        if (alignRight) cell = cell.AlignRight();
         cell.Text(text).FontSize(8);
-        if (alignRight) cell.AlignRight();
     }
 
     private static void PnlRow(TableDescriptor table, string label, string value, string color, bool bold = false)
