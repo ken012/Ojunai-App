@@ -33,4 +33,5 @@ public interface IReportService
     Task<CustomerRetentionDto> GetCustomerRetentionAsync(Guid businessId, int months);
     Task<List<ReorderSuggestionDto>> GetReorderSuggestionsAsync(Guid businessId, int safetyDays);
     Task<List<ProductAffinityDto>> GetProductAffinityAsync(Guid businessId, int limit);
+    Task<WeeklySalesTrendDto> GetWeeklySalesTrendAsync(Guid businessId, int months);
 }

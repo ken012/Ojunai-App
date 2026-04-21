@@ -319,3 +319,29 @@ public class ProductAffinityDto
     public int CoOccurrenceCount { get; set; }
     public decimal CombinedRevenue { get; set; }
 }
+
+public class WeeklySalesPointDto
+{
+    public string WeekStart { get; set; } = string.Empty;
+    public string WeekEnd { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public decimal Revenue { get; set; }
+    public int SaleCount { get; set; }
+    public decimal AvgOrderValue { get; set; }
+    public decimal? GrowthPercent { get; set; }
+    public decimal MovingAvg { get; set; }
+}
+
+public class WeeklySalesTrendDto
+{
+    public List<WeeklySalesPointDto> Weeks { get; set; } = new();
+    public decimal AvgWeeklyRevenue { get; set; }
+    public decimal BestWeekRevenue { get; set; }
+    public string BestWeekLabel { get; set; } = string.Empty;
+    public decimal WorstWeekRevenue { get; set; }
+    public string WorstWeekLabel { get; set; } = string.Empty;
+    public decimal AvgGrowthPercent { get; set; }
+    public int TotalWeeks { get; set; }
+    public decimal TotalRevenue { get; set; }
+    public int TotalSales { get; set; }
+}

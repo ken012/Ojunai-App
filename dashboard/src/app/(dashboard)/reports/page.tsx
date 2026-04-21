@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { formatNaira } from "@/lib/format";
@@ -12,7 +13,8 @@ import type {
   AgingReportDto, MonthlyPnlDto, ExpenseBreakdownDto, InventoryTurnoverDto,
   TopCustomersReportDto, SalesHeatmapDto, MonthlyTrendDto, PaymentMethodSplitDto,
   CustomerReliabilityDto, WastageReportDto, AvgTransactionValueDto,
-  CustomerRetentionDto, ReorderSuggestionDto, ProductAffinityDto
+  CustomerRetentionDto, ReorderSuggestionDto, ProductAffinityDto,
+  WeeklySalesTrendDto
 } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +27,7 @@ import {
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
-  BarChart, Bar, Legend
+  BarChart, Bar, Legend, Area, ComposedChart, ReferenceLine
 } from "recharts";
 
 // ───────── Shared bits ─────────
@@ -362,6 +364,12 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
     queryFn: async () => (await api.get<{ data: SalesHeatmapDto }>("/reports/sales-heatmap?weeks=12")).data.data!,
     enabled: hasAdvanced,
   });
+  const [weeklyMonths, setWeeklyMonths] = useState(6);
+  const { data: weeklyTrend } = useQuery({
+    queryKey: ["weekly-sales-trend", weeklyMonths],
+    queryFn: async () => (await api.get<{ data: WeeklySalesTrendDto }>(`/reports/weekly-sales-trend?months=${weeklyMonths}`)).data.data!,
+    enabled: hasAdvanced,
+  });
 
   if (!hasAdvanced) return <UpgradePrompt feature="Financial Reports" plan="Shop" />;
 
@@ -478,6 +486,111 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
               </LineChart>
             </ResponsiveContainer>
           ) : <Skeleton className="h-60" />}
+        </CardContent>
+      </Card>
+
+      {/* Weekly Sales Velocity */}
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+              <CalendarClock size={15} className="text-violet-500" />
+              Weekly Sales Velocity
+            </CardTitle>
+            <select
+              className="h-7 px-2 rounded border border-slate-200 text-xs"
+              value={weeklyMonths}
+              onChange={(e) => setWeeklyMonths(Number(e.target.value))}
+            >
+              <option value={3}>3 months</option>
+              <option value={6}>6 months</option>
+              <option value={9}>9 months</option>
+              <option value={12}>12 months</option>
+            </select>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {weeklyTrend && weeklyTrend.weeks.length > 0 ? (
+            <>
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                <div className="bg-slate-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-slate-400">Avg / Week</p>
+                  <p className="text-sm font-bold text-slate-900">{formatNaira(weeklyTrend.avgWeeklyRevenue)}</p>
+                </div>
+                <div className="bg-emerald-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-emerald-500">Best Week</p>
+                  <p className="text-sm font-bold text-emerald-700">{formatNaira(weeklyTrend.bestWeekRevenue)}</p>
+                  <p className="text-[10px] text-emerald-500">{weeklyTrend.bestWeekLabel}</p>
+                </div>
+                <div className="bg-amber-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-amber-500">Slowest Week</p>
+                  <p className="text-sm font-bold text-amber-700">{formatNaira(weeklyTrend.worstWeekRevenue)}</p>
+                  <p className="text-[10px] text-amber-500">{weeklyTrend.worstWeekLabel}</p>
+                </div>
+                <div className="bg-sky-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-sky-500">Avg Growth</p>
+                  <p className={`text-sm font-bold ${weeklyTrend.avgGrowthPercent >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                    {weeklyTrend.avgGrowthPercent >= 0 ? "+" : ""}{weeklyTrend.avgGrowthPercent}%
+                  </p>
+                  <p className="text-[10px] text-sky-500">week-over-week</p>
+                </div>
+              </div>
+
+              {/* Chart */}
+              <ResponsiveContainer width="100%" height={300}>
+                <ComposedChart data={weeklyTrend.weeks.map(w => ({
+                  label: w.label,
+                  Revenue: w.revenue,
+                  "4-wk Avg": w.movingAvg,
+                  Sales: w.saleCount,
+                  Growth: w.growthPercent
+                }))}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="label" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" height={55} interval={Math.max(0, Math.floor(weeklyTrend.weeks.length / 12))} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} />
+                  <Tooltip formatter={(v, name) => name === "Sales" ? v : formatNaira(Number(v))} labelStyle={{ fontSize: 12, fontWeight: 600 }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <ReferenceLine y={weeklyTrend.avgWeeklyRevenue} stroke="#94a3b8" strokeDasharray="6 3" label={{ value: "Avg", position: "right", fontSize: 10, fill: "#94a3b8" }} />
+                  <Area type="monotone" dataKey="Revenue" fill="#dbeafe" stroke="#3b82f6" strokeWidth={2} fillOpacity={0.4} />
+                  <Line type="monotone" dataKey="4-wk Avg" stroke="#f59e0b" strokeWidth={2} dot={false} strokeDasharray="5 3" />
+                </ComposedChart>
+              </ResponsiveContainer>
+
+              {/* Weekly breakdown table */}
+              <details className="mt-4">
+                <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-700">
+                  View weekly breakdown ({weeklyTrend.totalWeeks} weeks, {weeklyTrend.totalSales} sales, {formatNaira(weeklyTrend.totalRevenue)} total)
+                </summary>
+                <div className="mt-2 max-h-64 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="text-slate-400 border-b">
+                      <tr>
+                        <th className="text-left py-1 font-medium">Week</th>
+                        <th className="text-right py-1 font-medium">Revenue</th>
+                        <th className="text-right py-1 font-medium">Sales</th>
+                        <th className="text-right py-1 font-medium">Avg Order</th>
+                        <th className="text-right py-1 font-medium">Growth</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...weeklyTrend.weeks].reverse().map((w) => (
+                        <tr key={w.weekStart} className="border-b border-slate-50 hover:bg-slate-50">
+                          <td className="py-1.5 text-slate-700">{w.label}</td>
+                          <td className="py-1.5 text-right font-medium text-slate-900">{formatNaira(w.revenue)}</td>
+                          <td className="py-1.5 text-right text-slate-500">{w.saleCount}</td>
+                          <td className="py-1.5 text-right text-slate-500">{formatNaira(w.avgOrderValue)}</td>
+                          <td className={`py-1.5 text-right font-medium ${w.growthPercent == null ? "text-slate-300" : w.growthPercent >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                            {w.growthPercent != null ? `${w.growthPercent >= 0 ? "+" : ""}${w.growthPercent}%` : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </>
+          ) : <Skeleton className="h-80" />}
         </CardContent>
       </Card>
 

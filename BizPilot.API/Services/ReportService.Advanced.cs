@@ -712,4 +712,80 @@ public partial class ReportService
             })
             .ToList();
     }
+
+    // ── Weekly Sales Velocity ───────────────────────────────────────────────
+
+    public async Task<WeeklySalesTrendDto> GetWeeklySalesTrendAsync(Guid businessId, int months)
+    {
+        var cutoff = DateTime.UtcNow.AddMonths(-months);
+        var sales = await _db.Sales
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= cutoff)
+            .Select(s => new { s.TotalAmount, s.CreatedAtUtc })
+            .ToListAsync();
+
+        // Group into ISO weeks (Monday-start)
+        var grouped = sales
+            .GroupBy(s =>
+            {
+                var d = s.CreatedAtUtc.Date;
+                var daysToMonday = ((int)d.DayOfWeek + 6) % 7;
+                return d.AddDays(-daysToMonday);
+            })
+            .OrderBy(g => g.Key)
+            .ToList();
+
+        var weeks = new List<WeeklySalesPointDto>();
+        foreach (var g in grouped)
+        {
+            var weekStart = g.Key;
+            var weekEnd = weekStart.AddDays(6);
+            var revenue = g.Sum(s => s.TotalAmount);
+            var count = g.Count();
+
+            weeks.Add(new WeeklySalesPointDto
+            {
+                WeekStart = weekStart.ToString("yyyy-MM-dd"),
+                WeekEnd = weekEnd.ToString("yyyy-MM-dd"),
+                Label = $"{weekStart:MMM d}–{weekEnd:MMM d}",
+                Revenue = revenue,
+                SaleCount = count,
+                AvgOrderValue = count > 0 ? Math.Round(revenue / count, 2) : 0
+            });
+        }
+
+        // Week-over-week growth
+        for (int i = 1; i < weeks.Count; i++)
+        {
+            var prev = weeks[i - 1].Revenue;
+            if (prev > 0)
+                weeks[i].GrowthPercent = Math.Round((weeks[i].Revenue - prev) / prev * 100, 1);
+        }
+
+        // 4-week moving average
+        for (int i = 0; i < weeks.Count; i++)
+        {
+            var windowStart = Math.Max(0, i - 3);
+            var window = weeks.Skip(windowStart).Take(i - windowStart + 1).ToList();
+            weeks[i].MovingAvg = Math.Round(window.Average(w => w.Revenue), 2);
+        }
+
+        var bestWeek = weeks.OrderByDescending(w => w.Revenue).FirstOrDefault();
+        var worstWeek = weeks.Where(w => w.Revenue > 0).OrderBy(w => w.Revenue).FirstOrDefault()
+                        ?? weeks.FirstOrDefault();
+        var growths = weeks.Where(w => w.GrowthPercent.HasValue).Select(w => w.GrowthPercent!.Value).ToList();
+
+        return new WeeklySalesTrendDto
+        {
+            Weeks = weeks,
+            AvgWeeklyRevenue = weeks.Count > 0 ? Math.Round(weeks.Average(w => w.Revenue), 2) : 0,
+            BestWeekRevenue = bestWeek?.Revenue ?? 0,
+            BestWeekLabel = bestWeek?.Label ?? "",
+            WorstWeekRevenue = worstWeek?.Revenue ?? 0,
+            WorstWeekLabel = worstWeek?.Label ?? "",
+            AvgGrowthPercent = growths.Count > 0 ? Math.Round(growths.Average(), 1) : 0,
+            TotalWeeks = weeks.Count,
+            TotalRevenue = weeks.Sum(w => w.Revenue),
+            TotalSales = weeks.Sum(w => w.SaleCount)
+        };
+    }
 }

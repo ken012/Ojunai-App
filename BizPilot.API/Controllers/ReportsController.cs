@@ -218,4 +218,14 @@ public class ReportsController : BizPilotBaseController
         var result = await _reports.GetProductAffinityAsync(BusinessId, limit);
         return Ok(ApiResponse<List<ProductAffinityDto>>.Ok(result));
     }
+
+    [HttpGet("weekly-sales-trend")]
+    [RequirePermission(Permission.ViewAllReports)]
+    public async Task<ActionResult<ApiResponse<WeeklySalesTrendDto>>> GetWeeklySalesTrend([FromQuery] int months = 6)
+    {
+        var (allowed, err) = await _planGuard.CheckFeatureAsync(BusinessId, "advanced_reports");
+        if (!allowed) return BadRequest(ApiResponse<WeeklySalesTrendDto>.Fail(err!));
+        var result = await _reports.GetWeeklySalesTrendAsync(BusinessId, Math.Clamp(months, 1, 12));
+        return Ok(ApiResponse<WeeklySalesTrendDto>.Ok(result));
+    }
 }

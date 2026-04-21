@@ -533,3 +533,27 @@ export interface ProductAffinityDto {
   coOccurrenceCount: number;
   combinedRevenue: number;
 }
+
+export interface WeeklySalesPointDto {
+  weekStart: string;
+  weekEnd: string;
+  label: string;
+  revenue: number;
+  saleCount: number;
+  avgOrderValue: number;
+  growthPercent: number | null;
+  movingAvg: number;
+}
+
+export interface WeeklySalesTrendDto {
+  weeks: WeeklySalesPointDto[];
+  avgWeeklyRevenue: number;
+  bestWeekRevenue: number;
+  bestWeekLabel: string;
+  worstWeekRevenue: number;
+  worstWeekLabel: string;
+  avgGrowthPercent: number;
+  totalWeeks: number;
+  totalRevenue: number;
+  totalSales: number;
+}
