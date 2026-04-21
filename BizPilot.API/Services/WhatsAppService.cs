@@ -876,18 +876,11 @@ public class WhatsAppService : IWhatsAppService
         var lines = sale.Items.Select(i => $"• {i.Quantity} {i.Unit} of {i.ProductName} @ {_cs}{i.UnitPrice:N0} = {_cs}{i.TotalPrice:N0}");
         var debtNote = "";
 
-        // Auto-create receivable for credit sales
+        // Receivable is auto-created in SalesService.CreateAsync for credit sales
         if (paymentStatus != PaymentStatus.Paid && contactId.HasValue && sale.TotalAmount > 0)
         {
-            await _ledger.CreateReceivableAsync(businessId, new DTOs.Ledger.CreateReceivableRequest
-            {
-                ContactId = contactId.Value,
-                Amount = sale.TotalAmount,
-                Notes = $"Credit sale"
-            }, EntrySource.WhatsApp, recordedBy.Id, recordedBy.FullName);
-
             var contact = await _db.Contacts.FindAsync(contactId.Value);
-            debtNote = $"\n💰 {contact?.Name ?? "Customer"} now owes you {_cs}{sale.TotalAmount:N0}";
+            debtNote = $"\n��� {contact?.Name ?? "Customer"} now owes you {_cs}{sale.TotalAmount:N0}";
         }
 
         return $"✅ Sale confirmed and recorded!\n{string.Join("\n", lines)}\n\n*Total: {_cs}{sale.TotalAmount:N0}* ({sale.PaymentStatus}){debtNote}";
@@ -1059,15 +1052,9 @@ public class WhatsAppService : IWhatsAppService
         var lines = sale.Items.Select(i => $"• {i.Quantity} {i.Unit} of {i.ProductName} @ {_cs}{i.UnitPrice:N0} = {_cs}{i.TotalPrice:N0}");
         var debtNote = "";
 
-        // Auto-create receivable for credit sales
+        // Receivable is auto-created in SalesService.CreateAsync for credit sales
         if (paymentStatus != PaymentStatus.Paid && contactId.HasValue && sale.TotalAmount > 0)
         {
-            await _ledger.CreateReceivableAsync(businessId, new DTOs.Ledger.CreateReceivableRequest
-            {
-                ContactId = contactId.Value,
-                Amount = sale.TotalAmount,
-                Notes = $"Credit sale"
-            }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
             var cName = ba.GetStringOrNull("contactName") ?? "Customer";
             debtNote = $"\n💰 {cName} now owes you {_cs}{sale.TotalAmount:N0}";
         }

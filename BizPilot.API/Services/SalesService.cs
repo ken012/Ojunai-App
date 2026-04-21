@@ -110,6 +110,24 @@ public class SalesService : ISalesService
 
         _db.Sales.Add(sale);
         _db.InventoryTransactions.AddRange(inventoryTxns);
+
+        // Auto-create receivable for credit sales so it shows in Contacts & Ledger
+        if (sale.PaymentStatus != PaymentStatus.Paid && sale.ContactId.HasValue && sale.TotalAmount > 0)
+        {
+            _db.LedgerEntries.Add(new LedgerEntry
+            {
+                BusinessId = businessId,
+                ContactId = sale.ContactId.Value,
+                EntryType = LedgerEntryType.Receivable,
+                Amount = sale.TotalAmount,
+                Notes = $"Credit sale",
+                Source = source,
+                RecordedByUserId = recordedByUserId,
+                RecordedByName = recordedByName,
+                CreatedAtUtc = sale.CreatedAtUtc
+            });
+        }
+
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
 
