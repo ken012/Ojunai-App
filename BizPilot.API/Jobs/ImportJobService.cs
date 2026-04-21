@@ -239,6 +239,14 @@ public class ImportJobService
 
     private async Task ProcessSalesRowsAsync(ImportJob job, List<Dictionary<string, string>> rows, User? user, List<string> errors, string cs)
     {
+        // Pre-load products and contacts for faster lookups
+        var productCache = await _db.Products
+            .Where(p => p.BusinessId == job.BusinessId && p.IsActive)
+            .ToDictionaryAsync(p => p.Name.ToLower(), p => p);
+        var contactCache = await _db.Contacts
+            .Where(c => c.BusinessId == job.BusinessId)
+            .ToDictionaryAsync(c => c.Name.ToLower(), c => c);
+
         for (int i = 0; i < rows.Count; i++)
         {
             var row = rows[i];
@@ -251,8 +259,7 @@ public class ImportJobService
                 var qty = CsvParser.ParseDecimal(row.GetValueOrDefault("quantity"));
                 if (!ValidateQuantity(qty, rowNum, name!, errors)) continue;
 
-                var product = await _db.Products.FirstOrDefaultAsync(p =>
-                    p.BusinessId == job.BusinessId && p.IsActive && p.Name.ToLower() == name!.ToLower());
+                productCache.TryGetValue(name!.ToLower(), out var product);
                 if (product == null) { errors.Add($"Row {rowNum}: Product '{name}' not found in inventory"); continue; }
 
                 var unitPrice = CsvParser.ParseDecimal(row.GetValueOrDefault("unitprice"));
@@ -264,9 +271,7 @@ public class ImportJobService
                 Guid? contactId = null;
                 if (!string.IsNullOrEmpty(customerName))
                 {
-                    var contact = await _db.Contacts.FirstOrDefaultAsync(c =>
-                        c.BusinessId == job.BusinessId && c.Name.ToLower() == customerName.ToLower());
-                    if (contact == null)
+                    if (!contactCache.TryGetValue(customerName.ToLower(), out var contact))
                     {
                         contact = new Contact
                         {
@@ -278,9 +283,16 @@ public class ImportJobService
                         };
                         _db.Contacts.Add(contact);
                         await _db.SaveChangesAsync();
+                        contactCache[customerName.ToLower()] = contact;
                     }
                     contactId = contact.Id;
                 }
+
+                // Parse optional sale date (supports YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY)
+                DateTime? saleDate = null;
+                var dateStr = row.GetValueOrDefault("date") ?? row.GetValueOrDefault("saledate");
+                if (!string.IsNullOrWhiteSpace(dateStr) && DateTime.TryParse(dateStr, out var parsed))
+                    saleDate = DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
 
                 var statusStr = row.GetValueOrDefault("paymentstatus") ?? "Paid";
                 if (!string.IsNullOrEmpty(statusStr) && statusStr != "Paid" && !ValidPaymentStatuses.Contains(statusStr))
@@ -296,7 +308,8 @@ public class ImportJobService
                         new() { ProductId = product.Id, Quantity = qty!.Value, UnitPrice = unitPrice!.Value }
                     },
                     ContactId = contactId,
-                    PaymentStatus = status
+                    PaymentStatus = status,
+                    SaleDate = saleDate
                 }, EntrySource.Import, user?.Id, user?.FullName);
 
                 job.SuccessCount++;

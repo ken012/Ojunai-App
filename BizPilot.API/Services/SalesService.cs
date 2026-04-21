@@ -66,7 +66,8 @@ public class SalesService : ISalesService
             Notes = request.Notes,
             Source = source,
             RecordedByUserId = recordedByUserId,
-            RecordedByName = recordedByName
+            RecordedByName = recordedByName,
+            CreatedAtUtc = request.SaleDate ?? DateTime.UtcNow
         };
 
         decimal total = 0;

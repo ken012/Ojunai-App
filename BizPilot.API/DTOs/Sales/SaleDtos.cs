@@ -10,6 +10,7 @@ public class CreateSaleRequest
     public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.Paid;
     [MaxLength(50)] public string? PaymentMethod { get; set; }
     [MaxLength(500)] public string? Notes { get; set; }
+    public DateTime? SaleDate { get; set; }
 }
 
 public class SaleItemRequest

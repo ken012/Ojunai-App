@@ -144,6 +144,12 @@ public static class CsvParser
         ["customer"] = "customername",
         ["buyer"] = "customername",
 
+        // Date
+        ["date"] = "date",
+        ["saledate"] = "saledate",
+        ["sale date"] = "saledate",
+        ["transaction date"] = "date",
+
         // PaymentStatus
         ["paymentstatus"] = "paymentstatus",
         ["payment status"] = "paymentstatus",
