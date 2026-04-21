@@ -218,8 +218,9 @@ public partial class ReportService
 
             var avgInventory = (p.CurrentStock + qtySold) / 2m;
             var inventoryValue = (p.CostPrice ?? 0) * p.CurrentStock;
-            var turnoverRatio = avgInventory > 0 && p.CostPrice.HasValue
-                ? cogs / (avgInventory * p.CostPrice.Value)
+            var avgInventoryValue = avgInventory * (p.CostPrice ?? 0);
+            var turnoverRatio = avgInventoryValue > 0
+                ? cogs / avgInventoryValue
                 : 0m;
 
             // Thresholds picked to match small-retailer expectations; tune later if we learn what feels right.
@@ -257,14 +258,15 @@ public partial class ReportService
 
         var cutoff = DateTime.UtcNow.AddMonths(-12);
 
-        var sales = await _db.Sales
+        var allSales = await _db.Sales
             .Include(s => s.Contact)
-            .Where(s => s.BusinessId == businessId && s.ContactId.HasValue && s.CreatedAtUtc >= cutoff)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= cutoff)
             .ToListAsync();
 
-        var total = sales.Sum(s => s.TotalAmount);
+        var total = allSales.Sum(s => s.TotalAmount);
 
-        var grouped = sales
+        var grouped = allSales
+            .Where(s => s.ContactId.HasValue)
             .GroupBy(s => new { s.ContactId, ContactName = s.Contact!.Name })
             .Select(g => new TopCustomerDetailDto
             {
@@ -426,11 +428,17 @@ public partial class ReportService
     private static string ClassifyMethod(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return "other";
-        var lower = raw.ToLowerInvariant();
-        if (lower.Contains("cash")) return "cash";
-        if (lower.Contains("transfer") || lower.Contains("bank")) return "transfer";
-        if (lower.Contains("pos") || lower.Contains("card")) return "pos";
-        return "other";
+        var lower = raw.Trim().ToLowerInvariant();
+        return lower switch
+        {
+            "cash" => "cash",
+            "bank transfer" or "transfer" or "bank" or "wire" or "wire transfer" or "bank deposit" => "transfer",
+            "pos" or "card" or "debit card" or "credit card" or "pos machine" => "pos",
+            _ => lower.Contains("transfer") || lower.Contains("bank") ? "transfer"
+               : lower.Contains("cash") ? "cash"
+               : lower.Contains("pos") || lower.Contains("card") ? "pos"
+               : "other"
+        };
     }
 
     // ── Customer payment reliability ─────────────────────────────────────────
@@ -478,7 +486,23 @@ public partial class ReportService
                 }
             }
 
-            if (days.Count == 0) continue;
+            if (days.Count == 0)
+            {
+                var hasOutstanding = receivables.Count > 0;
+                if (hasOutstanding)
+                {
+                    result.Add(new CustomerReliabilityDto
+                    {
+                        ContactId = group.Key.ContactId,
+                        ContactName = group.Key.ContactName,
+                        PaidReceivables = 0,
+                        AverageDaysToPay = 0,
+                        TotalPaid = 0,
+                        Classification = "Unknown"
+                    });
+                }
+                continue;
+            }
             var avg = (decimal)days.Average();
             var classification = avg <= 7 ? "Prompt"
                 : avg <= 21 ? "Regular"
@@ -637,8 +661,7 @@ public partial class ReportService
             var daysLeft = p.CurrentStock / daily;
             if (daysLeft > safetyDays) continue;
 
-            // Target: safetyDays of stock on hand post-restock.
-            var target = daily * safetyDays * 2;
+            var target = daily * safetyDays;
             var reorderQty = Math.Max(0, target - p.CurrentStock);
             if (reorderQty <= 0) continue;
 

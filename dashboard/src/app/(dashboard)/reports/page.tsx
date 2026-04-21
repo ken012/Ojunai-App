@@ -864,7 +864,7 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                             : "text-red-700 border-red-200"
                           }
                         >
-                          {c.averageDaysToPay}d — {c.classification}
+                          {c.classification === "Unknown" ? "No payments" : `${c.averageDaysToPay}d — ${c.classification}`}
                         </Badge>
                       </div>
                     </div>
