@@ -25,7 +25,8 @@ public class ExpenseService : IExpenseService
             PaidTo = request.PaidTo,
             Source = source,
             RecordedByUserId = recordedByUserId,
-            RecordedByName = recordedByName
+            RecordedByName = recordedByName,
+            CreatedAtUtc = request.ExpenseDate ?? DateTime.UtcNow
         };
         _db.Expenses.Add(expense);
         await _db.SaveChangesAsync();

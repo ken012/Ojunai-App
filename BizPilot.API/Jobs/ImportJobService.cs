@@ -168,6 +168,12 @@ public class ImportJobService
                 var sellingPrice = CsvParser.ParseDecimal(row.GetValueOrDefault("sellingprice"));
                 if (costPrice.HasValue && costPrice.Value > 100_000_000) { errors.Add($"Row {rowNum}: Cost price {cs}{costPrice.Value:N0} for '{name}' seems unusually large"); continue; }
                 if (sellingPrice.HasValue && sellingPrice.Value > 100_000_000) { errors.Add($"Row {rowNum}: Selling price {cs}{sellingPrice.Value:N0} for '{name}' seems unusually large"); continue; }
+                // Date is required for inventory import
+                var invDateStr = row.GetValueOrDefault("date") ?? row.GetValueOrDefault("stockdate");
+                if (string.IsNullOrWhiteSpace(invDateStr)) { errors.Add($"Row {rowNum}: Date is required for inventory import. Add a 'Date' column (format: YYYY-MM-DD)."); continue; }
+                if (!DateTime.TryParse(invDateStr, out var invParsedDate)) { errors.Add($"Row {rowNum}: Invalid date '{invDateStr}'. Use format: YYYY-MM-DD."); continue; }
+                var invDate = DateTime.SpecifyKind(invParsedDate, DateTimeKind.Utc);
+
                 var csvCategory = row.GetValueOrDefault("category");
                 var csvSubcategory = row.GetValueOrDefault("subcategory");
                 var csvThreshold = CsvParser.ParseDecimal(row.GetValueOrDefault("threshold"));
@@ -215,7 +221,9 @@ public class ImportJobService
                     {
                         Category = "Inventory",
                         Amount = qty.Value * expenseCost.Value,
-                        Notes = $"Import: {qty.Value:0.##} {unit} of {name} @ {cs}{expenseCost.Value:N0}"
+                        Notes = $"Import: {qty.Value:0.##} {unit} of {name} @ {cs}{expenseCost.Value:N0}",
+                        ExpenseType = "cogs",
+                        ExpenseDate = invDate
                     }, EntrySource.Import, user?.Id, user?.FullName);
 
                     var createdExpense = await _db.Expenses.FindAsync(expDto.Id);
@@ -288,11 +296,11 @@ public class ImportJobService
                     contactId = contact.Id;
                 }
 
-                // Parse optional sale date (supports YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY)
-                DateTime? saleDate = null;
+                // Date is required for sales import
                 var dateStr = row.GetValueOrDefault("date") ?? row.GetValueOrDefault("saledate");
-                if (!string.IsNullOrWhiteSpace(dateStr) && DateTime.TryParse(dateStr, out var parsed))
-                    saleDate = DateTime.SpecifyKind(parsed, DateTimeKind.Utc);
+                if (string.IsNullOrWhiteSpace(dateStr)) { errors.Add($"Row {rowNum}: Date is required for sales import. Add a 'Date' column (format: YYYY-MM-DD)."); continue; }
+                if (!DateTime.TryParse(dateStr, out var parsedDate)) { errors.Add($"Row {rowNum}: Invalid date '{dateStr}'. Use format: YYYY-MM-DD."); continue; }
+                var saleDate = (DateTime?)DateTime.SpecifyKind(parsedDate, DateTimeKind.Utc);
 
                 var statusStr = row.GetValueOrDefault("paymentstatus") ?? "Paid";
                 if (!string.IsNullOrEmpty(statusStr) && statusStr != "Paid" && !ValidPaymentStatuses.Contains(statusStr))
@@ -341,12 +349,18 @@ public class ImportJobService
                 var amount = CsvParser.ParseDecimal(row.GetValueOrDefault("amount"));
                 if (!ValidateAmount(amount, rowNum, $"category '{category}'", errors, cs)) continue;
 
+                // Date is required for expense import
+                var expDateStr = row.GetValueOrDefault("date") ?? row.GetValueOrDefault("expensedate");
+                if (string.IsNullOrWhiteSpace(expDateStr)) { errors.Add($"Row {rowNum}: Date is required for expense import. Add a 'Date' column (format: YYYY-MM-DD)."); continue; }
+                if (!DateTime.TryParse(expDateStr, out var expParsedDate)) { errors.Add($"Row {rowNum}: Invalid date '{expDateStr}'. Use format: YYYY-MM-DD."); continue; }
+
                 var expDto = await _expenses.CreateAsync(job.BusinessId, new CreateExpenseRequest
                 {
                     Category = category,
                     Amount = amount!.Value,
                     PaidTo = row.GetValueOrDefault("paidto"),
-                    Notes = row.GetValueOrDefault("notes")
+                    Notes = row.GetValueOrDefault("notes"),
+                    ExpenseDate = DateTime.SpecifyKind(expParsedDate, DateTimeKind.Utc)
                 }, EntrySource.Import, user?.Id, user?.FullName);
 
                 var createdExpense = await _db.Expenses.FindAsync(expDto.Id);
@@ -556,6 +570,11 @@ public class ImportJobService
                     await _db.SaveChangesAsync();
                 }
 
+                // Date is required for contacts-with-ledger import
+                var ledgerDateStr = row.GetValueOrDefault("date") ?? row.GetValueOrDefault("debtdate");
+                if (string.IsNullOrWhiteSpace(ledgerDateStr)) { errors.Add($"Row {rowNum}: Date is required for ledger import. Add a 'Date' column (format: YYYY-MM-DD)."); continue; }
+                if (!DateTime.TryParse(ledgerDateStr, out var ledgerParsedDate)) { errors.Add($"Row {rowNum}: Invalid date '{ledgerDateStr}'. Use format: YYYY-MM-DD."); continue; }
+
                 // Create the ledger entry
                 var entryType = isReceivable ? LedgerEntryType.Receivable : LedgerEntryType.Payable;
                 _db.LedgerEntries.Add(new LedgerEntry
@@ -568,7 +587,8 @@ public class ImportJobService
                     Source = EntrySource.Import,
                     ImportBatchId = job.Id,
                     RecordedByUserId = user?.Id,
-                    RecordedByName = user?.FullName
+                    RecordedByName = user?.FullName,
+                    CreatedAtUtc = DateTime.SpecifyKind(ledgerParsedDate, DateTimeKind.Utc)
                 });
 
                 job.SuccessCount++;

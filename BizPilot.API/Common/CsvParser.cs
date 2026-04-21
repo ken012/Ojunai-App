@@ -144,11 +144,19 @@ public static class CsvParser
         ["customer"] = "customername",
         ["buyer"] = "customername",
 
-        // Date
+        // Date (required for all import types)
         ["date"] = "date",
         ["saledate"] = "saledate",
         ["sale date"] = "saledate",
+        ["expensedate"] = "expensedate",
+        ["expense date"] = "expensedate",
+        ["stockdate"] = "stockdate",
+        ["stock date"] = "stockdate",
+        ["debtdate"] = "debtdate",
+        ["debt date"] = "debtdate",
         ["transaction date"] = "date",
+        ["created"] = "date",
+        ["created date"] = "date",
 
         // PaymentStatus
         ["paymentstatus"] = "paymentstatus",

@@ -9,6 +9,7 @@ public class CreateExpenseRequest
     [MaxLength(500)] public string? Notes { get; set; }
     [MaxLength(200)] public string? PaidTo { get; set; }
     [MaxLength(20)] public string? ExpenseType { get; set; }
+    public DateTime? ExpenseDate { get; set; }
 }
 
 public class UpdateExpenseRequest
