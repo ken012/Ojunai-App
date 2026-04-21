@@ -354,17 +354,24 @@ public class ImportJobService
                 if (string.IsNullOrWhiteSpace(expDateStr)) { errors.Add($"Row {rowNum}: Date is required for expense import. Add a 'Date' column (format: YYYY-MM-DD)."); continue; }
                 if (!DateTime.TryParse(expDateStr, out var expParsedDate)) { errors.Add($"Row {rowNum}: Invalid date '{expDateStr}'. Use format: YYYY-MM-DD."); continue; }
 
-                var expDto = await _expenses.CreateAsync(job.BusinessId, new CreateExpenseRequest
+                var expenseType = row.GetValueOrDefault("expensetype") ?? "operating";
+
+                // Direct entity creation — skips service-layer SaveChangesAsync per row
+                var expense = new Expense
                 {
+                    BusinessId = job.BusinessId,
                     Category = category,
+                    ExpenseType = expenseType,
                     Amount = amount!.Value,
                     PaidTo = row.GetValueOrDefault("paidto"),
                     Notes = row.GetValueOrDefault("notes"),
-                    ExpenseDate = DateTime.SpecifyKind(expParsedDate, DateTimeKind.Utc)
-                }, EntrySource.Import, user?.Id, user?.FullName);
-
-                var createdExpense = await _db.Expenses.FindAsync(expDto.Id);
-                if (createdExpense != null) createdExpense.ImportBatchId = job.Id;
+                    Source = EntrySource.Import,
+                    RecordedByUserId = user?.Id,
+                    RecordedByName = user?.FullName,
+                    CreatedAtUtc = DateTime.SpecifyKind(expParsedDate, DateTimeKind.Utc),
+                    ImportBatchId = job.Id
+                };
+                _db.Expenses.Add(expense);
 
                 job.SuccessCount++;
             }
@@ -567,6 +574,7 @@ public class ImportJobService
                         ImportBatchId = job.Id
                     };
                     _db.Contacts.Add(contact);
+                    // Flush so the contact gets an Id for the ledger entry FK below
                     await _db.SaveChangesAsync();
                 }
 

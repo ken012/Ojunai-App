@@ -84,9 +84,8 @@ public class ImportController : BizPilotBaseController
     }
 
     /// <summary>
-    /// Rolls back a completed import by deactivating products and soft-deleting expenses created by the
-    /// import batch. Contacts and ledger entries are left untouched because they may have been referenced
-    /// by other transactions since the import.
+    /// Rolls back a completed import by hard-deleting all records created by the import batch:
+    /// inventory transactions, products, expenses, ledger entries, and contacts.
     /// </summary>
     [HttpPost("rollback/{jobId:guid}")]
     [RequirePermission(Permission.ManageSettings)]
@@ -97,24 +96,43 @@ public class ImportController : BizPilotBaseController
         if (job.Status != ImportJobStatus.Completed)
             return BadRequest(ApiResponse<object>.Fail("Only completed imports can be rolled back."));
 
-        // Products: deactivate (not hard-delete, they may have sales referencing them)
+        // 1. Delete inventory transactions for products in this batch
+        var batchProductIds = await _db.Products
+            .Where(p => p.ImportBatchId == jobId)
+            .Select(p => p.Id)
+            .ToListAsync();
+        if (batchProductIds.Count > 0)
+        {
+            var invTxns = await _db.InventoryTransactions
+                .Where(t => batchProductIds.Contains(t.ProductId))
+                .ToListAsync();
+            _db.InventoryTransactions.RemoveRange(invTxns);
+        }
+
+        // 2. Products: hard-delete (inventory transactions removed above, no sales reference them)
         var products = await _db.Products.Where(p => p.ImportBatchId == jobId).ToListAsync();
-        foreach (var p in products) p.IsActive = false;
+        _db.Products.RemoveRange(products);
 
-        // Expenses: soft-delete
+        // 3. Expenses: hard-delete
         var expenses = await _db.Expenses.Where(e => e.ImportBatchId == jobId).ToListAsync();
-        foreach (var e in expenses) { e.IsDeleted = true; e.DeletedAtUtc = DateTime.UtcNow; }
+        _db.Expenses.RemoveRange(expenses);
 
-        // Contacts and ledger entries: leave alone (too risky — they may be linked to sales or payments)
+        // 4. Ledger entries: hard-delete
+        var ledgerEntries = await _db.LedgerEntries.Where(le => le.ImportBatchId == jobId).ToListAsync();
+        _db.LedgerEntries.RemoveRange(ledgerEntries);
+
+        // 5. Contacts: hard-delete (only those created by this batch with no other references)
+        var contacts = await _db.Contacts.Where(c => c.ImportBatchId == jobId).ToListAsync();
+        _db.Contacts.RemoveRange(contacts);
 
         job.Status = ImportJobStatus.RolledBack;
         await _db.SaveChangesAsync();
 
-        var count = products.Count + expenses.Count;
-        _logger.LogInformation("Import {JobId} rolled back: {Products} products deactivated, {Expenses} expenses deleted",
-            jobId, products.Count, expenses.Count);
+        var count = products.Count + expenses.Count + ledgerEntries.Count + contacts.Count;
+        _logger.LogInformation("Import {JobId} rolled back: {Products} products, {Expenses} expenses, {Ledger} ledger entries, {Contacts} contacts deleted",
+            jobId, products.Count, expenses.Count, ledgerEntries.Count, contacts.Count);
 
-        return Ok(ApiResponse<object>.Ok(null!, $"Import rolled back. {count} records affected."));
+        return Ok(ApiResponse<object>.Ok(null!, $"Import rolled back. {count} records deleted."));
     }
 
     /// <summary>Lists recent import jobs for the current business. Useful for an import history page.</summary>

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { hasPermission, Permission } from "@/lib/permissions";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Upload, Download, Copy, CheckCircle, AlertTriangle, Clock, ChevronLeft, ChevronRight } from "lucide-react";
+import { Upload, Download, Copy, CheckCircle, AlertTriangle, Clock, ChevronLeft, ChevronRight, History, Undo2 } from "lucide-react";
 
 type ImportType = "inventory" | "sales" | "expenses" | "contacts" | "contacts-ledger";
 
@@ -114,9 +115,9 @@ function validateRows(headers: string[], rows: string[][], importType: string): 
       }
     });
 
-    // Duplicate detection (by first column value)
-    const key = row[0]?.trim().toLowerCase();
-    if (key) {
+    // Duplicate detection (all columns must match)
+    const key = row.map(c => c?.trim().toLowerCase()).join("|");
+    if (key && key !== row.map(() => "").join("|")) {
       if (seen.has(key)) {
         issues.push({ row: rowNum, column: headers[0], issue: `Duplicate of row ${seen.get(key)}`, severity: "warning" });
       } else {
@@ -145,6 +146,7 @@ export default function ImportPage() {
   const [showIssues, setShowIssues] = useState(true);
   const [previewPage, setPreviewPage] = useState(1);
   const [rollingBack, setRollingBack] = useState(false);
+  const [rollingBackId, setRollingBackId] = useState<string | null>(null);
   const previewPageSize = 50;
   const fileRef = useRef<HTMLInputElement>(null);
   const { data: planStatus } = usePlanStatus();
@@ -162,6 +164,28 @@ export default function ImportPage() {
   const canImport = hasPermission(format.permission);
   const hasCsvImport = planStatus?.hasCsvImport ?? true;
 
+  const { data: importHistory, refetch: refetchHistory } = useQuery({
+    queryKey: ["import-history"],
+    queryFn: async () => {
+      const { data } = await api.get<{ data: ImportJob[] }>("/import/jobs?limit=20");
+      return data.data ?? [];
+    },
+  });
+
+  const handleHistoryRollback = useCallback(async (historyJobId: string) => {
+    if (!confirm("Undo this entire import? All imported records will be deleted.")) return;
+    setRollingBackId(historyJobId);
+    try {
+      await api.post(`/import/rollback/${historyJobId}`);
+      refetchHistory();
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      alert(ax.response?.data?.errors?.[0] ?? "Rollback failed");
+    } finally {
+      setRollingBackId(null);
+    }
+  }, [refetchHistory]);
+
   // Poll the job status until it reaches a terminal state. The backend updates ProcessedRows every 200
   // rows, so a 1.5s interval gives smooth progress without hammering the server.
   useEffect(() => {
@@ -170,14 +194,17 @@ export default function ImportPage() {
     const interval = setInterval(async () => {
       try {
         const { data } = await api.get<{ data: ImportJob }>(`/import/jobs/${job.id}`);
-        if (data.data) setJob(data.data);
+        if (data.data) {
+          setJob(data.data);
+          if (data.data.status === "Completed" || data.data.status === "Failed") refetchHistory();
+        }
       } catch {
         // Network blip during polling isn't fatal — the next tick will retry.
       }
     }, 1500);
 
     return () => clearInterval(interval);
-  }, [job]);
+  }, [job, refetchHistory]);
 
   if (planStatus && !hasCsvImport) {
     return (
@@ -221,14 +248,19 @@ export default function ImportPage() {
   }
 
   async function handleImport() {
-    if (!file || !canImport) return;
+    if ((!file && allRows.length === 0) || !canImport) return;
     setSubmitting(true);
     setError(null);
     setJob(null);
 
     try {
+      // Rebuild CSV from (possibly edited) preview data
+      const csvLines = [headers.join(","), ...allRows.map(row => row.map(c => c.includes(",") ? `"${c}"` : c).join(","))];
+      const csvBlob = new Blob([csvLines.join("\n") + "\n"], { type: "text/csv" });
+      const csvFile = new File([csvBlob], file?.name ?? "import.csv", { type: "text/csv" });
+
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", csvFile);
       const { data } = await api.post<{ data: ImportJob }>(`/import/${type}`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
@@ -397,10 +429,19 @@ export default function ImportPage() {
                         {row.map((cell, j) => {
                           const cellIssue = rowIssues.find(iss => iss.column === headers[j]);
                           return (
-                            <TableCell key={j} className="text-xs text-slate-600">
-                              <span>{cell || <span className="text-slate-300">—</span>}</span>
+                            <TableCell key={j} className="text-xs text-slate-600 p-0">
+                              <input
+                                className="w-full border-0 bg-transparent text-xs px-2 py-1.5 focus:bg-white focus:ring-1 focus:ring-sky-300 rounded outline-none"
+                                value={cell}
+                                onChange={(e) => {
+                                  const newRows = [...allRows];
+                                  newRows[globalIdx] = [...newRows[globalIdx]];
+                                  newRows[globalIdx][j] = e.target.value;
+                                  setAllRows(newRows);
+                                }}
+                              />
                               {cellIssue && (
-                                <span className={`block text-[10px] mt-0.5 ${cellIssue.severity === "error" ? "text-red-500" : "text-amber-500"}`}>
+                                <span className={`block text-[10px] px-2 pb-1 ${cellIssue.severity === "error" ? "text-red-500" : "text-amber-500"}`}>
                                   {cellIssue.issue}
                                 </span>
                               )}
@@ -472,6 +513,71 @@ export default function ImportPage() {
         <Card className="border-red-200 bg-red-50">
           <CardContent className="pt-4">
             <p className="text-sm text-red-600">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Import History */}
+      {importHistory && importHistory.length > 0 && !job && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <History size={14} /> Import History
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">Type</TableHead>
+                    <TableHead className="text-xs">File</TableHead>
+                    <TableHead className="text-xs">Date</TableHead>
+                    <TableHead className="text-xs">Rows</TableHead>
+                    <TableHead className="text-xs">Imported</TableHead>
+                    <TableHead className="text-xs">Skipped</TableHead>
+                    <TableHead className="text-xs">Status</TableHead>
+                    <TableHead className="text-xs"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {importHistory.map((h) => (
+                    <TableRow key={h.id}>
+                      <TableCell className="text-xs capitalize">{h.type}</TableCell>
+                      <TableCell className="text-xs text-slate-500 max-w-[120px] truncate">{h.fileName}</TableCell>
+                      <TableCell className="text-xs text-slate-500">{new Date(h.createdAtUtc).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-xs">{h.totalRows}</TableCell>
+                      <TableCell className="text-xs text-emerald-600">{h.successCount}</TableCell>
+                      <TableCell className="text-xs text-amber-600">{h.errorCount}</TableCell>
+                      <TableCell className="text-xs">
+                        <Badge variant={
+                          h.status === "Completed" ? "default"
+                            : h.status === "Failed" ? "destructive"
+                            : h.status === "RolledBack" ? "secondary"
+                            : "outline"
+                        } className="text-[10px]">
+                          {h.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {h.status === "Completed" && h.successCount > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50 h-7 px-2 text-xs"
+                            disabled={rollingBackId === h.id}
+                            onClick={() => handleHistoryRollback(h.id)}
+                          >
+                            <Undo2 size={12} className="mr-1" />
+                            {rollingBackId === h.id ? "..." : "Undo"}
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -564,7 +670,7 @@ export default function ImportPage() {
               <div className="pt-2 border-t flex items-center justify-between">
                 <p className="text-xs text-slate-400">
                   {job.status === "RolledBack"
-                    ? "Products were deactivated and expenses were deleted."
+                    ? "All imported records were deleted."
                     : "A WhatsApp message has been sent to the business owner with a summary."}
                 </p>
                 <div className="flex items-center gap-2">
@@ -575,12 +681,13 @@ export default function ImportPage() {
                       className="text-red-600 border-red-200 hover:bg-red-50"
                       disabled={rollingBack}
                       onClick={async () => {
-                        if (!confirm("Undo this entire import? Products will be deactivated and expenses deleted.")) return;
+                        if (!confirm("Undo this entire import? All imported records will be deleted.")) return;
                         setRollingBack(true);
                         try {
                           await api.post(`/import/rollback/${job.id}`);
                           const { data } = await api.get<{ data: ImportJob }>(`/import/jobs/${job.id}`);
                           if (data.data) setJob(data.data);
+                          refetchHistory();
                         } catch (err: unknown) {
                           const ax = err as { response?: { data?: { errors?: string[] } } };
                           alert(ax.response?.data?.errors?.[0] ?? "Rollback failed");
