@@ -27,10 +27,19 @@ public class ExpensesController : BizPilotBaseController
     public async Task<ActionResult<ApiResponse<PaginatedResult<ExpenseDto>>>> GetAll(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
         [FromQuery] DateTime? from = null, [FromQuery] DateTime? to = null,
-        [FromQuery] string? expenseType = null, [FromQuery] string? category = null)
+        [FromQuery] string? expenseType = null, [FromQuery] string? category = null,
+        [FromQuery] string? paymentMethod = null, [FromQuery] string? source = null)
     {
-        var result = await _expenses.GetAllAsync(BusinessId, page, pageSize, from, to, expenseType, category);
+        var result = await _expenses.GetAllAsync(BusinessId, page, pageSize, from, to, expenseType, category, paymentMethod, source);
         return Ok(ApiResponse<PaginatedResult<ExpenseDto>>.Ok(result));
+    }
+
+    [HttpGet("filters")]
+    [RequirePermission(Permission.ViewOwnReports)]
+    public async Task<ActionResult<ApiResponse<ExpenseFiltersDto>>> GetFilters([FromQuery] string? expenseType = null)
+    {
+        var result = await _expenses.GetFiltersAsync(BusinessId, expenseType);
+        return Ok(ApiResponse<ExpenseFiltersDto>.Ok(result));
     }
 
     [HttpPut("{id:guid}")]

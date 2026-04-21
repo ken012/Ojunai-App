@@ -35,3 +35,10 @@ public class ExpenseDto
     public string Source { get; set; } = "Manual";
     public DateTime CreatedAtUtc { get; set; }
 }
+
+public class ExpenseFiltersDto
+{
+    public List<string> Categories { get; set; } = new();
+    public List<string> PaymentMethods { get; set; } = new();
+    public List<string> Sources { get; set; } = new();
+}

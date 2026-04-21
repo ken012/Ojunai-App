@@ -35,7 +35,7 @@ public class ExpenseService : IExpenseService
     }
 
     public async Task<PaginatedResult<ExpenseDto>> GetAllAsync(
-        Guid businessId, int page, int pageSize, DateTime? from, DateTime? to, string? expenseType = null, string? category = null)
+        Guid businessId, int page, int pageSize, DateTime? from, DateTime? to, string? expenseType = null, string? category = null, string? paymentMethod = null, string? source = null)
     {
         var query = _db.Expenses.Where(e => e.BusinessId == businessId);
 
@@ -43,6 +43,10 @@ public class ExpenseService : IExpenseService
         if (to.HasValue) query = query.Where(e => e.CreatedAtUtc <= to.Value);
         if (!string.IsNullOrEmpty(category))
             query = query.Where(e => EF.Functions.ILike(e.Category, category));
+        if (!string.IsNullOrEmpty(paymentMethod))
+            query = query.Where(e => e.PaymentMethod != null && EF.Functions.ILike(e.PaymentMethod, paymentMethod));
+        if (!string.IsNullOrEmpty(source))
+            query = query.Where(e => EF.Functions.ILike(e.Source, source));
         if (expenseType == "cogs")
         {
             // Inventory Expenses: explicitly tagged as cogs OR category matches inventory keywords
@@ -84,6 +88,40 @@ public class ExpenseService : IExpenseService
             Page = page,
             PageSize = pageSize
         };
+    }
+
+    public async Task<ExpenseFiltersDto> GetFiltersAsync(Guid businessId, string? expenseType = null)
+    {
+        var query = _db.Expenses.Where(e => e.BusinessId == businessId);
+
+        if (expenseType == "cogs")
+        {
+            query = query.Where(e => e.ExpenseType == "cogs"
+                || EF.Functions.ILike(e.Category, "inventory%")
+                || EF.Functions.ILike(e.Category, "%stock%")
+                || EF.Functions.ILike(e.Category, "%goods for%")
+                || EF.Functions.ILike(e.Category, "raw material%")
+                || EF.Functions.ILike(e.Category, "%merchandise%")
+                || EF.Functions.ILike(e.Category, "%replenish%")
+                || EF.Functions.ILike(e.Category, "%restock%"));
+        }
+        else if (expenseType == "operating")
+        {
+            query = query.Where(e => e.ExpenseType != "cogs"
+                && !EF.Functions.ILike(e.Category, "inventory%")
+                && !EF.Functions.ILike(e.Category, "%stock%")
+                && !EF.Functions.ILike(e.Category, "%goods for%")
+                && !EF.Functions.ILike(e.Category, "raw material%")
+                && !EF.Functions.ILike(e.Category, "%merchandise%")
+                && !EF.Functions.ILike(e.Category, "%replenish%")
+                && !EF.Functions.ILike(e.Category, "%restock%"));
+        }
+
+        var categories = await query.Select(e => e.Category).Distinct().OrderBy(c => c).ToListAsync();
+        var methods = await query.Where(e => e.PaymentMethod != null).Select(e => e.PaymentMethod!).Distinct().OrderBy(m => m).ToListAsync();
+        var sources = await query.Select(e => e.Source).Distinct().OrderBy(s => s).ToListAsync();
+
+        return new ExpenseFiltersDto { Categories = categories, PaymentMethods = methods, Sources = sources };
     }
 
     public async Task<ExpenseDto> UpdateAsync(Guid businessId, Guid expenseId, UpdateExpenseRequest request)

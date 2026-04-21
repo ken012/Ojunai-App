@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { formatNaira, formatDateTime } from "@/lib/format";
 import { useBusiness } from "@/lib/data-sync";
-import type { PaginatedResult, ExpenseDto } from "@/lib/types";
+import type { PaginatedResult, ExpenseDto, ApiResponse } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,13 +62,28 @@ export default function ExpensesPage() {
   const [editing, setEditing] = useState<ExpenseDto | null>(null);
   const [deleting, setDeleting] = useState<ExpenseDto | null>(null);
   const [categoryFilter, setCategoryFilter] = useState("");
+  const [methodFilter, setMethodFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
+
+  const { data: filters } = useQuery({
+    queryKey: ["expense-filters", expenseTab],
+    queryFn: async () => {
+      const { data } = await api.get<ApiResponse<{ categories: string[]; paymentMethods: string[]; sources: string[] }>>(
+        `/expenses/filters${expenseTab !== "all" ? `?expenseType=${expenseTab}` : ""}`
+      );
+      return data.data!;
+    },
+  });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["expenses", page, expenseTab, categoryFilter],
+    queryKey: ["expenses", page, expenseTab, categoryFilter, methodFilter, sourceFilter],
     queryFn: async () => {
-      const { data } = await api.get<{ data: PaginatedResult<ExpenseDto> }>(
-        `/expenses?page=${page}&pageSize=20${expenseTab !== "all" ? `&expenseType=${expenseTab}` : ""}${categoryFilter ? `&category=${categoryFilter}` : ""}`
-      );
+      const params = new URLSearchParams({ page: String(page), pageSize: "20" });
+      if (expenseTab !== "all") params.set("expenseType", expenseTab);
+      if (categoryFilter) params.set("category", categoryFilter);
+      if (methodFilter) params.set("paymentMethod", methodFilter);
+      if (sourceFilter) params.set("source", sourceFilter);
+      const { data } = await api.get<{ data: PaginatedResult<ExpenseDto> }>(`/expenses?${params}`);
       return data.data!;
     },
   });
@@ -88,7 +103,7 @@ export default function ExpensesPage() {
       {/* Expense Type Tabs */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit">
         <button
-          onClick={() => { setExpenseTab("all"); setPage(1); }}
+          onClick={() => { setExpenseTab("all"); setPage(1); setCategoryFilter(""); setMethodFilter(""); setSourceFilter(""); }}
           className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
             expenseTab === "all"
               ? "bg-white text-slate-900 shadow-sm"
@@ -98,7 +113,7 @@ export default function ExpensesPage() {
           All
         </button>
         <button
-          onClick={() => { setExpenseTab("operating"); setPage(1); }}
+          onClick={() => { setExpenseTab("operating"); setPage(1); setCategoryFilter(""); setMethodFilter(""); setSourceFilter(""); }}
           className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
             expenseTab === "operating"
               ? "bg-white text-slate-900 shadow-sm"
@@ -108,7 +123,7 @@ export default function ExpensesPage() {
           Operating Expenses
         </button>
         <button
-          onClick={() => { setExpenseTab("cogs"); setPage(1); }}
+          onClick={() => { setExpenseTab("cogs"); setPage(1); setCategoryFilter(""); setMethodFilter(""); setSourceFilter(""); }}
           className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
             expenseTab === "cogs"
               ? "bg-white text-slate-900 shadow-sm"
@@ -123,8 +138,22 @@ export default function ExpensesPage() {
         <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
           className="h-8 px-2 rounded-md border border-slate-200 text-xs">
           <option value="">All Categories</option>
-          {(expenseTab === "cogs" ? INVENTORY_CATEGORIES : expenseTab === "operating" ? OPERATING_CATEGORIES : [...OPERATING_CATEGORIES, ...INVENTORY_CATEGORIES]).map((c) => (
+          {(filters?.categories ?? []).map((c) => (
             <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        <select value={methodFilter} onChange={(e) => { setMethodFilter(e.target.value); setPage(1); }}
+          className="h-8 px-2 rounded-md border border-slate-200 text-xs">
+          <option value="">All Methods</option>
+          {(filters?.paymentMethods ?? []).map((m) => (
+            <option key={m} value={m}>{m}</option>
+          ))}
+        </select>
+        <select value={sourceFilter} onChange={(e) => { setSourceFilter(e.target.value); setPage(1); }}
+          className="h-8 px-2 rounded-md border border-slate-200 text-xs">
+          <option value="">All Sources</option>
+          {(filters?.sources ?? []).map((s) => (
+            <option key={s} value={s}>{s}</option>
           ))}
         </select>
       </div>
@@ -285,6 +314,7 @@ function AddExpenseDialog({ open, onClose, defaultExpenseType }: { open: boolean
         paymentMethod: form.paymentMethod || undefined,
       });
       qc.invalidateQueries({ queryKey: ["expenses"] });
+      qc.invalidateQueries({ queryKey: ["expense-filters"] });
       handleClose();
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { errors?: string[] } } };
@@ -423,6 +453,7 @@ function EditExpenseDialog({
         paymentMethod: form.paymentMethod || undefined,
       });
       qc.invalidateQueries({ queryKey: ["expenses"] });
+      qc.invalidateQueries({ queryKey: ["expense-filters"] });
       handleClose();
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { errors?: string[] } } };
@@ -528,6 +559,7 @@ function DeleteExpenseDialog({
     try {
       await api.delete(`/expenses/${expense.id}`);
       qc.invalidateQueries({ queryKey: ["expenses"] });
+      qc.invalidateQueries({ queryKey: ["expense-filters"] });
       onClose();
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { errors?: string[] } } };
