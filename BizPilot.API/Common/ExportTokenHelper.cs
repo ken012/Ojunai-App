@@ -20,9 +20,9 @@ public static class ExportTokenHelper
             exp
         });
 
-        var payloadBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(payload));
-        var signature = ComputeHmac(payloadBase64, secret);
-        return $"{payloadBase64}.{signature}";
+        var payloadB64 = ToUrlSafeBase64(Encoding.UTF8.GetBytes(payload));
+        var signature = ComputeHmac(payloadB64, secret);
+        return $"{payloadB64}.{signature}";
     }
 
     public static ExportTokenPayload? ValidateToken(string token, string secret)
@@ -38,7 +38,7 @@ public static class ExportTokenHelper
 
         try
         {
-            var json = Encoding.UTF8.GetString(Convert.FromBase64String(parts[0]));
+            var json = Encoding.UTF8.GetString(FromUrlSafeBase64(parts[0]));
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
@@ -62,6 +62,20 @@ public static class ExportTokenHelper
     {
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
         var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
-        return Convert.ToBase64String(hash);
+        return ToUrlSafeBase64(hash);
+    }
+
+    private static string ToUrlSafeBase64(byte[] bytes) =>
+        Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+
+    private static byte[] FromUrlSafeBase64(string s)
+    {
+        var b64 = s.Replace('-', '+').Replace('_', '/');
+        switch (b64.Length % 4)
+        {
+            case 2: b64 += "=="; break;
+            case 3: b64 += "="; break;
+        }
+        return Convert.FromBase64String(b64);
     }
 }

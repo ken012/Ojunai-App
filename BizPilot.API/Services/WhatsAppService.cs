@@ -2782,7 +2782,7 @@ public class WhatsAppService : IWhatsAppService
         var secret = _config["Jwt:Secret"]!;
         var baseUrl = _config["App:BaseUrl"] ?? "https://api.bizpilot-ai.com";
         var token = ExportTokenHelper.GenerateToken(businessId, reportType, from, to, secret);
-        var downloadUrl = $"{baseUrl}/api/export/download?token={Uri.EscapeDataString(token)}";
+        var downloadUrl = $"{baseUrl}/api/export/download?token={token}";
 
         var label = reportType switch
         {
