@@ -425,7 +425,7 @@ export default function ImportPage() {
                 <input type="radio" name="ledger-mode" value="existing_debts" checked={importMode === "existing_debts"} onChange={() => setImportMode("existing_debts")} className="mt-0.5" />
                 <div>
                   <p className="text-sm font-medium text-slate-700">Existing debts — Migrating balances I{"'"}m already tracking</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Import the current outstanding balance for each contact. These show as "Opening balance" in the ledger so it{"'"}s clear they were carried over from your previous records.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Import the current outstanding balance for each contact. These show as {'"'}Opening balance{'"'} in the ledger so it{"'"}s clear they were carried over from your previous records.</p>
                 </div>
               </label>
             </div>
