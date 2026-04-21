@@ -2776,9 +2776,8 @@ public class WhatsAppService : IWhatsAppService
         }
 
         var now = DateTime.UtcNow;
-        var lastMonth = now.AddMonths(-1);
-        var from = new DateOnly(lastMonth.Year, lastMonth.Month, 1);
-        var to = new DateOnly(now.Year, now.Month, 1).AddDays(-1);
+        var to = DateOnly.FromDateTime(now);
+        var from = to.AddDays(-30);
 
         var secret = _config["Jwt:Secret"]!;
         var baseUrl = _config["App:BaseUrl"] ?? "https://api.bizpilot-ai.com";
