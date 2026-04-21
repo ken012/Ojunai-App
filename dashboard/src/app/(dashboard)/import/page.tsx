@@ -147,6 +147,7 @@ export default function ImportPage() {
   const [previewPage, setPreviewPage] = useState(1);
   const [rollingBack, setRollingBack] = useState(false);
   const [rollingBackId, setRollingBackId] = useState<string | null>(null);
+  const [existingStock, setExistingStock] = useState(false);
   const previewPageSize = 50;
   const fileRef = useRef<HTMLInputElement>(null);
   const { data: planStatus } = usePlanStatus();
@@ -261,7 +262,10 @@ export default function ImportPage() {
 
       const formData = new FormData();
       formData.append("file", csvFile);
-      const { data } = await api.post<{ data: ImportJob }>(`/import/${type}`, formData, {
+      const url = type === "inventory" && existingStock
+        ? `/import/${type}?skipExpenses=true`
+        : `/import/${type}`;
+      const { data } = await api.post<{ data: ImportJob }>(url, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       if (data.data) setJob(data.data);
@@ -295,6 +299,7 @@ export default function ImportPage() {
     setPreviewPage(1);
     setJob(null);
     setError(null);
+    setExistingStock(false);
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -342,6 +347,27 @@ export default function ImportPage() {
           </div>
         </CardContent>
       </Card>
+
+      {type === "inventory" && (
+        <Card className={existingStock ? "border-sky-200 bg-sky-50/50" : ""}>
+          <CardContent className="pt-4">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={existingStock}
+                onChange={(e) => setExistingStock(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+              />
+              <div>
+                <p className="text-sm font-medium text-slate-700">Existing stock (already paid for)</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Use this when migrating inventory you already own from another system or manual records. Products and stock levels will be created, but no expense will be recorded since these items were already paid for.
+                </p>
+              </div>
+            </label>
+          </CardContent>
+        </Card>
+      )}
 
       {canImport ? (
         <Card>

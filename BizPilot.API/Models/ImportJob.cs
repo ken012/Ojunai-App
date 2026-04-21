@@ -25,6 +25,8 @@ public class ImportJob
     public string? ErrorsJson { get; set; }
     public string? FailureReason { get; set; }
 
+    public bool SkipExpenses { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? StartedAtUtc { get; set; }
     public DateTime? CompletedAtUtc { get; set; }

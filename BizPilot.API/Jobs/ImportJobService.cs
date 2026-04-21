@@ -250,22 +250,25 @@ public class ImportJobService
                         });
                     }
 
-                    var expenseCost = costPrice ?? product.CostPrice;
-                    if (expenseCost.HasValue && expenseCost.Value > 0)
+                    if (!job.SkipExpenses)
                     {
-                        _db.Expenses.Add(new Expense
+                        var expenseCost = costPrice ?? product.CostPrice;
+                        if (expenseCost.HasValue && expenseCost.Value > 0)
                         {
-                            BusinessId = job.BusinessId,
-                            Category = "Inventory",
-                            ExpenseType = "cogs",
-                            Amount = qty.Value * expenseCost.Value,
-                            Notes = $"Import: {qty.Value:0.##} {unit} of {name} @ {cs}{expenseCost.Value:N0}",
-                            Source = EntrySource.Import,
-                            RecordedByUserId = user?.Id,
-                            RecordedByName = user?.FullName,
-                            CreatedAtUtc = invDate,
-                            ImportBatchId = job.Id
-                        });
+                            _db.Expenses.Add(new Expense
+                            {
+                                BusinessId = job.BusinessId,
+                                Category = "Inventory",
+                                ExpenseType = "cogs",
+                                Amount = qty.Value * expenseCost.Value,
+                                Notes = $"Import: {qty.Value:0.##} {unit} of {name} @ {cs}{expenseCost.Value:N0}",
+                                Source = EntrySource.Import,
+                                RecordedByUserId = user?.Id,
+                                RecordedByName = user?.FullName,
+                                CreatedAtUtc = invDate,
+                                ImportBatchId = job.Id
+                            });
+                        }
                     }
 
                     job.SuccessCount++;

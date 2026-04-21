@@ -42,8 +42,8 @@ public class ImportController : BizPilotBaseController
     [HttpPost("inventory")]
     [RequirePermission(Permission.ManageStock)]
     [RequestSizeLimit(MaxFileSize)]
-    public Task<ActionResult<ApiResponse<ImportJobDto>>> ImportInventory(IFormFile file)
-        => EnqueueImportAsync(file, ImportJobType.Inventory, Permission.ManageStock);
+    public Task<ActionResult<ApiResponse<ImportJobDto>>> ImportInventory(IFormFile file, [FromQuery] bool skipExpenses = false)
+        => EnqueueImportAsync(file, ImportJobType.Inventory, Permission.ManageStock, skipExpenses);
 
     [HttpPost("sales")]
     [RequirePermission(Permission.RecordSales)]
@@ -149,7 +149,7 @@ public class ImportController : BizPilotBaseController
         return Ok(ApiResponse<List<ImportJobDto>>.Ok(jobs.Select(MapToDto).ToList()));
     }
 
-    private async Task<ActionResult<ApiResponse<ImportJobDto>>> EnqueueImportAsync(IFormFile file, ImportJobType type, string permission)
+    private async Task<ActionResult<ApiResponse<ImportJobDto>>> EnqueueImportAsync(IFormFile file, ImportJobType type, string permission, bool skipExpenses = false)
     {
         var (allowed, planErr) = await _planGuard.CheckFeatureAsync(BusinessId, "csv_import");
         if (!allowed) return BadRequest(ApiResponse<ImportJobDto>.Fail(planErr!));
@@ -165,7 +165,8 @@ public class ImportController : BizPilotBaseController
             Status = ImportJobStatus.Queued,
             RawCsvText = csvText,
             FileName = file.FileName,
-            TotalRows = rowCount
+            TotalRows = rowCount,
+            SkipExpenses = skipExpenses
         };
         _db.ImportJobs.Add(job);
         await _db.SaveChangesAsync();
