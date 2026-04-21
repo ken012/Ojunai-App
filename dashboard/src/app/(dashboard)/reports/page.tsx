@@ -14,7 +14,8 @@ import type {
   TopCustomersReportDto, SalesHeatmapDto, MonthlyTrendDto, PaymentMethodSplitDto,
   CustomerReliabilityDto, WastageReportDto, AvgTransactionValueDto,
   CustomerRetentionDto, ReorderSuggestionDto, ProductAffinityDto,
-  WeeklySalesTrendDto
+  WeeklySalesTrendDto, SalesComparisonDto, CategoryRevenueDto,
+  OutstandingDebtSummaryDto, CashFlowForecastDto
 } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -371,10 +372,67 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
     enabled: hasAdvanced,
   });
 
+  const [compPeriod, setCompPeriod] = useState<"month" | "week">("month");
+  const { data: comparison } = useQuery({
+    queryKey: ["sales-comparison", compPeriod],
+    queryFn: async () => (await api.get<{ data: SalesComparisonDto }>(`/reports/sales-comparison?period=${compPeriod}`)).data.data!,
+    enabled: hasAdvanced,
+  });
+  const { data: categoryRevenue } = useQuery({
+    queryKey: ["category-revenue"],
+    queryFn: async () => (await api.get<{ data: CategoryRevenueDto }>("/reports/category-revenue?days=30")).data.data!,
+    enabled: hasAdvanced,
+  });
+  const { data: cashFlow } = useQuery({
+    queryKey: ["cash-flow-forecast"],
+    queryFn: async () => (await api.get<{ data: CashFlowForecastDto }>("/reports/cash-flow-forecast")).data.data!,
+    enabled: hasAdvanced,
+  });
+
   if (!hasAdvanced) return <UpgradePrompt feature="Financial Reports" plan="Shop" />;
 
   return (
     <div className="space-y-4">
+      {/* Sales Comparison */}
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+              <TrendingUp size={15} className="text-emerald-500" />
+              Sales Comparison
+            </CardTitle>
+            <select className="h-7 px-2 rounded border border-slate-200 text-xs" value={compPeriod} onChange={(e) => setCompPeriod(e.target.value as "month" | "week")}>
+              <option value="month">Month vs Month</option>
+              <option value="week">Week vs Week</option>
+            </select>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {comparison ? (
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { label: "Revenue", current: formatNaira(comparison.currentRevenue), previous: formatNaira(comparison.previousRevenue), change: comparison.revenueChangePercent },
+                { label: "Transactions", current: String(comparison.currentSaleCount), previous: String(comparison.previousSaleCount), change: comparison.saleCountChangePercent },
+                { label: "Avg Order", current: formatNaira(comparison.currentAvgOrder), previous: formatNaira(comparison.previousAvgOrder), change: comparison.avgOrderChangePercent },
+              ].map((m) => (
+                <div key={m.label} className="text-center">
+                  <p className="text-xs text-slate-400 mb-1">{m.label}</p>
+                  <p className="text-lg font-bold text-slate-900">{m.current}</p>
+                  <p className="text-xs text-slate-400">{m.previous}</p>
+                  <p className={`text-xs font-semibold mt-1 ${m.change >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                    {m.change >= 0 ? "+" : ""}{m.change}%
+                  </p>
+                </div>
+              ))}
+              <div className="col-span-3 flex justify-between text-[10px] text-slate-400 border-t pt-2 mt-1">
+                <span>{comparison.currentLabel}</span>
+                <span>vs {comparison.previousLabel}</span>
+              </div>
+            </div>
+          ) : <Skeleton className="h-28" />}
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Monthly P&L */}
         <Card>
@@ -663,6 +721,86 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
         </CardHeader>
         <CardContent>
           {heatmap ? <Heatmap data={heatmap} /> : <Skeleton className="h-40" />}
+        </CardContent>
+      </Card>
+
+      {/* Revenue by Product Category */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <PieChart size={15} className="text-violet-500" />
+            Revenue by Product Category (30 days)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {categoryRevenue && categoryRevenue.categories.length > 0 ? (
+            <>
+              <div className="space-y-2">
+                {categoryRevenue.categories.slice(0, 10).map((c) => (
+                  <div key={c.category} className="flex items-center gap-3">
+                    <span className="text-xs text-slate-600 w-28 truncate flex-shrink-0">{c.category}</span>
+                    <div className="flex-1 bg-slate-100 rounded-full h-5 overflow-hidden">
+                      <div className="bg-violet-500 h-full rounded-full" style={{ width: `${Math.max(2, c.percentOfTotal)}%` }} />
+                    </div>
+                    <span className="text-xs font-medium text-slate-900 w-20 text-right flex-shrink-0">{formatNaira(c.revenue)}</span>
+                    <span className="text-[10px] text-slate-400 w-10 text-right flex-shrink-0">{c.percentOfTotal}%</span>
+                  </div>
+                ))}
+              </div>
+              {categoryRevenue.uncategorizedRevenue > 0 && (
+                <p className="text-xs text-slate-400 mt-3">
+                  {formatNaira(categoryRevenue.uncategorizedRevenue)} from uncategorized products — add categories to see them here.
+                </p>
+              )}
+            </>
+          ) : categoryRevenue ? (
+            <p className="text-xs text-slate-400 italic">No sales with categorized products in the last 30 days.</p>
+          ) : <Skeleton className="h-40" />}
+        </CardContent>
+      </Card>
+
+      {/* Cash Flow Forecast */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <DollarSign size={15} className="text-sky-500" />
+            Cash Flow Forecast
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {cashFlow ? (
+            <>
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="bg-emerald-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-emerald-500">Avg Weekly In</p>
+                  <p className="text-sm font-bold text-emerald-700">{formatNaira(cashFlow.avgWeeklyCashIn)}</p>
+                </div>
+                <div className="bg-red-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-red-500">Avg Weekly Out</p>
+                  <p className="text-sm font-bold text-red-700">{formatNaira(cashFlow.avgWeeklyCashOut)}</p>
+                </div>
+                <div className={`rounded-lg p-3 text-center ${cashFlow.projectedMonthEndBalance >= 0 ? "bg-sky-50" : "bg-amber-50"}`}>
+                  <p className="text-xs text-slate-500">Month-End Projection</p>
+                  <p className={`text-sm font-bold ${cashFlow.projectedMonthEndBalance >= 0 ? "text-sky-700" : "text-amber-700"}`}>{formatNaira(cashFlow.projectedMonthEndBalance)}</p>
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={[
+                  ...cashFlow.actuals.map(w => ({ ...w, type: "actual" })),
+                  ...cashFlow.forecast.map(w => ({ ...w, type: "forecast" })),
+                ]}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="label" tick={{ fontSize: 9 }} angle={-25} textAnchor="end" height={45} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} />
+                  <Tooltip formatter={(v) => formatNaira(Number(v))} />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                  <Bar dataKey="cashIn" name="Cash In" fill="#10b981" />
+                  <Bar dataKey="cashOut" name="Cash Out" fill="#ef4444" />
+                </BarChart>
+              </ResponsiveContainer>
+              <p className="text-[10px] text-slate-400 mt-2">Last 4 weeks actual + next 4 weeks projected at current pace</p>
+            </>
+          ) : <Skeleton className="h-60" />}
         </CardContent>
       </Card>
     </div>
@@ -1103,11 +1241,86 @@ function DebtsTab({ hasAdvanced }: { hasAdvanced: boolean }) {
     queryFn: async () => (await api.get<{ data: AgingReportDto }>("/reports/aging-payables")).data.data!,
     enabled: hasAdvanced,
   });
+  const { data: debtSummary } = useQuery({
+    queryKey: ["outstanding-debts"],
+    queryFn: async () => (await api.get<{ data: OutstandingDebtSummaryDto }>("/reports/outstanding-debts")).data.data!,
+    enabled: hasAdvanced,
+  });
 
   if (!hasAdvanced) return <UpgradePrompt feature="Aging Reports" plan="Shop" />;
 
   return (
     <div className="space-y-4">
+      {/* Outstanding Debts Summary */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <DollarSign size={15} className="text-sky-500" />
+            Outstanding Debts Summary
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {debtSummary ? (
+            <>
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="bg-blue-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-blue-500">They Owe You</p>
+                  <p className="text-sm font-bold text-blue-700">{formatNaira(debtSummary.totalReceivables)}</p>
+                </div>
+                <div className="bg-orange-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-orange-500">You Owe Them</p>
+                  <p className="text-sm font-bold text-orange-700">{formatNaira(debtSummary.totalPayables)}</p>
+                </div>
+                <div className={`rounded-lg p-3 text-center ${debtSummary.netPosition >= 0 ? "bg-emerald-50" : "bg-red-50"}`}>
+                  <p className="text-xs text-slate-500">Net Position</p>
+                  <p className={`text-sm font-bold ${debtSummary.netPosition >= 0 ? "text-emerald-700" : "text-red-700"}`}>{formatNaira(debtSummary.netPosition)}</p>
+                </div>
+              </div>
+              {debtSummary.overdueContactCount > 0 && (
+                <p className="text-xs text-amber-600 mb-3">{debtSummary.overdueContactCount} contact{debtSummary.overdueContactCount !== 1 ? "s" : ""} overdue (30+ days)</p>
+              )}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {debtSummary.topReceivables.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 mb-2">Top Receivables (owed to you)</p>
+                    <div className="space-y-1.5">
+                      {debtSummary.topReceivables.map((c) => (
+                        <div key={c.contactId} className="flex justify-between items-center text-xs">
+                          <span className="text-slate-700 truncate">{c.contactName}</span>
+                          <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                            <span className="text-slate-400">{c.daysOld}d</span>
+                            <span className="font-medium text-blue-700">{formatNaira(c.amount)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {debtSummary.topPayables.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-slate-500 mb-2">Top Payables (you owe)</p>
+                    <div className="space-y-1.5">
+                      {debtSummary.topPayables.map((c) => (
+                        <div key={c.contactId} className="flex justify-between items-center text-xs">
+                          <span className="text-slate-700 truncate">{c.contactName}</span>
+                          <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                            <span className="text-slate-400">{c.daysOld}d</span>
+                            <span className="font-medium text-orange-700">{formatNaira(c.amount)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              {debtSummary.topReceivables.length === 0 && debtSummary.topPayables.length === 0 && (
+                <p className="text-xs text-slate-400 italic">No outstanding debts. All settled!</p>
+              )}
+            </>
+          ) : <Skeleton className="h-40" />}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">

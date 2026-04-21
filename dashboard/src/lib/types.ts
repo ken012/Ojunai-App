@@ -547,6 +547,65 @@ export interface WeeklySalesPointDto {
   movingAvg: number;
 }
 
+export interface SalesComparisonDto {
+  currentRevenue: number;
+  currentSaleCount: number;
+  currentAvgOrder: number;
+  previousRevenue: number;
+  previousSaleCount: number;
+  previousAvgOrder: number;
+  revenueChangePercent: number;
+  saleCountChangePercent: number;
+  avgOrderChangePercent: number;
+  currentLabel: string;
+  previousLabel: string;
+}
+
+export interface CategoryRevenueItemDto {
+  category: string;
+  revenue: number;
+  saleCount: number;
+  percentOfTotal: number;
+}
+
+export interface CategoryRevenueDto {
+  categories: CategoryRevenueItemDto[];
+  totalRevenue: number;
+  uncategorizedRevenue: number;
+}
+
+export interface OutstandingContactDto {
+  contactId: string;
+  contactName: string;
+  amount: number;
+  daysOld: number;
+}
+
+export interface OutstandingDebtSummaryDto {
+  totalReceivables: number;
+  totalPayables: number;
+  netPosition: number;
+  overdueContactCount: number;
+  topReceivables: OutstandingContactDto[];
+  topPayables: OutstandingContactDto[];
+}
+
+export interface CashFlowWeekDto {
+  label: string;
+  cashIn: number;
+  cashOut: number;
+  net: number;
+  runningBalance: number;
+}
+
+export interface CashFlowForecastDto {
+  actuals: CashFlowWeekDto[];
+  forecast: CashFlowWeekDto[];
+  projectedMonthEndBalance: number;
+  avgWeeklyCashIn: number;
+  avgWeeklyCashOut: number;
+}
+
 export interface WeeklySalesTrendDto {
   weeks: WeeklySalesPointDto[];
   avgWeeklyRevenue: number;

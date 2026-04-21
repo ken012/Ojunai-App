@@ -228,4 +228,44 @@ public class ReportsController : BizPilotBaseController
         var result = await _reports.GetWeeklySalesTrendAsync(BusinessId, Math.Clamp(months, 1, 12));
         return Ok(ApiResponse<WeeklySalesTrendDto>.Ok(result));
     }
+
+    [HttpGet("sales-comparison")]
+    [RequirePermission(Permission.ViewAllReports)]
+    public async Task<ActionResult<ApiResponse<SalesComparisonDto>>> GetSalesComparison([FromQuery] string period = "month")
+    {
+        var (allowed, err) = await _planGuard.CheckFeatureAsync(BusinessId, "advanced_reports");
+        if (!allowed) return BadRequest(ApiResponse<SalesComparisonDto>.Fail(err!));
+        var result = await _reports.GetSalesComparisonAsync(BusinessId, period == "week" ? "week" : "month");
+        return Ok(ApiResponse<SalesComparisonDto>.Ok(result));
+    }
+
+    [HttpGet("category-revenue")]
+    [RequirePermission(Permission.ViewAllReports)]
+    public async Task<ActionResult<ApiResponse<CategoryRevenueDto>>> GetCategoryRevenue([FromQuery] int days = 30)
+    {
+        var (allowed, err) = await _planGuard.CheckFeatureAsync(BusinessId, "advanced_reports");
+        if (!allowed) return BadRequest(ApiResponse<CategoryRevenueDto>.Fail(err!));
+        var result = await _reports.GetCategoryRevenueAsync(BusinessId, Math.Clamp(days, 1, 365));
+        return Ok(ApiResponse<CategoryRevenueDto>.Ok(result));
+    }
+
+    [HttpGet("outstanding-debts")]
+    [RequirePermission(Permission.ViewAllReports)]
+    public async Task<ActionResult<ApiResponse<OutstandingDebtSummaryDto>>> GetOutstandingDebts()
+    {
+        var (allowed, err) = await _planGuard.CheckFeatureAsync(BusinessId, "advanced_reports");
+        if (!allowed) return BadRequest(ApiResponse<OutstandingDebtSummaryDto>.Fail(err!));
+        var result = await _reports.GetOutstandingDebtSummaryAsync(BusinessId);
+        return Ok(ApiResponse<OutstandingDebtSummaryDto>.Ok(result));
+    }
+
+    [HttpGet("cash-flow-forecast")]
+    [RequirePermission(Permission.ViewAllReports)]
+    public async Task<ActionResult<ApiResponse<CashFlowForecastDto>>> GetCashFlowForecast()
+    {
+        var (allowed, err) = await _planGuard.CheckFeatureAsync(BusinessId, "advanced_reports");
+        if (!allowed) return BadRequest(ApiResponse<CashFlowForecastDto>.Fail(err!));
+        var result = await _reports.GetCashFlowForecastAsync(BusinessId);
+        return Ok(ApiResponse<CashFlowForecastDto>.Ok(result));
+    }
 }

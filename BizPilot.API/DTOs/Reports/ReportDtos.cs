@@ -345,3 +345,69 @@ public class WeeklySalesTrendDto
     public decimal TotalRevenue { get; set; }
     public int TotalSales { get; set; }
 }
+
+public class SalesComparisonDto
+{
+    public decimal CurrentRevenue { get; set; }
+    public int CurrentSaleCount { get; set; }
+    public decimal CurrentAvgOrder { get; set; }
+    public decimal PreviousRevenue { get; set; }
+    public int PreviousSaleCount { get; set; }
+    public decimal PreviousAvgOrder { get; set; }
+    public decimal RevenueChangePercent { get; set; }
+    public decimal SaleCountChangePercent { get; set; }
+    public decimal AvgOrderChangePercent { get; set; }
+    public string CurrentLabel { get; set; } = string.Empty;
+    public string PreviousLabel { get; set; } = string.Empty;
+}
+
+public class CategoryRevenueItemDto
+{
+    public string Category { get; set; } = string.Empty;
+    public decimal Revenue { get; set; }
+    public int SaleCount { get; set; }
+    public decimal PercentOfTotal { get; set; }
+}
+
+public class CategoryRevenueDto
+{
+    public List<CategoryRevenueItemDto> Categories { get; set; } = new();
+    public decimal TotalRevenue { get; set; }
+    public decimal UncategorizedRevenue { get; set; }
+}
+
+public class OutstandingDebtSummaryDto
+{
+    public decimal TotalReceivables { get; set; }
+    public decimal TotalPayables { get; set; }
+    public decimal NetPosition { get; set; }
+    public int OverdueContactCount { get; set; }
+    public List<OutstandingContactDto> TopReceivables { get; set; } = new();
+    public List<OutstandingContactDto> TopPayables { get; set; } = new();
+}
+
+public class OutstandingContactDto
+{
+    public Guid ContactId { get; set; }
+    public string ContactName { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+    public int DaysOld { get; set; }
+}
+
+public class CashFlowForecastDto
+{
+    public List<CashFlowWeekDto> Actuals { get; set; } = new();
+    public List<CashFlowWeekDto> Forecast { get; set; } = new();
+    public decimal ProjectedMonthEndBalance { get; set; }
+    public decimal AvgWeeklyCashIn { get; set; }
+    public decimal AvgWeeklyCashOut { get; set; }
+}
+
+public class CashFlowWeekDto
+{
+    public string Label { get; set; } = string.Empty;
+    public decimal CashIn { get; set; }
+    public decimal CashOut { get; set; }
+    public decimal Net { get; set; }
+    public decimal RunningBalance { get; set; }
+}

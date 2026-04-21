@@ -811,4 +811,231 @@ public partial class ReportService
             TotalSales = weeks.Sum(w => w.SaleCount)
         };
     }
+
+    // ── Sales Comparison ────────────────────────────────────────────────────
+
+    public async Task<SalesComparisonDto> GetSalesComparisonAsync(Guid businessId, string period)
+    {
+        var now = DateTime.UtcNow;
+        DateTime currentStart, currentEnd, previousStart, previousEnd;
+        string currentLabel, previousLabel;
+
+        if (period == "week")
+        {
+            var daysToMonday = ((int)now.DayOfWeek + 6) % 7;
+            currentStart = now.Date.AddDays(-daysToMonday);
+            currentEnd = now;
+            previousStart = currentStart.AddDays(-7);
+            previousEnd = currentStart;
+            currentLabel = "This week";
+            previousLabel = "Last week";
+        }
+        else
+        {
+            currentStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            currentEnd = now;
+            previousStart = currentStart.AddMonths(-1);
+            previousEnd = currentStart;
+            currentLabel = now.ToString("MMMM yyyy");
+            previousLabel = previousStart.ToString("MMMM yyyy");
+        }
+
+        var currentSales = await _db.Sales
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= currentStart && s.CreatedAtUtc < currentEnd)
+            .ToListAsync();
+        var previousSales = await _db.Sales
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= previousStart && s.CreatedAtUtc < previousEnd)
+            .ToListAsync();
+
+        var cr = currentSales.Sum(s => s.TotalAmount);
+        var cc = currentSales.Count;
+        var ca = cc > 0 ? Math.Round(cr / cc, 2) : 0;
+        var pr = previousSales.Sum(s => s.TotalAmount);
+        var pc = previousSales.Count;
+        var pa = pc > 0 ? Math.Round(pr / pc, 2) : 0;
+
+        return new SalesComparisonDto
+        {
+            CurrentRevenue = cr, CurrentSaleCount = cc, CurrentAvgOrder = ca,
+            PreviousRevenue = pr, PreviousSaleCount = pc, PreviousAvgOrder = pa,
+            RevenueChangePercent = pr > 0 ? Math.Round((cr - pr) / pr * 100, 1) : 0,
+            SaleCountChangePercent = pc > 0 ? Math.Round((decimal)(cc - pc) / pc * 100, 1) : 0,
+            AvgOrderChangePercent = pa > 0 ? Math.Round((ca - pa) / pa * 100, 1) : 0,
+            CurrentLabel = currentLabel,
+            PreviousLabel = previousLabel
+        };
+    }
+
+    // ── Revenue by Product Category ─────────────────────────────────────────
+
+    public async Task<CategoryRevenueDto> GetCategoryRevenueAsync(Guid businessId, int days)
+    {
+        days = Math.Clamp(days, 1, 365);
+        var cutoff = DateTime.UtcNow.AddDays(-days);
+
+        var items = await _db.SaleItems
+            .Include(si => si.Product)
+            .Where(si => si.Sale.BusinessId == businessId && si.Sale.CreatedAtUtc >= cutoff)
+            .Select(si => new { Category = si.Product.Category, Revenue = si.TotalPrice, SaleId = si.SaleId })
+            .ToListAsync();
+
+        var total = items.Sum(i => i.Revenue);
+        var uncategorized = items.Where(i => string.IsNullOrEmpty(i.Category)).Sum(i => i.Revenue);
+
+        var categories = items
+            .Where(i => !string.IsNullOrEmpty(i.Category))
+            .GroupBy(i => i.Category!)
+            .Select(g => new CategoryRevenueItemDto
+            {
+                Category = g.Key,
+                Revenue = g.Sum(i => i.Revenue),
+                SaleCount = g.Select(i => i.SaleId).Distinct().Count(),
+                PercentOfTotal = total > 0 ? Math.Round(g.Sum(i => i.Revenue) / total * 100, 1) : 0
+            })
+            .OrderByDescending(c => c.Revenue)
+            .ToList();
+
+        return new CategoryRevenueDto
+        {
+            Categories = categories,
+            TotalRevenue = total,
+            UncategorizedRevenue = uncategorized
+        };
+    }
+
+    // ── Outstanding Debts Summary ───────────────────────────────────────────
+
+    public async Task<OutstandingDebtSummaryDto> GetOutstandingDebtSummaryAsync(Guid businessId)
+    {
+        var now = DateTime.UtcNow;
+        var entries = await _db.LedgerEntries
+            .Include(e => e.Contact)
+            .Where(e => e.BusinessId == businessId)
+            .ToListAsync();
+
+        var byContact = entries.GroupBy(e => new { e.ContactId, e.Contact.Name });
+
+        var receivableContacts = new List<OutstandingContactDto>();
+        var payableContacts = new List<OutstandingContactDto>();
+
+        foreach (var g in byContact)
+        {
+            var netReceivable = g.Where(e => e.EntryType == LedgerEntryType.Receivable).Sum(e => e.Amount)
+                              - g.Where(e => e.EntryType == LedgerEntryType.ReceivablePayment).Sum(e => e.Amount);
+            var netPayable = g.Where(e => e.EntryType == LedgerEntryType.Payable).Sum(e => e.Amount)
+                           - g.Where(e => e.EntryType == LedgerEntryType.PayablePayment).Sum(e => e.Amount);
+
+            if (netReceivable > 0)
+            {
+                var oldest = g.Where(e => e.EntryType == LedgerEntryType.Receivable)
+                    .OrderBy(e => e.CreatedAtUtc).FirstOrDefault();
+                receivableContacts.Add(new OutstandingContactDto
+                {
+                    ContactId = g.Key.ContactId,
+                    ContactName = g.Key.Name,
+                    Amount = netReceivable,
+                    DaysOld = oldest != null ? (int)(now - oldest.CreatedAtUtc).TotalDays : 0
+                });
+            }
+            if (netPayable > 0)
+            {
+                var oldest = g.Where(e => e.EntryType == LedgerEntryType.Payable)
+                    .OrderBy(e => e.CreatedAtUtc).FirstOrDefault();
+                payableContacts.Add(new OutstandingContactDto
+                {
+                    ContactId = g.Key.ContactId,
+                    ContactName = g.Key.Name,
+                    Amount = netPayable,
+                    DaysOld = oldest != null ? (int)(now - oldest.CreatedAtUtc).TotalDays : 0
+                });
+            }
+        }
+
+        var totalR = receivableContacts.Sum(c => c.Amount);
+        var totalP = payableContacts.Sum(c => c.Amount);
+
+        return new OutstandingDebtSummaryDto
+        {
+            TotalReceivables = totalR,
+            TotalPayables = totalP,
+            NetPosition = totalR - totalP,
+            OverdueContactCount = receivableContacts.Count(c => c.DaysOld > 30) + payableContacts.Count(c => c.DaysOld > 30),
+            TopReceivables = receivableContacts.OrderByDescending(c => c.Amount).Take(10).ToList(),
+            TopPayables = payableContacts.OrderByDescending(c => c.Amount).Take(10).ToList()
+        };
+    }
+
+    // ── Cash Flow Forecast ──────────────────────────────────────────────────
+
+    public async Task<CashFlowForecastDto> GetCashFlowForecastAsync(Guid businessId)
+    {
+        var now = DateTime.UtcNow;
+        var fourWeeksAgo = now.Date.AddDays(-28);
+
+        var sales = await _db.Sales
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= fourWeeksAgo)
+            .Select(s => new { s.CreatedAtUtc, s.TotalAmount })
+            .ToListAsync();
+
+        var expenses = await _db.Expenses
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= fourWeeksAgo)
+            .Select(e => new { e.CreatedAtUtc, e.Amount })
+            .ToListAsync();
+
+        var actuals = new List<CashFlowWeekDto>();
+        decimal runningBalance = 0;
+
+        for (int i = 0; i < 4; i++)
+        {
+            var weekStart = fourWeeksAgo.AddDays(i * 7);
+            var weekEnd = weekStart.AddDays(7);
+            var cashIn = sales.Where(s => s.CreatedAtUtc >= weekStart && s.CreatedAtUtc < weekEnd).Sum(s => s.TotalAmount);
+            var cashOut = expenses.Where(e => e.CreatedAtUtc >= weekStart && e.CreatedAtUtc < weekEnd).Sum(e => e.Amount);
+            runningBalance += cashIn - cashOut;
+
+            actuals.Add(new CashFlowWeekDto
+            {
+                Label = $"{weekStart:MMM d}–{weekEnd.AddDays(-1):MMM d}",
+                CashIn = cashIn,
+                CashOut = cashOut,
+                Net = cashIn - cashOut,
+                RunningBalance = runningBalance
+            });
+        }
+
+        var avgIn = actuals.Count > 0 ? actuals.Average(w => w.CashIn) : 0;
+        var avgOut = actuals.Count > 0 ? actuals.Average(w => w.CashOut) : 0;
+
+        var forecast = new List<CashFlowWeekDto>();
+        for (int i = 0; i < 4; i++)
+        {
+            var weekStart = now.Date.AddDays(i * 7);
+            var weekEnd = weekStart.AddDays(7);
+            runningBalance += avgIn - avgOut;
+
+            forecast.Add(new CashFlowWeekDto
+            {
+                Label = $"{weekStart:MMM d}–{weekEnd.AddDays(-1):MMM d}",
+                CashIn = Math.Round(avgIn, 2),
+                CashOut = Math.Round(avgOut, 2),
+                Net = Math.Round(avgIn - avgOut, 2),
+                RunningBalance = Math.Round(runningBalance, 2)
+            });
+        }
+
+        var monthEnd = new DateTime(now.Year, now.Month, DateTime.DaysInMonth(now.Year, now.Month), 23, 59, 59, DateTimeKind.Utc);
+        var daysLeft = Math.Max(1, (monthEnd - now).TotalDays);
+        var weeksLeft = (decimal)daysLeft / 7m;
+        var projectedEnd = runningBalance - (forecast.Count > 0 ? forecast.Last().RunningBalance : 0)
+                         + actuals.Last().RunningBalance + (avgIn - avgOut) * weeksLeft;
+
+        return new CashFlowForecastDto
+        {
+            Actuals = actuals,
+            Forecast = forecast,
+            ProjectedMonthEndBalance = Math.Round(projectedEnd, 2),
+            AvgWeeklyCashIn = Math.Round(avgIn, 2),
+            AvgWeeklyCashOut = Math.Round(avgOut, 2)
+        };
+    }
 }
