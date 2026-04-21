@@ -410,7 +410,7 @@ public class ImportJobService
                             ContactId = contactId.Value,
                             EntryType = LedgerEntryType.Receivable,
                             Amount = lineTotal,
-                            Notes = "Credit sale",
+                            Notes = $"Credit sale: {qty.Value:0.##} {product.Unit} {name}",
                             Source = EntrySource.Import,
                             RecordedByUserId = user?.Id,
                             RecordedByName = user?.FullName,

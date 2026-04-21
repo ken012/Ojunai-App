@@ -115,13 +115,15 @@ public class SalesService : ISalesService
         // Auto-create receivable for credit sales so it shows in Contacts & Ledger
         if (sale.PaymentStatus != PaymentStatus.Paid && sale.ContactId.HasValue && sale.TotalAmount > 0)
         {
+            var itemsSummary = string.Join(", ", sale.Items.Select(i =>
+                $"{i.Quantity:0.##} {products[i.ProductId].Unit} {products[i.ProductId].Name}"));
             _db.LedgerEntries.Add(new LedgerEntry
             {
                 BusinessId = businessId,
                 ContactId = sale.ContactId.Value,
                 EntryType = LedgerEntryType.Receivable,
                 Amount = sale.TotalAmount,
-                Notes = $"Credit sale",
+                Notes = $"Credit sale: {itemsSummary}",
                 Source = source,
                 RecordedByUserId = recordedByUserId,
                 RecordedByName = recordedByName,
