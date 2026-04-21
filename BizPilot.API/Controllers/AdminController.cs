@@ -120,6 +120,53 @@ public class AdminController : ControllerBase
     }
 
     // ═════════════════════════════════════════════════════════════════════════════
+    // DATA WIPE
+    // ═════════════════════════════════════════════════════════════════════════════
+
+    [HttpGet("wipe-inventory-expenses")]
+    public async Task<IActionResult> WipeInventoryExpenses([FromQuery] string key, [FromQuery] Guid businessId)
+    {
+        var auth = ValidateAdminKey(key);
+        if (auth != null) return auth;
+
+        var biz = await _db.Businesses.FindAsync(businessId);
+        if (biz == null) return NotFound(new { error = "Business not found" });
+
+        var saleItemCount = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"SaleItems\" WHERE \"SaleId\" IN (SELECT \"Id\" FROM \"Sales\" WHERE \"BusinessId\" = {0})", businessId);
+        var saleCount = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"Sales\" WHERE \"BusinessId\" = {0}", businessId);
+        var expenseCount = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"Expenses\" WHERE \"BusinessId\" = {0}", businessId);
+        var invTxCount = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"InventoryTransactions\" WHERE \"BusinessId\" = {0}", businessId);
+        var holdCount = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"StockHolds\" WHERE \"BusinessId\" = {0}", businessId);
+        var ledgerCount = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"LedgerEntries\" WHERE \"BusinessId\" = {0}", businessId);
+        var productCount = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"Products\" WHERE \"BusinessId\" = {0}", businessId);
+        var contactCount = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"Contacts\" WHERE \"BusinessId\" = {0}", businessId);
+
+        return Ok(new
+        {
+            business = biz.Name,
+            wiped = new
+            {
+                saleItems = saleItemCount,
+                sales = saleCount,
+                expenses = expenseCount,
+                inventoryTransactions = invTxCount,
+                stockHolds = holdCount,
+                ledgerEntries = ledgerCount,
+                products = productCount,
+                contacts = contactCount,
+            }
+        });
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════
     // PRODUCT RECATEGORIZATION
     // ═════════════════════════════════════════════════════════════════════════════
 
