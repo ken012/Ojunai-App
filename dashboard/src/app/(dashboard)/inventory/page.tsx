@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { formatNaira } from "@/lib/format";
@@ -896,14 +896,22 @@ export default function InventoryPage() {
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const { data: planStatus } = usePlanStatus();
   const hasHolds = planStatus?.hasStockHolds ?? true;
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.length >= 2 ? search : "");
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const { data: productsData, isLoading } = useQuery({
-    queryKey: ["products", search],
+    queryKey: ["products", debouncedSearch],
     queryFn: async () => {
       const params = new URLSearchParams({ page: "1", pageSize: "500" });
-      if (search) params.set("search", search);
+      if (debouncedSearch) params.set("search", debouncedSearch);
       const { data } = await api.get<{ data: PaginatedResult<ProductDto> }>(
         `/products?${params}`
       );
