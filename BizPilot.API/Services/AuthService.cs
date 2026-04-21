@@ -73,7 +73,8 @@ public class AuthService : IAuthService
             PhoneNumber = normalizedPhone,
             Email = normalizedEmail,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
-            Role = UserRole.Owner
+            Role = UserRole.Owner,
+            DateOfBirth = request.DateOfBirth
         };
         _db.Users.Add(user);
 
@@ -152,7 +153,8 @@ public class AuthService : IAuthService
             FullName = user.FullName,
             PhoneNumber = user.PhoneNumber,
             Email = user.Email,
-            Role = user.Role.ToString()
+            Role = user.Role.ToString(),
+            DateOfBirth = user.DateOfBirth
         };
     }
 

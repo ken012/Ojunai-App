@@ -97,6 +97,7 @@ public class OnboardingService
             state.BusinessType = null;
             state.City = null;
             state.OwnerName = null;
+            state.DateOfBirth = null;
             state.LastActivityUtc = DateTime.UtcNow;
             await _db.SaveChangesAsync();
             await Send(from, $"Starting over. What's your *business name*?{Footer}");
@@ -159,17 +160,36 @@ public class OnboardingService
 
             case OnboardingStep.OwnerName:
                 state.OwnerName = CleanName(trimmed);
-                state.Step = OnboardingStep.Confirmation;
+                state.Step = OnboardingStep.DateOfBirth;
                 await _db.SaveChangesAsync();
-                var detectedCountry = (Common.CountryLookup.InferFromPhone(phone) ?? Common.CountryLookup.Default).Name;
-                await Send(from, $"Here's what I have:\n\n" +
-                    $"🏪 *Business:* {state.BusinessName}\n" +
-                    $"📋 *Type:* {state.BusinessType}\n" +
-                    $"📍 *City:* {state.City}\n" +
-                    $"🌍 *Country:* {detectedCountry}\n" +
-                    $"👤 *Owner:* {state.OwnerName}\n\n" +
-                    $"Reply *confirm* to create your account, or tell me what to fix.");
+                await Send(from, $"Hi *{state.OwnerName}*!\n\nWhat's your *date of birth*?\n(e.g. 15/03/1990 or 1990-03-15)\n\nThis is used to secure your report downloads.{Footer}");
                 return "onboarding:owner_name";
+
+            case OnboardingStep.DateOfBirth:
+                if (DateOnly.TryParse(trimmed, out var dob) ||
+                    DateOnly.TryParseExact(trimmed, new[] { "dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "MM/dd/yyyy" }, null, System.Globalization.DateTimeStyles.None, out dob))
+                {
+                    if (dob.Year < 1920 || dob > DateOnly.FromDateTime(DateTime.UtcNow.AddYears(-13)))
+                    {
+                        await Send(from, "That date doesn't look right. Please enter a valid date of birth (e.g. 15/03/1990).");
+                        return "onboarding:dob_invalid";
+                    }
+                    state.DateOfBirth = dob;
+                    state.Step = OnboardingStep.Confirmation;
+                    await _db.SaveChangesAsync();
+                    var detectedCountry = (Common.CountryLookup.InferFromPhone(phone) ?? Common.CountryLookup.Default).Name;
+                    await Send(from, $"Here's what I have:\n\n" +
+                        $"🏪 *Business:* {state.BusinessName}\n" +
+                        $"📋 *Type:* {state.BusinessType}\n" +
+                        $"📍 *City:* {state.City}\n" +
+                        $"🌍 *Country:* {detectedCountry}\n" +
+                        $"👤 *Owner:* {state.OwnerName}\n" +
+                        $"🎂 *DOB:* {state.DateOfBirth:dd MMM yyyy}\n\n" +
+                        $"Reply *confirm* to create your account, or tell me what to fix.");
+                    return "onboarding:dob";
+                }
+                await Send(from, "I couldn't parse that date. Please use a format like *15/03/1990* or *1990-03-15*.");
+                return "onboarding:dob_retry";
 
             case OnboardingStep.Confirmation:
                 if (lower is "confirm" or "yes" or "ok" or "correct" or "looks good" or "go ahead" or "create")
@@ -250,7 +270,8 @@ public class OnboardingService
             PhoneNumber = phone,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(tempPassword),
             Role = UserRole.Owner,
-            MustChangePassword = true
+            MustChangePassword = true,
+            DateOfBirth = state.DateOfBirth
         };
         _db.Users.Add(user);
         business.OwnerUserId = user.Id;

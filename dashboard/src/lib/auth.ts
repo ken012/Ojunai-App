@@ -53,6 +53,7 @@ export async function register(payload: {
   businessType?: string;
   state?: string;
   city?: string;
+  dateOfBirth?: string;
 }): Promise<AuthResponse> {
   const { data } = await api.post<{ data: AuthResponse }>("/auth/register", payload);
   const auth = data.data!;

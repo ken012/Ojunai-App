@@ -20,6 +20,7 @@ const schema = z.object({
   businessType: z.string().optional(),
   state: z.string().optional(),
   city: z.string().optional(),
+  dateOfBirth: z.string().optional(),
 });
 type FormData = z.infer<typeof schema>;
 
@@ -42,6 +43,7 @@ export default function RegisterPage() {
       businessType: "",
       state: "",
       city: "",
+      dateOfBirth: "",
     },
   });
 
@@ -51,6 +53,7 @@ export default function RegisterPage() {
       await registerUser({
         ...data,
         email: data.email || undefined,
+        dateOfBirth: data.dateOfBirth || undefined,
       });
       router.push("/");
     } catch (err: unknown) {
@@ -109,6 +112,12 @@ export default function RegisterPage() {
               <div className="space-y-1">
                 <Label>State</Label>
                 <Input placeholder="e.g. Lagos" {...register("state")} />
+              </div>
+
+              <div className="col-span-2 space-y-1">
+                <Label>Date of Birth</Label>
+                <Input type="date" {...register("dateOfBirth")} />
+                <p className="text-[11px] text-slate-400">Used to secure your report downloads</p>
               </div>
             </div>
 

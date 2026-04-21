@@ -12,4 +12,5 @@ public class RegisterOwnerRequest
     [MaxLength(100)] public string? BusinessType { get; set; }
     [MaxLength(100)] public string? State { get; set; }
     [MaxLength(100)] public string? City { get; set; }
+    public DateOnly? DateOfBirth { get; set; }
 }

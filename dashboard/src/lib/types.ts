@@ -28,6 +28,7 @@ export interface UserDto {
   phoneNumber: string;
   email?: string;
   role: string;
+  dateOfBirth?: string;
 }
 
 export interface BusinessDto {

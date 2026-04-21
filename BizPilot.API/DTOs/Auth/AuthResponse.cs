@@ -16,6 +16,7 @@ public class UserDto
     public string PhoneNumber { get; set; } = string.Empty;
     public string? Email { get; set; }
     public string Role { get; set; } = string.Empty;
+    public DateOnly? DateOfBirth { get; set; }
 }
 
 public class BusinessDto

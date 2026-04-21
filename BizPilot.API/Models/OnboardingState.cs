@@ -9,6 +9,7 @@ public class OnboardingState
     public string? BusinessType { get; set; }
     public string? City { get; set; }
     public string? OwnerName { get; set; }
+    public DateOnly? DateOfBirth { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime LastActivityUtc { get; set; } = DateTime.UtcNow;
 }
@@ -20,6 +21,7 @@ public enum OnboardingStep
     BusinessType = 2,
     City = 3,
     OwnerName = 4,
+    DateOfBirth = 7,
     Confirmation = 5,
     Complete = 6
 }
