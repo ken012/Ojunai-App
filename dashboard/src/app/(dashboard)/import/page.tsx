@@ -147,7 +147,7 @@ export default function ImportPage() {
   const [previewPage, setPreviewPage] = useState(1);
   const [rollingBack, setRollingBack] = useState(false);
   const [rollingBackId, setRollingBackId] = useState<string | null>(null);
-  const [existingStock, setExistingStock] = useState(false);
+  const [importMode, setImportMode] = useState("new_purchase");
   const previewPageSize = 50;
   const fileRef = useRef<HTMLInputElement>(null);
   const { data: planStatus } = usePlanStatus();
@@ -161,7 +161,14 @@ export default function ImportPage() {
   const totalPreviewPages = Math.ceil(allRows.length / previewPageSize);
   const previewRows = allRows.slice((previewPage - 1) * previewPageSize, previewPage * previewPageSize);
 
-  const format = FORMATS[type];
+  const baseFormat = FORMATS[type];
+  const format = importMode === "price_update" ? {
+    ...baseFormat,
+    headers: "ProductName,CostPrice,SellingPrice",
+    example: "Rice,3000,5000\nShampoo,1200,2500\nCement,4500,6000",
+    required: "ProductName, and at least one of CostPrice or SellingPrice",
+    optional: "Both price columns are optional individually — only provided values are updated.",
+  } : baseFormat;
   const canImport = hasPermission(format.permission);
   const hasCsvImport = planStatus?.hasCsvImport ?? true;
 
@@ -262,9 +269,8 @@ export default function ImportPage() {
 
       const formData = new FormData();
       formData.append("file", csvFile);
-      const url = type === "inventory" && existingStock
-        ? `/import/${type}?skipExpenses=true`
-        : `/import/${type}`;
+      const hasMode = type === "inventory" || type === "sales";
+      const url = hasMode ? `/import/${type}?mode=${importMode}` : `/import/${type}`;
       const { data } = await api.post<{ data: ImportJob }>(url, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
@@ -299,7 +305,7 @@ export default function ImportPage() {
     setPreviewPage(1);
     setJob(null);
     setError(null);
-    setExistingStock(false);
+    setImportMode(type === "sales" ? "new_sales" : "new_purchase");
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -318,7 +324,7 @@ export default function ImportPage() {
         <select
           className="w-full max-w-xs h-9 px-2 mt-1 rounded-md border border-slate-200 text-sm bg-white"
           value={type}
-          onChange={(e) => { setType(e.target.value as ImportType); resetForNewImport(); }}
+          onChange={(e) => { const t = e.target.value as ImportType; setType(t); setImportMode(t === "sales" ? "new_sales" : "new_purchase"); resetForNewImport(); }}
           disabled={!!isProcessing}
         >
           {Object.entries(FORMATS).map(([key, f]) => (
@@ -349,22 +355,56 @@ export default function ImportPage() {
       </Card>
 
       {type === "inventory" && (
-        <Card className={existingStock ? "border-sky-200 bg-sky-50/50" : ""}>
+        <Card>
           <CardContent className="pt-4">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={existingStock}
-                onChange={(e) => setExistingStock(e.target.checked)}
-                className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-              />
-              <div>
-                <p className="text-sm font-medium text-slate-700">Existing stock (already paid for)</p>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Use this when migrating inventory you already own from another system or manual records. Products and stock levels will be created, but no expense will be recorded since these items were already paid for.
-                </p>
-              </div>
-            </label>
+            <p className="text-sm font-semibold text-slate-700 mb-3">How should we handle this import?</p>
+            <div className="space-y-3">
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "new_purchase" ? "border-sky-300 bg-sky-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+                <input type="radio" name="inv-mode" value="new_purchase" checked={importMode === "new_purchase"} onChange={() => setImportMode("new_purchase")} className="mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-slate-700">New purchase — I just bought this stock</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Creates products, adds stock, and records an expense.</p>
+                </div>
+              </label>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "existing_stock" ? "border-sky-300 bg-sky-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+                <input type="radio" name="inv-mode" value="existing_stock" checked={importMode === "existing_stock"} onChange={() => setImportMode("existing_stock")} className="mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-slate-700">Existing stock — I already own this, moving to BizPilot</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Creates products and stock levels. No expense recorded since these were already paid for.</p>
+                </div>
+              </label>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "price_update" ? "border-sky-300 bg-sky-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+                <input type="radio" name="inv-mode" value="price_update" checked={importMode === "price_update"} onChange={() => setImportMode("price_update")} className="mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-slate-700">Price update only — Just update my catalog prices</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Updates cost and selling prices on existing products. Stock levels are not changed. New products are skipped.</p>
+                </div>
+              </label>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {type === "sales" && (
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-sm font-semibold text-slate-700 mb-3">How should we handle this import?</p>
+            <div className="space-y-3">
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "new_sales" ? "border-sky-300 bg-sky-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+                <input type="radio" name="sales-mode" value="new_sales" checked={importMode === "new_sales"} onChange={() => setImportMode("new_sales")} className="mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-slate-700">New sales — Record these sales and deduct stock</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Deducts inventory and creates receivables for credit sales.</p>
+                </div>
+              </label>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "historical_sales" ? "border-sky-300 bg-sky-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+                <input type="radio" name="sales-mode" value="historical_sales" checked={importMode === "historical_sales"} onChange={() => setImportMode("historical_sales")} className="mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-slate-700">Historical sales — Import for reporting only</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Records sales for revenue history. Stock is not deducted and no receivables are created, since your current inventory already reflects these.</p>
+                </div>
+              </label>
+            </div>
           </CardContent>
         </Card>
       )}

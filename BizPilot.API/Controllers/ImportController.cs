@@ -42,14 +42,14 @@ public class ImportController : BizPilotBaseController
     [HttpPost("inventory")]
     [RequirePermission(Permission.ManageStock)]
     [RequestSizeLimit(MaxFileSize)]
-    public Task<ActionResult<ApiResponse<ImportJobDto>>> ImportInventory(IFormFile file, [FromQuery] bool skipExpenses = false)
-        => EnqueueImportAsync(file, ImportJobType.Inventory, Permission.ManageStock, skipExpenses);
+    public Task<ActionResult<ApiResponse<ImportJobDto>>> ImportInventory(IFormFile file, [FromQuery] string mode = "new_purchase")
+        => EnqueueImportAsync(file, ImportJobType.Inventory, Permission.ManageStock, mode);
 
     [HttpPost("sales")]
     [RequirePermission(Permission.RecordSales)]
     [RequestSizeLimit(MaxFileSize)]
-    public Task<ActionResult<ApiResponse<ImportJobDto>>> ImportSales(IFormFile file)
-        => EnqueueImportAsync(file, ImportJobType.Sales, Permission.RecordSales);
+    public Task<ActionResult<ApiResponse<ImportJobDto>>> ImportSales(IFormFile file, [FromQuery] string mode = "new_sales")
+        => EnqueueImportAsync(file, ImportJobType.Sales, Permission.RecordSales, mode);
 
     [HttpPost("expenses")]
     [RequirePermission(Permission.RecordExpenses)]
@@ -149,7 +149,7 @@ public class ImportController : BizPilotBaseController
         return Ok(ApiResponse<List<ImportJobDto>>.Ok(jobs.Select(MapToDto).ToList()));
     }
 
-    private async Task<ActionResult<ApiResponse<ImportJobDto>>> EnqueueImportAsync(IFormFile file, ImportJobType type, string permission, bool skipExpenses = false)
+    private async Task<ActionResult<ApiResponse<ImportJobDto>>> EnqueueImportAsync(IFormFile file, ImportJobType type, string permission, string mode = "default")
     {
         var (allowed, planErr) = await _planGuard.CheckFeatureAsync(BusinessId, "csv_import");
         if (!allowed) return BadRequest(ApiResponse<ImportJobDto>.Fail(planErr!));
@@ -166,7 +166,8 @@ public class ImportController : BizPilotBaseController
             RawCsvText = csvText,
             FileName = file.FileName,
             TotalRows = rowCount,
-            SkipExpenses = skipExpenses
+            ImportMode = mode,
+            SkipExpenses = mode == "existing_stock" || mode == "price_update"
         };
         _db.ImportJobs.Add(job);
         await _db.SaveChangesAsync();

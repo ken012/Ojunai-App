@@ -26,6 +26,7 @@ public class ImportJob
     public string? FailureReason { get; set; }
 
     public bool SkipExpenses { get; set; }
+    public string ImportMode { get; set; } = "default";
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? StartedAtUtc { get; set; }

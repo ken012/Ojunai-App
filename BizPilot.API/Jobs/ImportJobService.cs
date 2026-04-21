@@ -151,6 +151,10 @@ public class ImportJobService
 
     private async Task ProcessInventoryRowsAsync(ImportJob job, List<Dictionary<string, string>> rows, User? user, List<string> errors, string cs)
     {
+        var mode = job.ImportMode ?? "new_purchase";
+        var isPriceUpdate = mode == "price_update";
+        var skipExpenses = mode == "existing_stock" || mode == "price_update";
+
         var productCache = await _db.Products
             .Where(p => p.BusinessId == job.BusinessId && p.IsActive)
             .ToDictionaryAsync(p => p.Name.ToLower(), p => p);
@@ -167,14 +171,32 @@ public class ImportJobService
                     var name = row.GetValueOrDefault("productname");
                     if (!ValidateName(name, rowNum, "ProductName", errors)) continue;
 
-                    var qty = CsvParser.ParseDecimal(row.GetValueOrDefault("quantity"));
-                    if (!ValidateQuantity(qty, rowNum, name!, errors)) continue;
-
-                    var unit = row.GetValueOrDefault("unit") ?? UnitInferrer.Infer(name!);
                     var costPrice = CsvParser.ParseDecimal(row.GetValueOrDefault("costprice"));
                     var sellingPrice = CsvParser.ParseDecimal(row.GetValueOrDefault("sellingprice"));
                     if (costPrice.HasValue && costPrice.Value > 100_000_000) { errors.Add($"Row {rowNum}: Cost price {cs}{costPrice.Value:N0} for '{name}' seems unusually large"); continue; }
                     if (sellingPrice.HasValue && sellingPrice.Value > 100_000_000) { errors.Add($"Row {rowNum}: Selling price {cs}{sellingPrice.Value:N0} for '{name}' seems unusually large"); continue; }
+
+                    // Price-update mode: only update prices on existing products
+                    if (isPriceUpdate)
+                    {
+                        if (!productCache.TryGetValue(name!.ToLower(), out var existing))
+                        {
+                            errors.Add($"Row {rowNum}: Product '{name}' not found — skipped (price update only applies to existing products)");
+                            continue;
+                        }
+                        if (costPrice.HasValue) existing.CostPrice = costPrice;
+                        if (sellingPrice.HasValue) existing.SellingPrice = sellingPrice;
+                        _db.Entry(existing).State = EntityState.Modified;
+                        job.SuccessCount++;
+                        job.ProcessedRows = i + 1;
+                        if ((i + 1) % ProgressBatchSize == 0) { _db.ChangeTracker.DetectChanges(); await _db.SaveChangesAsync(); }
+                        continue;
+                    }
+
+                    var qty = CsvParser.ParseDecimal(row.GetValueOrDefault("quantity"));
+                    if (!ValidateQuantity(qty, rowNum, name!, errors)) continue;
+
+                    var unit = row.GetValueOrDefault("unit") ?? UnitInferrer.Infer(name!);
 
                     var invDateStr = row.GetValueOrDefault("date") ?? row.GetValueOrDefault("stockdate");
                     if (string.IsNullOrWhiteSpace(invDateStr)) { errors.Add($"Row {rowNum}: Date is required for inventory import. Add a 'Date' column (format: YYYY-MM-DD)."); continue; }
@@ -186,7 +208,7 @@ public class ImportJobService
                     var csvThreshold = CsvParser.ParseDecimal(row.GetValueOrDefault("threshold"));
 
                     Product product;
-                    if (!productCache.TryGetValue(name!.ToLower(), out var existing))
+                    if (!productCache.TryGetValue(name!.ToLower(), out var existingProduct))
                     {
                         var (inferredCat, inferredSubcat) = CategoryInferrer.Infer(name!);
                         var inferredUnit = string.IsNullOrWhiteSpace(unit) || unit == "unit" || unit == "bag"
@@ -230,7 +252,7 @@ public class ImportJobService
                     }
                     else
                     {
-                        product = existing;
+                        product = existingProduct;
                         product.CurrentStock += qty!.Value;
                         if (costPrice.HasValue) product.CostPrice = costPrice;
                         if (sellingPrice.HasValue && !product.SellingPrice.HasValue) product.SellingPrice = sellingPrice;
@@ -250,7 +272,7 @@ public class ImportJobService
                         });
                     }
 
-                    if (!job.SkipExpenses)
+                    if (!skipExpenses)
                     {
                         var expenseCost = costPrice ?? product.CostPrice;
                         if (expenseCost.HasValue && expenseCost.Value > 0)
@@ -298,6 +320,9 @@ public class ImportJobService
 
     private async Task ProcessSalesRowsAsync(ImportJob job, List<Dictionary<string, string>> rows, User? user, List<string> errors, string cs)
     {
+        var mode = job.ImportMode ?? "new_sales";
+        var isHistorical = mode == "historical_sales";
+
         var productCache = await _db.Products
             .Where(p => p.BusinessId == job.BusinessId && p.IsActive)
             .ToDictionaryAsync(p => p.Name.ToLower(), p => p);
@@ -327,7 +352,7 @@ public class ImportJobService
                     if (!unitPrice.HasValue || unitPrice.Value <= 0) { errors.Add($"Row {rowNum}: UnitPrice is required for '{name}'. Should be a positive number."); continue; }
                     if (unitPrice.Value > 100_000_000) { errors.Add($"Row {rowNum}: UnitPrice {cs}{unitPrice.Value:N0} for '{name}' seems unusually large"); continue; }
 
-                    if (product.CurrentStock < qty!.Value)
+                    if (!isHistorical && product.CurrentStock < qty!.Value)
                     {
                         errors.Add($"Row {rowNum}: Insufficient stock for '{name}'. Available: {product.CurrentStock:0.##} {product.Unit}.");
                         continue;
@@ -364,10 +389,11 @@ public class ImportJobService
                     {
                         errors.Add($"Row {rowNum}: Unknown payment status '{statusStr}' for '{name}'. Use: Paid, Unpaid, or PartiallyPaid. Defaulting to Paid.");
                     }
-                    var status = Enum.TryParse<PaymentStatus>(statusStr, true, out var ps) ? ps : PaymentStatus.Paid;
+                    var status = isHistorical ? PaymentStatus.Paid
+                        : (Enum.TryParse<PaymentStatus>(statusStr, true, out var ps) ? ps : PaymentStatus.Paid);
                     var paymentMethod = row.GetValueOrDefault("paymentmethod");
 
-                    var lineTotal = qty.Value * unitPrice.Value;
+                    var lineTotal = qty!.Value * unitPrice.Value;
 
                     var sale = new Sale
                     {
@@ -390,22 +416,25 @@ public class ImportJobService
                     });
                     _db.Sales.Add(sale);
 
-                    product.CurrentStock -= qty.Value;
-                    _db.Entry(product).State = EntityState.Modified;
-
-                    _db.InventoryTransactions.Add(new InventoryTransaction
+                    if (!isHistorical)
                     {
-                        BusinessId = job.BusinessId,
-                        ProductId = product.Id,
-                        Type = InventoryTransactionType.StockOut,
-                        Quantity = qty.Value,
-                        Notes = "Sale",
-                        RecordedByUserId = user?.Id,
-                        RecordedByName = user?.FullName,
-                        CreatedAtUtc = saleDate
-                    });
+                        product.CurrentStock -= qty.Value;
+                        _db.Entry(product).State = EntityState.Modified;
 
-                    if (status != PaymentStatus.Paid && contactId.HasValue && lineTotal > 0)
+                        _db.InventoryTransactions.Add(new InventoryTransaction
+                        {
+                            BusinessId = job.BusinessId,
+                            ProductId = product.Id,
+                            Type = InventoryTransactionType.StockOut,
+                            Quantity = qty.Value,
+                            Notes = "Sale",
+                            RecordedByUserId = user?.Id,
+                            RecordedByName = user?.FullName,
+                            CreatedAtUtc = saleDate
+                        });
+                    }
+
+                    if (!isHistorical && status != PaymentStatus.Paid && contactId.HasValue && lineTotal > 0)
                     {
                         _db.LedgerEntries.Add(new LedgerEntry
                         {
