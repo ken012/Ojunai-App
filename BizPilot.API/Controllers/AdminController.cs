@@ -166,6 +166,55 @@ public class AdminController : ControllerBase
         });
     }
 
+    [HttpGet("wipe-all-data")]
+    public async Task<IActionResult> WipeAllData([FromQuery] string key, [FromQuery] Guid businessId)
+    {
+        var auth = ValidateAdminKey(key);
+        if (auth != null) return auth;
+
+        var biz = await _db.Businesses.FindAsync(businessId);
+        if (biz == null) return NotFound(new { error = "Business not found" });
+
+        var saleItems = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"SaleItems\" WHERE \"SaleId\" IN (SELECT \"Id\" FROM \"Sales\" WHERE \"BusinessId\" = {0})", businessId);
+        var sales = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"Sales\" WHERE \"BusinessId\" = {0}", businessId);
+        var expenses = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"Expenses\" WHERE \"BusinessId\" = {0}", businessId);
+        var invTx = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"InventoryTransactions\" WHERE \"BusinessId\" = {0}", businessId);
+        var holds = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"StockHolds\" WHERE \"BusinessId\" = {0}", businessId);
+        var ledger = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"LedgerEntries\" WHERE \"BusinessId\" = {0}", businessId);
+        var products = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"Products\" WHERE \"BusinessId\" = {0}", businessId);
+        var contacts = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"Contacts\" WHERE \"BusinessId\" = {0}", businessId);
+        var summaries = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"DailySummaries\" WHERE \"BusinessId\" = {0}", businessId);
+        var messages = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"MessageLogs\" WHERE \"BusinessId\" = {0}", businessId);
+        var pending = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"PendingActions\" WHERE \"BusinessId\" = {0}", businessId);
+        var imports = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"ImportJobs\" WHERE \"BusinessId\" = {0}", businessId);
+        var billing = await _db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM \"BillingEvents\" WHERE \"BusinessId\" = {0}", businessId);
+
+        return Ok(new
+        {
+            business = biz.Name,
+            wiped = new
+            {
+                saleItems, sales, expenses, inventoryTransactions = invTx,
+                stockHolds = holds, ledgerEntries = ledger, products, contacts,
+                dailySummaries = summaries, messageLogs = messages,
+                pendingActions = pending, importJobs = imports, billingEvents = billing
+            }
+        });
+    }
+
     // ═════════════════════════════════════════════════════════════════════════════
     // PRODUCT RECATEGORIZATION
     // ═════════════════════════════════════════════════════════════════════════════
