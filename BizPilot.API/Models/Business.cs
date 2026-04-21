@@ -36,6 +36,7 @@ public class Business
     public bool ConfirmLargeSales { get; set; } = false;
     public decimal ConfirmLargeSaleThreshold { get; set; } = 0;
     public bool IsActive { get; set; } = true;
+    public string AccountNumber { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     public ICollection<User> Users { get; set; } = new List<User>();

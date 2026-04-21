@@ -39,4 +39,5 @@ public class BusinessDto
     public bool ConfirmLargeSales { get; set; }
     public decimal ConfirmLargeSaleThreshold { get; set; }
     public bool IsActive { get; set; }
+    public string AccountNumber { get; set; } = string.Empty;
 }

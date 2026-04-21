@@ -237,7 +237,8 @@ public class OnboardingService
             Currency = inferred.Currency,
             Timezone = inferred.Timezone,
             Plan = "starter",
-            TrialEndsAt = DateTime.UtcNow.AddDays(30)
+            TrialEndsAt = DateTime.UtcNow.AddDays(30),
+            AccountNumber = await Common.AccountNumberGenerator.GenerateUniqueAsync(_db)
         };
         _db.Businesses.Add(business);
 

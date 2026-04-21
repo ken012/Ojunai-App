@@ -61,7 +61,8 @@ public class AuthService : IAuthService
             Currency = inferred.Currency,
             Timezone = inferred.Timezone,
             Plan = "starter",
-            TrialEndsAt = DateTime.UtcNow.AddDays(30)
+            TrialEndsAt = DateTime.UtcNow.AddDays(30),
+            AccountNumber = await Common.AccountNumberGenerator.GenerateUniqueAsync(_db)
         };
         _db.Businesses.Add(business);
 
@@ -254,7 +255,8 @@ public class AuthService : IAuthService
                 AlertLowStock = business.AlertLowStock,
                 AlertDailySummary = business.AlertDailySummary,
                 AlertLargeSale = business.AlertLargeSale,
-                IsActive = business.IsActive
+                IsActive = business.IsActive,
+                AccountNumber = business.AccountNumber
             }
         };
     }

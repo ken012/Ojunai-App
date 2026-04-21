@@ -175,6 +175,21 @@ function SettingsPage() {
             <span className="text-sm font-medium">{business?.name ?? "—"}</span>
           </div>
           <Separator />
+          {business?.accountNumber && (
+            <>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-slate-500">Account Number</span>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(business.accountNumber!); }}
+                  className="text-sm font-mono font-medium bg-slate-100 px-2.5 py-0.5 rounded hover:bg-slate-200 transition-colors"
+                  title="Click to copy"
+                >
+                  {business.accountNumber}
+                </button>
+              </div>
+              <Separator />
+            </>
+          )}
           <div className="flex justify-between">
             <span className="text-sm text-slate-500">Type</span>
             <span className="text-sm">{business?.businessType ?? "—"}</span>

@@ -3415,6 +3415,7 @@ public class WhatsAppService : IWhatsAppService
     private static string HandleGetMyAccount(User user) =>
         $"👤 *Your Account*\n\n" +
         $"🏪 Business: *{user.Business.Name}*\n" +
+        $"🔢 Account #: *{user.Business.AccountNumber}*\n" +
         $"👤 Name: *{user.FullName}*\n" +
         $"📞 Phone: {user.PhoneNumber}\n" +
         $"🏷️ Role: {user.Role}\n" +

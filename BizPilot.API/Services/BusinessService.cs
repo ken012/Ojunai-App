@@ -77,6 +77,7 @@ public class BusinessService : IBusinessService
         AlertLargeSale = b.AlertLargeSale,
         ConfirmLargeSales = b.ConfirmLargeSales,
         ConfirmLargeSaleThreshold = b.ConfirmLargeSaleThreshold,
-        IsActive = b.IsActive
+        IsActive = b.IsActive,
+        AccountNumber = b.AccountNumber
     };
 }
