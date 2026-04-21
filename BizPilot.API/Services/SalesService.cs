@@ -97,7 +97,8 @@ public class SalesService : ISalesService
                 Quantity = itemReq.Quantity,
                 Notes = $"Sale",
                 RecordedByUserId = recordedByUserId,
-                RecordedByName = recordedByName
+                RecordedByName = recordedByName,
+                CreatedAtUtc = sale.CreatedAtUtc
             });
         }
 

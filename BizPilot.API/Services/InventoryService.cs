@@ -13,7 +13,7 @@ public class InventoryService : IInventoryService
 
     public InventoryService(AppDbContext db) => _db = db;
 
-    public async Task<InventoryTransactionDto> StockInAsync(Guid businessId, StockInRequest request, Guid? recordedByUserId = null, string? recordedByName = null)
+    public async Task<InventoryTransactionDto> StockInAsync(Guid businessId, StockInRequest request, Guid? recordedByUserId = null, string? recordedByName = null, DateTime? createdAtUtc = null)
     {
         var product = await GetProductAsync(businessId, request.ProductId);
 
@@ -26,7 +26,8 @@ public class InventoryService : IInventoryService
             UnitCost = request.UnitCost,
             Notes = request.Notes,
             RecordedByUserId = recordedByUserId,
-            RecordedByName = recordedByName
+            RecordedByName = recordedByName,
+            CreatedAtUtc = createdAtUtc ?? DateTime.UtcNow
         };
 
         product.CurrentStock += request.Quantity;

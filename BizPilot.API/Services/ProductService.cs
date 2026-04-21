@@ -46,7 +46,7 @@ public class ProductService : IProductService
         return ToDto(product);
     }
 
-    public async Task<ProductDto> CreateAsync(Guid businessId, CreateProductRequest request, Guid? recordedByUserId = null, string? recordedByName = null)
+    public async Task<ProductDto> CreateAsync(Guid businessId, CreateProductRequest request, Guid? recordedByUserId = null, string? recordedByName = null, DateTime? createdAtUtc = null)
     {
         var exists = await _db.Products.AnyAsync(p =>
             p.BusinessId == businessId && p.Name == request.Name && p.IsActive);
@@ -68,6 +68,8 @@ public class ProductService : IProductService
             subcategory = subcategory ?? inferredSub;
         }
 
+        var effectiveDate = createdAtUtc ?? DateTime.UtcNow;
+
         var product = new Product
         {
             BusinessId = businessId,
@@ -81,7 +83,8 @@ public class ProductService : IProductService
             Category = category,
             Subcategory = subcategory,
             RecordedByUserId = recordedByUserId,
-            RecordedByName = recordedByName
+            RecordedByName = recordedByName,
+            CreatedAtUtc = effectiveDate
         };
         _db.Products.Add(product);
 
@@ -95,7 +98,8 @@ public class ProductService : IProductService
                 Quantity = request.InitialStock,
                 Notes = "Initial stock",
                 RecordedByUserId = recordedByUserId,
-                RecordedByName = recordedByName
+                RecordedByName = recordedByName,
+                CreatedAtUtc = effectiveDate
             });
         }
 

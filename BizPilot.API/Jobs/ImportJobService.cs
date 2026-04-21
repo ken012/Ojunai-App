@@ -194,7 +194,7 @@ public class ImportJobService
                         LowStockThreshold = csvThreshold ?? 5,
                         Category = csvCategory ?? inferredCat,
                         Subcategory = csvSubcategory ?? inferredSubcat
-                    }, user?.Id, user?.FullName);
+                    }, user?.Id, user?.FullName, invDate);
 
                     // Stamp the import batch so rollback can find these records
                     var createdProduct = await _db.Products.FindAsync(created.Id);
@@ -208,7 +208,7 @@ public class ImportJobService
                         ProductId = existing.Id,
                         Quantity = qty!.Value,
                         UnitCost = effectiveCost
-                    }, user?.Id, user?.FullName);
+                    }, user?.Id, user?.FullName, invDate);
 
                     if (sellingPrice.HasValue && !existing.SellingPrice.HasValue) existing.SellingPrice = sellingPrice.Value;
                     if (costPrice.HasValue && !existing.CostPrice.HasValue) existing.CostPrice = costPrice.Value;
