@@ -21,7 +21,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { AlertTriangle, Package, Pencil, Trash2, Lock, Unlock, ShoppingCart, Ban, Minus } from "lucide-react";
+import { AlertTriangle, Package, Pencil, Trash2, Lock, Unlock, ShoppingCart, Ban, Minus, Search } from "lucide-react";
 import { formatDateTime } from "@/lib/format";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { UpgradeInline } from "@/components/upgrade-prompt";
@@ -895,14 +895,17 @@ export default function InventoryPage() {
   const [wastaging, setWastaging] = useState(false);
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [search, setSearch] = useState("");
   const { data: planStatus } = usePlanStatus();
   const hasHolds = planStatus?.hasStockHolds ?? true;
 
   const { data: productsData, isLoading } = useQuery({
-    queryKey: ["products"],
+    queryKey: ["products", search],
     queryFn: async () => {
+      const params = new URLSearchParams({ page: "1", pageSize: "500" });
+      if (search) params.set("search", search);
       const { data } = await api.get<{ data: PaginatedResult<ProductDto> }>(
-        "/products?page=1&pageSize=100"
+        `/products?${params}`
       );
       return data.data!;
     },
@@ -1117,8 +1120,18 @@ export default function InventoryPage() {
         </Card>
       </div>
 
-      {/* Filters */}
+      {/* Search + Filters */}
       <div className="flex items-center gap-4 flex-wrap">
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search products..."
+              className="h-9 pl-8 pr-3 w-56 rounded-md border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
+          </div>
           {usedCategories.length > 0 && (
             <div className="flex items-center gap-2">
               <Label className="text-sm text-slate-500 whitespace-nowrap">Category:</Label>
@@ -1134,12 +1147,12 @@ export default function InventoryPage() {
               </select>
             </div>
           )}
-          {categoryFilter && (
+          {(categoryFilter || search) && (
             <button
-              onClick={() => setCategoryFilter("")}
+              onClick={() => { setCategoryFilter(""); setSearch(""); }}
               className="text-xs text-sky-600 hover:underline"
             >
-              Clear
+              Clear filters
             </button>
           )}
         </div>
@@ -1208,7 +1221,7 @@ export default function InventoryPage() {
             <div className="col-span-3 text-center py-12 text-slate-400">
               <Package size={32} className="mx-auto mb-2 opacity-30" />
               <p>
-                {stockFilter !== "all" || categoryFilter
+                {stockFilter !== "all" || categoryFilter || search
                   ? "No products match this filter."
                   : "No products yet. Add them by messaging BizPilot on WhatsApp."}
               </p>

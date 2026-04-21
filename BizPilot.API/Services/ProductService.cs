@@ -19,7 +19,10 @@ public class ProductService : IProductService
             .Where(p => p.BusinessId == businessId && p.IsActive);
 
         if (!string.IsNullOrWhiteSpace(search))
-            query = query.Where(p => p.Name.Contains(search) || (p.SKU != null && p.SKU.Contains(search)));
+        {
+            var pattern = $"%{search}%";
+            query = query.Where(p => EF.Functions.ILike(p.Name, pattern) || (p.SKU != null && EF.Functions.ILike(p.SKU, pattern)));
+        }
 
         var total = await query.CountAsync();
         var items = await query
