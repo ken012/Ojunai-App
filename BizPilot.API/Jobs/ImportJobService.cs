@@ -345,8 +345,32 @@ public class ImportJobService
                     var qty = CsvParser.ParseDecimal(row.GetValueOrDefault("quantity"));
                     if (!ValidateQuantity(qty, rowNum, name!, errors)) continue;
 
-                    productCache.TryGetValue(name!.ToLower(), out var product);
-                    if (product == null) { errors.Add($"Row {rowNum}: Product '{name}' not found in inventory"); continue; }
+                    if (!productCache.TryGetValue(name!.ToLower(), out var product))
+                    {
+                        if (!isHistorical) { errors.Add($"Row {rowNum}: Product '{name}' not found in inventory"); continue; }
+
+                        var unit = row.GetValueOrDefault("unit") ?? UnitInferrer.Infer(name!);
+                        var inferredUnit = string.IsNullOrWhiteSpace(unit) || unit == "unit" || unit == "bag"
+                            ? UnitInferrer.Infer(name!) : unit;
+                        var (inferredCat, inferredSubcat) = CategoryInferrer.Infer(name!);
+
+                        product = new Product
+                        {
+                            BusinessId = job.BusinessId,
+                            Name = name!,
+                            Unit = inferredUnit,
+                            CurrentStock = 0,
+                            Category = inferredCat,
+                            Subcategory = inferredSubcat,
+                            Source = EntrySource.Import,
+                            ImportBatchId = job.Id,
+                            RecordedByUserId = user?.Id,
+                            RecordedByName = user?.FullName,
+                            CreatedAtUtc = DateTime.UtcNow
+                        };
+                        _db.Products.Add(product);
+                        productCache[name!.ToLower()] = product;
+                    }
 
                     var unitPrice = CsvParser.ParseDecimal(row.GetValueOrDefault("unitprice"));
                     if (!unitPrice.HasValue || unitPrice.Value <= 0) { errors.Add($"Row {rowNum}: UnitPrice is required for '{name}'. Should be a positive number."); continue; }
