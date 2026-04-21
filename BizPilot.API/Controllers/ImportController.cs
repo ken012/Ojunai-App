@@ -66,8 +66,8 @@ public class ImportController : BizPilotBaseController
     [HttpPost("contacts-ledger")]
     [RequirePermission(Permission.ManageDebts)]
     [RequestSizeLimit(MaxFileSize)]
-    public Task<ActionResult<ApiResponse<ImportJobDto>>> ImportContactsLedger(IFormFile file)
-        => EnqueueImportAsync(file, ImportJobType.ContactsWithLedger, Permission.ManageDebts);
+    public Task<ActionResult<ApiResponse<ImportJobDto>>> ImportContactsLedger(IFormFile file, [FromQuery] string mode = "new_debts")
+        => EnqueueImportAsync(file, ImportJobType.ContactsWithLedger, Permission.ManageDebts, mode);
 
     /// <summary>
     /// Polling endpoint. Returns the current status, progress counters, and any errors for a job.

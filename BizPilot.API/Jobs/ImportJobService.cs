@@ -723,6 +723,9 @@ public class ImportJobService
 
     private async Task ProcessContactsWithLedgerRowsAsync(ImportJob job, List<Dictionary<string, string>> rows, User? user, List<string> errors, string cs)
     {
+        var mode = job.ImportMode ?? "new_debts";
+        var isMigration = mode == "existing_debts";
+
         var contactCache = await _db.Contacts
             .Where(c => c.BusinessId == job.BusinessId)
             .ToDictionaryAsync(c => c.Name.ToLower(), c => c);
@@ -783,14 +786,18 @@ public class ImportJobService
                     if (!DateTime.TryParse(ledgerDateStr, out var ledgerParsedDate)) { errors.Add($"Row {rowNum}: Invalid date '{ledgerDateStr}'. Use format: YYYY-MM-DD."); continue; }
 
                     var entryType = isReceivable ? LedgerEntryType.Receivable : LedgerEntryType.Payable;
+                    var ledgerNotes = isMigration
+                        ? (string.IsNullOrWhiteSpace(notes) ? "Opening balance" : $"Opening balance — {notes}")
+                        : notes;
+
                     _db.LedgerEntries.Add(new LedgerEntry
                     {
                         BusinessId = job.BusinessId,
                         ContactId = contact.Id,
                         EntryType = entryType,
                         Amount = amount!.Value,
-                        Notes = notes,
-                        Source = EntrySource.Import,
+                        Notes = ledgerNotes,
+                        Source = isMigration ? "Migration" : EntrySource.Import,
                         ImportBatchId = job.Id,
                         RecordedByUserId = user?.Id,
                         RecordedByName = user?.FullName,

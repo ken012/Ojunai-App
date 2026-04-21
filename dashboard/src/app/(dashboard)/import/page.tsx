@@ -269,7 +269,7 @@ export default function ImportPage() {
 
       const formData = new FormData();
       formData.append("file", csvFile);
-      const hasMode = type === "inventory" || type === "sales";
+      const hasMode = type === "inventory" || type === "sales" || type === "contacts-ledger";
       const url = hasMode ? `/import/${type}?mode=${importMode}` : `/import/${type}`;
       const { data } = await api.post<{ data: ImportJob }>(url, formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -305,7 +305,7 @@ export default function ImportPage() {
     setPreviewPage(1);
     setJob(null);
     setError(null);
-    setImportMode(type === "sales" ? "new_sales" : "new_purchase");
+    setImportMode(type === "sales" ? "new_sales" : type === "contacts-ledger" ? "new_debts" : "new_purchase");
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -324,7 +324,7 @@ export default function ImportPage() {
         <select
           className="w-full max-w-xs h-9 px-2 mt-1 rounded-md border border-slate-200 text-sm bg-white"
           value={type}
-          onChange={(e) => { const t = e.target.value as ImportType; setType(t); setImportMode(t === "sales" ? "new_sales" : "new_purchase"); resetForNewImport(); }}
+          onChange={(e) => { const t = e.target.value as ImportType; setType(t); setImportMode(t === "sales" ? "new_sales" : t === "contacts-ledger" ? "new_debts" : "new_purchase"); resetForNewImport(); }}
           disabled={!!isProcessing}
         >
           {Object.entries(FORMATS).map(([key, f]) => (
@@ -402,6 +402,30 @@ export default function ImportPage() {
                 <div>
                   <p className="text-sm font-medium text-slate-700">Historical sales — Import for reporting only</p>
                   <p className="text-xs text-slate-500 mt-0.5">Records sales for revenue history. Stock is not deducted and no receivables are created, since your current inventory already reflects these.</p>
+                </div>
+              </label>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {type === "contacts-ledger" && (
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-sm font-semibold text-slate-700 mb-3">How should we handle this import?</p>
+            <div className="space-y-3">
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "new_debts" ? "border-sky-300 bg-sky-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+                <input type="radio" name="ledger-mode" value="new_debts" checked={importMode === "new_debts"} onChange={() => setImportMode("new_debts")} className="mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-slate-700">New debts — Recording new money owed</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Creates receivable or payable entries as new transactions.</p>
+                </div>
+              </label>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "existing_debts" ? "border-sky-300 bg-sky-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+                <input type="radio" name="ledger-mode" value="existing_debts" checked={importMode === "existing_debts"} onChange={() => setImportMode("existing_debts")} className="mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-slate-700">Existing debts — Migrating balances I{"'"}m already tracking</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Import the current outstanding balance for each contact. These show as "Opening balance" in the ledger so it{"'"}s clear they were carried over from your previous records.</p>
                 </div>
               </label>
             </div>
