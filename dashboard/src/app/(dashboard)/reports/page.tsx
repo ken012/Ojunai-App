@@ -226,7 +226,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
           </CardHeader>
           <CardContent>
             {predictions && predictions.length > 0 ? (
-              <div className="space-y-2">
+              <div className="space-y-2 max-h-72 overflow-y-auto">
                 {predictions.map((p) => (
                   <div key={p.productId} className="flex items-center justify-between border rounded-lg px-3 py-2">
                     <div className="flex-1 min-w-0">
@@ -254,7 +254,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
           </CardHeader>
           <CardContent>
             {deadStock && deadStock.length > 0 ? (
-              <div className="space-y-2">
+              <div className="space-y-2 max-h-72 overflow-y-auto">
                 {deadStock.map((p) => (
                   <div key={p.productId} className="flex items-center justify-between border rounded-lg px-3 py-2">
                     <div className="flex-1 min-w-0">
@@ -280,7 +280,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
           </CardHeader>
           <CardContent>
             {profitData && profitData.length > 0 ? (
-              <div className="space-y-2">
+              <div className="space-y-2 max-h-72 overflow-y-auto">
                 {profitData.map((p) => (
                   <div key={p.productName} className="flex items-center justify-between border rounded-lg px-3 py-2">
                     <div className="flex-1 min-w-0">
@@ -985,8 +985,8 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
           <CardContent>
             {reliability ? (
               reliability.length > 0 ? (
-                <div className="space-y-1">
-                  {reliability.slice(0, 10).map((c) => (
+                <div className="space-y-1 max-h-72 overflow-y-auto">
+                  {reliability.map((c) => (
                     <div key={c.contactId} className="flex items-center justify-between py-1.5 border-b border-slate-100">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-slate-900 truncate">{c.contactName}</p>
@@ -1120,7 +1120,7 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
         <CardContent>
           {reorder ? (
             reorder.length > 0 ? (
-              <div className="space-y-2">
+              <div className="space-y-2 max-h-72 overflow-y-auto">
                 {reorder.map((r) => (
                   <div key={r.productId} className="flex items-center justify-between border rounded-lg px-3 py-2">
                     <div className="flex-1 min-w-0">
@@ -1159,7 +1159,7 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
         <CardContent>
           {turnover ? (
             turnover.length > 0 ? (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto max-h-80 overflow-y-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-slate-200 text-slate-500">
@@ -1213,7 +1213,7 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                 <p className="text-xs text-slate-500">{wastage.eventCount} event{wastage.eventCount !== 1 ? "s" : ""} — {wastage.period}</p>
               </div>
               {wastage.topProducts.length > 0 ? (
-                <div className="space-y-1">
+                <div className="space-y-1 max-h-56 overflow-y-auto">
                   {wastage.topProducts.slice(0, 10).map((w) => (
                     <div key={w.productId} className="flex items-center justify-between py-1.5 border-b border-slate-100 text-xs">
                       <span className="text-slate-900 truncate">{w.productName}</span>
