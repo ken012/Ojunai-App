@@ -24,7 +24,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   AlertTriangle, TrendingUp, TrendingDown, Clock, Target, DollarSign, Users,
   CalendarClock, PieChart, Activity, CreditCard, UserCheck, PackageX,
-  Repeat, PackageCheck, Link2, FileBarChart
+  Repeat, PackageCheck, Link2, FileBarChart, Maximize2, X
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -39,6 +39,57 @@ function StatRow({ label, value, accent }: { label: string; value: string; accen
       <span className="text-sm text-slate-500">{label}</span>
       <span className={`text-sm font-semibold ${accent ?? "text-slate-900"}`}>{value}</span>
     </div>
+  );
+}
+
+function ExpandableList({ title, icon, badge, children, maxH = "max-h-72" }: {
+  title: string; icon: React.ReactNode; badge?: React.ReactNode;
+  children: React.ReactNode; maxH?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+              {icon}
+              {title}
+              {badge}
+            </CardTitle>
+            <button onClick={() => setExpanded(true)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700" title="Expand">
+              <Maximize2 size={14} />
+            </button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className={`${maxH} overflow-y-auto`}>
+            {children}
+          </div>
+        </CardContent>
+      </Card>
+
+      {expanded && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setExpanded(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                {icon}
+                {title}
+                {badge}
+              </div>
+              <button onClick={() => setExpanded(false)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-900">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              {children}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -217,16 +268,9 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <Target size={15} className="text-red-500" />
-              Stockout Predictions
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+        <ExpandableList title="Stockout Predictions" icon={<Target size={15} className="text-red-500" />}>
             {predictions && predictions.length > 0 ? (
-              <div className="space-y-2 max-h-72 overflow-y-auto">
+              <div className="space-y-2">
                 {predictions.map((p) => (
                   <div key={p.productId} className="flex items-center justify-between border rounded-lg px-3 py-2">
                     <div className="flex-1 min-w-0">
@@ -241,20 +285,12 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                 ))}
               </div>
             ) : <p className="text-xs text-slate-400 italic py-4 text-center">All products have 2+ weeks of stock based on current sales.</p>}
-          </CardContent>
-        </Card>
+        </ExpandableList>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <Clock size={15} className="text-slate-400" />
-              Dead Stock
-              {deadStock && deadStock.length > 0 && <Badge variant="secondary" className="text-xs">{deadStock.length}</Badge>}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+        <ExpandableList title="Dead Stock" icon={<Clock size={15} className="text-slate-400" />}
+          badge={deadStock && deadStock.length > 0 ? <Badge variant="secondary" className="text-xs">{deadStock.length}</Badge> : undefined}>
             {deadStock && deadStock.length > 0 ? (
-              <div className="space-y-2 max-h-72 overflow-y-auto">
+              <div className="space-y-2">
                 {deadStock.map((p) => (
                   <div key={p.productId} className="flex items-center justify-between border rounded-lg px-3 py-2">
                     <div className="flex-1 min-w-0">
@@ -266,21 +302,13 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                 <p className="text-xs text-slate-400 pt-1">Products with stock but no sales in 14+ days. Consider discounting or returning.</p>
               </div>
             ) : <p className="text-xs text-slate-400 italic py-4 text-center">No dead stock. All products with stock have sold recently.</p>}
-          </CardContent>
-        </Card>
+        </ExpandableList>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <DollarSign size={15} className="text-emerald-500" />
-              Profit by Product (30 Days)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+        <ExpandableList title="Profit by Product (30 Days)" icon={<DollarSign size={15} className="text-emerald-500" />}>
             {profitData && profitData.length > 0 ? (
-              <div className="space-y-2 max-h-72 overflow-y-auto">
+              <div className="space-y-2">
                 {profitData.map((p) => (
                   <div key={p.productName} className="flex items-center justify-between border rounded-lg px-3 py-2">
                     <div className="flex-1 min-w-0">
@@ -295,8 +323,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                 ))}
               </div>
             ) : <p className="text-xs text-slate-400 italic py-4 text-center">No profit data yet. Add cost prices to your products to see profitability.</p>}
-          </CardContent>
-        </Card>
+        </ExpandableList>
 
         <Card>
           <CardHeader className="pb-2">
@@ -975,17 +1002,10 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
         </Card>
 
         {/* Customer Reliability */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <UserCheck size={15} className="text-sky-500" />
-              Customer Payment Reliability
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+        <ExpandableList title="Customer Payment Reliability" icon={<UserCheck size={15} className="text-sky-500" />}>
             {reliability ? (
               reliability.length > 0 ? (
-                <div className="space-y-1 max-h-72 overflow-y-auto">
+                <div className="space-y-1">
                   {reliability.map((c) => (
                     <div key={c.contactId} className="flex items-center justify-between py-1.5 border-b border-slate-100">
                       <div className="flex-1 min-w-0">
@@ -1010,8 +1030,7 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                 </div>
               ) : <p className="text-xs text-slate-400 italic">No credit history yet.</p>
             ) : <Skeleton className="h-40" />}
-          </CardContent>
-        </Card>
+        </ExpandableList>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1110,17 +1129,10 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
   return (
     <div className="space-y-4">
       {/* Reorder Suggestions */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-            <PackageCheck size={15} className="text-amber-500" />
-            Reorder Suggestions
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      <ExpandableList title="Reorder Suggestions" icon={<PackageCheck size={15} className="text-amber-500" />}>
           {reorder ? (
             reorder.length > 0 ? (
-              <div className="space-y-2 max-h-72 overflow-y-auto">
+              <div className="space-y-2">
                 {reorder.map((r) => (
                   <div key={r.productId} className="flex items-center justify-between border rounded-lg px-3 py-2">
                     <div className="flex-1 min-w-0">
@@ -1145,21 +1157,13 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
               </div>
             ) : <p className="text-xs text-slate-400 italic py-4 text-center">All fast-moving products have enough stock.</p>
           ) : <Skeleton className="h-40" />}
-        </CardContent>
-      </Card>
+      </ExpandableList>
 
       {/* Inventory Turnover */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-            <Activity size={15} className="text-sky-500" />
-            Inventory Turnover (30 days)
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      <ExpandableList title="Inventory Turnover (30 days)" icon={<Activity size={15} className="text-sky-500" />} maxH="max-h-80">
           {turnover ? (
             turnover.length > 0 ? (
-              <div className="overflow-x-auto max-h-80 overflow-y-auto">
+              <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-slate-200 text-slate-500">
@@ -1194,8 +1198,7 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
               </div>
             ) : <p className="text-xs text-slate-400 italic">No products yet.</p>
           ) : <Skeleton className="h-48" />}
-        </CardContent>
-      </Card>
+      </ExpandableList>
 
       {/* Wastage */}
       <Card>

@@ -158,10 +158,11 @@ public class SalesService : ISalesService
             query = query.Where(s => s.ContactId == customerId);
         if (!string.IsNullOrEmpty(search))
         {
-            var pattern = $"%{search}%";
+            var startPattern = $"{search}%";
+            var wordPattern = $"% {search}%";
             query = query.Where(s =>
-                (s.Contact != null && EF.Functions.ILike(s.Contact.Name, pattern))
-                || s.Items.Any(i => EF.Functions.ILike(i.Product.Name, pattern)));
+                (s.Contact != null && (EF.Functions.ILike(s.Contact.Name, startPattern) || EF.Functions.ILike(s.Contact.Name, wordPattern)))
+                || s.Items.Any(i => EF.Functions.ILike(i.Product.Name, startPattern) || EF.Functions.ILike(i.Product.Name, wordPattern)));
         }
 
         var total = await query.CountAsync();

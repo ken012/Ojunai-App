@@ -49,11 +49,12 @@ public class ExpenseService : IExpenseService
             query = query.Where(e => EF.Functions.ILike(e.Source, source));
         if (!string.IsNullOrEmpty(search))
         {
-            var pattern = $"%{search}%";
+            var startPattern = $"{search}%";
+            var wordPattern = $"% {search}%";
             query = query.Where(e =>
-                EF.Functions.ILike(e.Category, pattern)
-                || (e.PaidTo != null && EF.Functions.ILike(e.PaidTo, pattern))
-                || (e.Notes != null && EF.Functions.ILike(e.Notes, pattern)));
+                EF.Functions.ILike(e.Category, startPattern) || EF.Functions.ILike(e.Category, wordPattern)
+                || (e.PaidTo != null && (EF.Functions.ILike(e.PaidTo, startPattern) || EF.Functions.ILike(e.PaidTo, wordPattern)))
+                || (e.Notes != null && (EF.Functions.ILike(e.Notes, startPattern) || EF.Functions.ILike(e.Notes, wordPattern))));
         }
         if (expenseType == "cogs")
         {
