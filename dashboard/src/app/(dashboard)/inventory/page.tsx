@@ -975,12 +975,11 @@ export default function InventoryPage() {
     let items = allProducts;
     if (search.trim()) {
       const q = search.trim().toLowerCase();
-      const starts = items.filter((p) => p.name.toLowerCase().startsWith(q) || p.sku?.toLowerCase().startsWith(q));
-      if (starts.length > 0) {
-        items = starts;
-      } else {
-        items = items.filter((p) => p.name.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q));
-      }
+      items = items.filter((p) =>
+        p.name.toLowerCase().startsWith(q)
+        || p.name.toLowerCase().split(" ").some(w => w.startsWith(q))
+        || p.sku?.toLowerCase().startsWith(q)
+      );
     }
     if (stockFilter === "low") items = items.filter((p) => lowStockIds.has(p.id));
     if (stockFilter === "sufficient") items = items.filter((p) => !lowStockIds.has(p.id));
