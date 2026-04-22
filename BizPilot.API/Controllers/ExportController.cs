@@ -26,7 +26,7 @@ public class ExportController : ControllerBase
 
     [HttpGet("download")]
     [AllowAnonymous]
-    public async Task<IActionResult> Download([FromQuery] string? token)
+    public IActionResult Download([FromQuery] string? token)
     {
         if (string.IsNullOrWhiteSpace(token))
             return BadRequest("Missing token.");
@@ -35,13 +35,6 @@ public class ExportController : ControllerBase
         var payload = ExportTokenHelper.ValidateToken(token, secret);
         if (payload == null)
             return Content(PinPage(token, "This download link is invalid or has expired."), "text/html");
-
-        var owner = await _db.Users
-            .Include(u => u.Business)
-            .FirstOrDefaultAsync(u => u.Business.Id == payload.BusinessId && u.Role == Models.UserRole.Owner && u.IsActive);
-
-        if (owner?.DateOfBirth == null)
-            return await ServePdf(payload);
 
         return Content(PinPage(token, null), "text/html");
     }
@@ -66,11 +59,6 @@ public class ExportController : ControllerBase
             return Content(PinPage(token!, "Account not found."), "text/html");
 
         var expectedPin = DerivePin(owner.Business.AccountNumber, owner.DateOfBirth);
-        if (expectedPin == null)
-        {
-            // Owner has no DOB set — skip PIN, serve directly
-            return await ServePdf(payload);
-        }
 
         if (string.IsNullOrWhiteSpace(pin) || pin.Trim() != expectedPin)
             return Content(PinPage(token!, "Incorrect PIN. Please try again."), "text/html");
@@ -101,9 +89,10 @@ public class ExportController : ControllerBase
         }
     }
 
-    internal static string? DerivePin(string accountNumber, DateOnly? dob)
+    internal static string DerivePin(string accountNumber, DateOnly? dob)
     {
-        if (dob == null || string.IsNullOrEmpty(accountNumber) || accountNumber.Length < 2) return null;
+        if (string.IsNullOrEmpty(accountNumber) || accountNumber.Length < 4) return "0000";
+        if (dob == null) return accountNumber[^4..];
         var acctLast2 = accountNumber[^2..];
         var yearLast2 = (dob.Value.Year % 100).ToString("D2");
         return acctLast2 + yearLast2;
@@ -127,7 +116,7 @@ public class ExportController : ControllerBase
             <form method=""post"" action=""/api/export/download"">
                 <input type=""hidden"" name=""token"" value=""{System.Net.WebUtility.HtmlEncode(token)}"" />
                 <label style=""display:block;font-size:14px;color:#475569;margin-bottom:8px"">Enter your 4-digit PIN to download</label>
-                <p style=""font-size:12px;color:#94a3b8;margin-bottom:12px"">Last 2 digits of your account number + last 2 digits of your birth year</p>
+                <p style=""font-size:12px;color:#94a3b8;margin-bottom:12px"">Your 4-digit security PIN</p>
                 <input type=""text"" name=""pin"" maxlength=""4"" pattern=""\d{{4}}"" inputmode=""numeric""
                     style=""width:120px;height:48px;font-size:24px;text-align:center;letter-spacing:8px;border:2px solid #e2e8f0;border-radius:8px;outline:none;display:block;margin:0 auto 16px""
                     autofocus required />

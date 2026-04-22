@@ -53,7 +53,7 @@ export default function RegisterPage() {
       await registerUser({
         ...data,
         email: data.email || undefined,
-        dateOfBirth: data.dateOfBirth || undefined,
+        dateOfBirth: data.dateOfBirth ? `${data.dateOfBirth}-01-01` : undefined,
       });
       router.push("/");
     } catch (err: unknown) {
@@ -115,8 +115,8 @@ export default function RegisterPage() {
               </div>
 
               <div className="col-span-2 space-y-1">
-                <Label>Date of Birth</Label>
-                <Input type="date" {...register("dateOfBirth")} />
+                <Label>Birth Year</Label>
+                <Input type="number" min={1920} max={new Date().getFullYear() - 13} placeholder="e.g. 1990" {...register("dateOfBirth")} />
                 <p className="text-[11px] text-slate-400">Used to secure your report downloads</p>
               </div>
             </div>

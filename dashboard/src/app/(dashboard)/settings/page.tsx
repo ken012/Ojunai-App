@@ -479,17 +479,15 @@ function DobField() {
   const [saving, setSaving] = useState(false);
 
   const hasDob = !!user?.dateOfBirth;
-  const masked = hasDob
-    ? `**/**/` + new Date(user!.dateOfBirth!).getFullYear()
-    : null;
 
   async function handleSave() {
-    if (!value) return;
+    if (!value || isNaN(Number(value))) return;
     setSaving(true);
     try {
-      await api.put("/auth/date-of-birth", { dateOfBirth: value });
+      await api.put("/auth/date-of-birth", { dateOfBirth: `${value}-01-01` });
       await refresh();
       setEditing(false);
+      setValue("");
     } catch { /* silent */ } finally {
       setSaving(false);
     }
@@ -498,10 +496,11 @@ function DobField() {
   if (editing) {
     return (
       <div className="flex items-center justify-between">
-        <span className="text-sm text-slate-500">Date of Birth</span>
+        <span className="text-sm text-slate-500">Birth Year</span>
         <div className="flex items-center gap-2">
-          <input type="date" value={value} onChange={(e) => setValue(e.target.value)}
-            className="h-8 px-2 rounded-md border border-slate-200 text-sm" />
+          <input type="number" min="1920" max={new Date().getFullYear() - 13} placeholder="e.g. 1990"
+            value={value} onChange={(e) => setValue(e.target.value)}
+            className="h-8 w-24 px-2 rounded-md border border-slate-200 text-sm text-center" />
           <Button size="sm" onClick={handleSave} disabled={saving || !value}>{saving ? "..." : "Save"}</Button>
           <Button size="sm" variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
         </div>
@@ -511,9 +510,9 @@ function DobField() {
 
   return (
     <div className="flex items-center justify-between">
-      <span className="text-sm text-slate-500">Date of Birth</span>
+      <span className="text-sm text-slate-500">Birth Year</span>
       <div className="flex items-center gap-2">
-        <span className="text-sm text-slate-700">{masked ?? "Not set"}</span>
+        <span className="text-sm text-slate-500">{hasDob ? "Saved" : "Not set"}</span>
         <button onClick={() => setEditing(true)} className="text-xs text-sky-600 hover:underline">
           {hasDob ? "Change" : "Set"}
         </button>

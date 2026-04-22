@@ -162,19 +162,13 @@ public class OnboardingService
                 state.OwnerName = CleanName(trimmed);
                 state.Step = OnboardingStep.DateOfBirth;
                 await _db.SaveChangesAsync();
-                await Send(from, $"Hi *{state.OwnerName}*!\n\nWhat's your *date of birth*?\n(e.g. 15/03/1990 or 1990-03-15)\n\nThis is used to secure your report downloads.{Footer}");
+                await Send(from, $"Hi *{state.OwnerName}*!\n\nWhat *year* were you born?\n(e.g. 1990)\n\nThis is used to secure your report downloads.{Footer}");
                 return "onboarding:owner_name";
 
             case OnboardingStep.DateOfBirth:
-                if (DateOnly.TryParse(trimmed, out var dob) ||
-                    DateOnly.TryParseExact(trimmed, new[] { "dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "MM/dd/yyyy" }, null, System.Globalization.DateTimeStyles.None, out dob))
+                if (int.TryParse(trimmed, out var birthYear) && birthYear >= 1920 && birthYear <= DateTime.UtcNow.Year - 13)
                 {
-                    if (dob.Year < 1920 || dob > DateOnly.FromDateTime(DateTime.UtcNow.AddYears(-13)))
-                    {
-                        await Send(from, "That date doesn't look right. Please enter a valid date of birth (e.g. 15/03/1990).");
-                        return "onboarding:dob_invalid";
-                    }
-                    state.DateOfBirth = dob;
+                    state.DateOfBirth = new DateOnly(birthYear, 1, 1);
                     state.Step = OnboardingStep.Confirmation;
                     await _db.SaveChangesAsync();
                     var detectedCountry = (Common.CountryLookup.InferFromPhone(phone) ?? Common.CountryLookup.Default).Name;
@@ -183,12 +177,11 @@ public class OnboardingService
                         $"📋 *Type:* {state.BusinessType}\n" +
                         $"📍 *City:* {state.City}\n" +
                         $"🌍 *Country:* {detectedCountry}\n" +
-                        $"👤 *Owner:* {state.OwnerName}\n" +
-                        $"🎂 *DOB:* {state.DateOfBirth:dd MMM yyyy}\n\n" +
+                        $"👤 *Owner:* {state.OwnerName}\n\n" +
                         $"Reply *confirm* to create your account, or tell me what to fix.");
                     return "onboarding:dob";
                 }
-                await Send(from, "I couldn't parse that date. Please use a format like *15/03/1990* or *1990-03-15*.");
+                await Send(from, "Please enter a valid birth year (e.g. *1990*).");
                 return "onboarding:dob_retry";
 
             case OnboardingStep.Confirmation:
