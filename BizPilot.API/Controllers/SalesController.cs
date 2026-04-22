@@ -87,9 +87,9 @@ public class SalesController : BizPilotBaseController
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
         [FromQuery] DateTime? from = null, [FromQuery] DateTime? to = null,
         [FromQuery] string? paymentStatus = null, [FromQuery] string? paymentMethod = null,
-        [FromQuery] string? source = null, [FromQuery] Guid? customerId = null)
+        [FromQuery] string? source = null, [FromQuery] Guid? customerId = null, [FromQuery] string? search = null)
     {
-        var result = await _sales.GetAllAsync(BusinessId, page, pageSize, from, to, paymentStatus, paymentMethod, source, customerId);
+        var result = await _sales.GetAllAsync(BusinessId, page, pageSize, from, to, paymentStatus, paymentMethod, source, customerId, search);
         return Ok(ApiResponse<PaginatedResult<SaleSummaryDto>>.Ok(result));
     }
 

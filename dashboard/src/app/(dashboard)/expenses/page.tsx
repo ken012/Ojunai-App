@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { formatNaira, formatDateTime } from "@/lib/format";
@@ -26,7 +26,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Trash2, Search, X } from "lucide-react";
 import { SourceBadge } from "@/components/source-badge";
 import { hasPermission, Permission } from "@/lib/permissions";
 
@@ -64,6 +64,13 @@ export default function ExpensesPage() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [methodFilter, setMethodFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 250);
+    return () => clearTimeout(t);
+  }, [search]);
 
   const { data: filters } = useQuery({
     queryKey: ["expense-filters", expenseTab],
@@ -76,13 +83,14 @@ export default function ExpensesPage() {
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["expenses", page, expenseTab, categoryFilter, methodFilter, sourceFilter],
+    queryKey: ["expenses", page, expenseTab, categoryFilter, methodFilter, sourceFilter, debouncedSearch],
     queryFn: async () => {
       const params = new URLSearchParams({ page: String(page), pageSize: "20" });
       if (expenseTab !== "all") params.set("expenseType", expenseTab);
       if (categoryFilter) params.set("category", categoryFilter);
       if (methodFilter) params.set("paymentMethod", methodFilter);
       if (sourceFilter) params.set("source", sourceFilter);
+      if (debouncedSearch) params.set("search", debouncedSearch);
       const { data } = await api.get<{ data: PaginatedResult<ExpenseDto> }>(`/expenses?${params}`);
       return data.data!;
     },
@@ -135,6 +143,21 @@ export default function ExpensesPage() {
       </div>
 
       <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative w-full sm:max-w-xs">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <input
+            type="search"
+            placeholder="Search by category, paid to, or notes..."
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            className="h-8 w-full pl-8 pr-8 rounded-md border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
+          />
+          {search && (
+            <button onClick={() => { setSearch(""); setPage(1); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-0.5 rounded" type="button">
+              <X size={12} />
+            </button>
+          )}
+        </div>
         <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
           className="h-8 px-2 rounded-md border border-slate-200 text-xs">
           <option value="">All Categories</option>

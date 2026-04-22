@@ -35,7 +35,7 @@ public class ExpenseService : IExpenseService
     }
 
     public async Task<PaginatedResult<ExpenseDto>> GetAllAsync(
-        Guid businessId, int page, int pageSize, DateTime? from, DateTime? to, string? expenseType = null, string? category = null, string? paymentMethod = null, string? source = null)
+        Guid businessId, int page, int pageSize, DateTime? from, DateTime? to, string? expenseType = null, string? category = null, string? paymentMethod = null, string? source = null, string? search = null)
     {
         var query = _db.Expenses.Where(e => e.BusinessId == businessId);
 
@@ -47,6 +47,14 @@ public class ExpenseService : IExpenseService
             query = query.Where(e => e.PaymentMethod != null && EF.Functions.ILike(e.PaymentMethod, paymentMethod));
         if (!string.IsNullOrEmpty(source))
             query = query.Where(e => EF.Functions.ILike(e.Source, source));
+        if (!string.IsNullOrEmpty(search))
+        {
+            var pattern = $"%{search}%";
+            query = query.Where(e =>
+                EF.Functions.ILike(e.Category, pattern)
+                || (e.PaidTo != null && EF.Functions.ILike(e.PaidTo, pattern))
+                || (e.Notes != null && EF.Functions.ILike(e.Notes, pattern)));
+        }
         if (expenseType == "cogs")
         {
             // Inventory Expenses: explicitly tagged as cogs OR category matches inventory keywords

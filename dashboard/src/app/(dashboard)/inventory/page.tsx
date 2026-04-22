@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { formatNaira } from "@/lib/format";
@@ -21,7 +21,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { AlertTriangle, Package, Pencil, Trash2, Lock, Unlock, ShoppingCart, Ban, Minus, Search } from "lucide-react";
+import { AlertTriangle, Package, Pencil, Trash2, Lock, Unlock, ShoppingCart, Ban, Minus, Search, X } from "lucide-react";
 import { formatDateTime } from "@/lib/format";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { UpgradeInline } from "@/components/upgrade-prompt";
@@ -896,24 +896,14 @@ export default function InventoryPage() {
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
   const { data: planStatus } = usePlanStatus();
   const hasHolds = planStatus?.hasStockHolds ?? true;
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(search.length >= 2 ? search : "");
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [search]);
-
   const { data: productsData, isLoading } = useQuery({
-    queryKey: ["products", debouncedSearch],
+    queryKey: ["products"],
     queryFn: async () => {
-      const params = new URLSearchParams({ page: "1", pageSize: "500" });
-      if (debouncedSearch) params.set("search", debouncedSearch);
       const { data } = await api.get<{ data: PaginatedResult<ProductDto> }>(
-        `/products?${params}`
+        "/products?page=1&pageSize=500"
       );
       return data.data!;
     },
@@ -983,11 +973,15 @@ export default function InventoryPage() {
   const filteredProducts = useMemo(() => {
     if (stockFilter === "wastage") return [];
     let items = allProducts;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      items = items.filter((p) => p.name.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q));
+    }
     if (stockFilter === "low") items = items.filter((p) => lowStockIds.has(p.id));
     if (stockFilter === "sufficient") items = items.filter((p) => !lowStockIds.has(p.id));
     if (categoryFilter) items = items.filter((p) => p.category === categoryFilter);
     return items;
-  }, [allProducts, stockFilter, categoryFilter, lowStockIds]);
+  }, [allProducts, search, stockFilter, categoryFilter, lowStockIds]);
 
   return (
     <div className="space-y-6">
@@ -1130,15 +1124,20 @@ export default function InventoryPage() {
 
       {/* Search + Filters */}
       <div className="flex items-center gap-4 flex-wrap">
-          <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
+          <div className="relative w-full sm:max-w-xs">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <Input
+              type="search"
+              placeholder="Search by name or SKU..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search products..."
-              className="h-9 pl-8 pr-3 w-56 rounded-md border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              className="pl-9 pr-9"
             />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1 rounded" type="button">
+                <X size={14} />
+              </button>
+            )}
           </div>
           {usedCategories.length > 0 && (
             <div className="flex items-center gap-2">

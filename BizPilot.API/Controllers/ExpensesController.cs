@@ -28,9 +28,9 @@ public class ExpensesController : BizPilotBaseController
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
         [FromQuery] DateTime? from = null, [FromQuery] DateTime? to = null,
         [FromQuery] string? expenseType = null, [FromQuery] string? category = null,
-        [FromQuery] string? paymentMethod = null, [FromQuery] string? source = null)
+        [FromQuery] string? paymentMethod = null, [FromQuery] string? source = null, [FromQuery] string? search = null)
     {
-        var result = await _expenses.GetAllAsync(BusinessId, page, pageSize, from, to, expenseType, category, paymentMethod, source);
+        var result = await _expenses.GetAllAsync(BusinessId, page, pageSize, from, to, expenseType, category, paymentMethod, source, search);
         return Ok(ApiResponse<PaginatedResult<ExpenseDto>>.Ok(result));
     }
 

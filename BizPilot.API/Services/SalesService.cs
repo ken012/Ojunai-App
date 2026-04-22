@@ -139,7 +139,7 @@ public class SalesService : ISalesService
 
     public async Task<PaginatedResult<SaleSummaryDto>> GetAllAsync(
         Guid businessId, int page, int pageSize, DateTime? from, DateTime? to,
-        string? paymentStatus = null, string? paymentMethod = null, string? source = null, Guid? customerId = null)
+        string? paymentStatus = null, string? paymentMethod = null, string? source = null, Guid? customerId = null, string? search = null)
     {
         var query = _db.Sales
             .Include(s => s.Contact)
@@ -156,6 +156,13 @@ public class SalesService : ISalesService
             query = query.Where(s => s.Source == source);
         if (customerId.HasValue)
             query = query.Where(s => s.ContactId == customerId);
+        if (!string.IsNullOrEmpty(search))
+        {
+            var pattern = $"%{search}%";
+            query = query.Where(s =>
+                (s.Contact != null && EF.Functions.ILike(s.Contact.Name, pattern))
+                || s.Items.Any(i => EF.Functions.ILike(i.Product.Name, pattern)));
+        }
 
         var total = await query.CountAsync();
         var items = await query
