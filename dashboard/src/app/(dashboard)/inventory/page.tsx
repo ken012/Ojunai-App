@@ -975,7 +975,10 @@ export default function InventoryPage() {
     let items = allProducts;
     if (search.trim()) {
       const q = search.trim().toLowerCase();
-      items = items.filter((p) => p.name.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q));
+      const starts = items.filter((p) => p.name.toLowerCase().startsWith(q) || p.sku?.toLowerCase().startsWith(q));
+      const contains = items.filter((p) => !p.name.toLowerCase().startsWith(q) && !p.sku?.toLowerCase().startsWith(q)
+        && (p.name.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q)));
+      items = [...starts, ...contains];
     }
     if (stockFilter === "low") items = items.filter((p) => lowStockIds.has(p.id));
     if (stockFilter === "sufficient") items = items.filter((p) => !lowStockIds.has(p.id));
