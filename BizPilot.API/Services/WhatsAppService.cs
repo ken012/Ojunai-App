@@ -820,7 +820,7 @@ public class WhatsAppService : IWhatsAppService
             "help" => HandleHelp(),
             "show_roles" => HandleShowRoles(),
             "show_reports" => HandleShowReports(),
-            "get_export_link" => HandleGetExportLink(businessId, ba),
+            "get_export_link" => HandleGetExportLink(businessId, ba, user),
             _ => HandleUnknown()
         };
     }
@@ -2751,7 +2751,7 @@ public class WhatsAppService : IWhatsAppService
         "📥 *Export:*\n" +
         "• \"Export my data\" — get link to download reports";
 
-    private string HandleGetExportLink(Guid businessId, JsonElement ba)
+    private string HandleGetExportLink(Guid businessId, JsonElement ba, User user)
     {
         var reportType = ba.GetStringOrNull("reportType");
 
@@ -2781,7 +2781,7 @@ public class WhatsAppService : IWhatsAppService
 
         var secret = _config["Jwt:Secret"]!;
         var baseUrl = _config["App:BaseUrl"] ?? "https://api.bizpilot-ai.com";
-        var token = ExportTokenHelper.GenerateToken(businessId, reportType, from, to, secret);
+        var token = ExportTokenHelper.GenerateToken(businessId, user.Id, reportType, from, to, secret);
         var downloadUrl = $"{baseUrl}/api/export/download?token={token}";
 
         var label = reportType switch
@@ -2792,9 +2792,14 @@ public class WhatsAppService : IWhatsAppService
             _ => "Report"
         };
 
+        var pinHint = user.DateOfBirth.HasValue
+            ? "🔐 PIN: Last 2 digits of your account number + last 2 of your birth year"
+            : "🔐 PIN: Last 4 digits of your account number";
+
         return $"📥 *Your {label} is ready!*\n\n" +
                $"Tap to download (link expires in 24 hours):\n" +
                $"👉 {downloadUrl}\n\n" +
+               $"{pinHint}\n\n" +
                $"Covers: {from:dd MMM yyyy} – {to:dd MMM yyyy}\n\n" +
                $"Need a different date range or format? Visit app.bizpilot-ai.com/export";
     }

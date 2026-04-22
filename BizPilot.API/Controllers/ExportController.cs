@@ -51,14 +51,14 @@ public class ExportController : ControllerBase
         if (payload == null)
             return Content(PinPage(token!, "This download link is invalid or has expired."), "text/html");
 
-        var owner = await _db.Users
+        var user = await _db.Users
             .Include(u => u.Business)
-            .FirstOrDefaultAsync(u => u.Business.Id == payload.BusinessId && u.Role == Models.UserRole.Owner && u.IsActive);
+            .FirstOrDefaultAsync(u => u.Id == payload.UserId && u.IsActive);
 
-        if (owner == null)
+        if (user == null)
             return Content(PinPage(token!, "Account not found."), "text/html");
 
-        var expectedPin = DerivePin(owner.Business.AccountNumber, owner.DateOfBirth);
+        var expectedPin = DerivePin(user.Business.AccountNumber, user.DateOfBirth);
 
         if (string.IsNullOrWhiteSpace(pin) || pin.Trim() != expectedPin)
             return Content(PinPage(token!, "Incorrect PIN. Please try again."), "text/html");

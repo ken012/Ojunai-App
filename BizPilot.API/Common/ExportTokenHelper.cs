@@ -4,16 +4,17 @@ using System.Text.Json;
 
 namespace BizPilot.API.Common;
 
-public record ExportTokenPayload(Guid BusinessId, string ReportType, DateOnly From, DateOnly To, long ExpiresAtUnix);
+public record ExportTokenPayload(Guid BusinessId, Guid UserId, string ReportType, DateOnly From, DateOnly To, long ExpiresAtUnix);
 
 public static class ExportTokenHelper
 {
-    public static string GenerateToken(Guid businessId, string reportType, DateOnly from, DateOnly to, string secret, TimeSpan? expiry = null)
+    public static string GenerateToken(Guid businessId, Guid userId, string reportType, DateOnly from, DateOnly to, string secret, TimeSpan? expiry = null)
     {
         var exp = DateTimeOffset.UtcNow.Add(expiry ?? TimeSpan.FromHours(24)).ToUnixTimeSeconds();
         var payload = JsonSerializer.Serialize(new
         {
             bid = businessId.ToString(),
+            uid = userId.ToString(),
             type = reportType,
             from = from.ToString("yyyy-MM-dd"),
             to = to.ToString("yyyy-MM-dd"),
@@ -43,6 +44,7 @@ public static class ExportTokenHelper
             var root = doc.RootElement;
 
             var bid = Guid.Parse(root.GetProperty("bid").GetString()!);
+            var uid = Guid.Parse(root.GetProperty("uid").GetString()!);
             var type = root.GetProperty("type").GetString()!;
             var from = DateOnly.Parse(root.GetProperty("from").GetString()!);
             var to = DateOnly.Parse(root.GetProperty("to").GetString()!);
@@ -50,7 +52,7 @@ public static class ExportTokenHelper
 
             if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() > exp) return null;
 
-            return new ExportTokenPayload(bid, type, from, to, exp);
+            return new ExportTokenPayload(bid, uid, type, from, to, exp);
         }
         catch
         {
