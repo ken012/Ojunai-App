@@ -78,6 +78,16 @@ public class AuthController : BizPilotBaseController
         return Ok(ApiResponse<UserDto>.Ok(result));
     }
 
+    [HttpPut("date-of-birth")]
+    public async Task<ActionResult<ApiResponse<object>>> UpdateDateOfBirth([FromBody] UpdateDobRequest request)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == UserId && u.IsActive)
+            ?? throw new KeyNotFoundException("User not found.");
+        user.DateOfBirth = request.DateOfBirth;
+        await _db.SaveChangesAsync();
+        return Ok(ApiResponse<object>.Ok(null!, "Date of birth updated."));
+    }
+
     [HttpPost("change-password")]
     public async Task<ActionResult<ApiResponse<object>>> ChangePassword([FromBody] ChangePasswordRequest request)
     {
@@ -125,6 +135,11 @@ public class ChangePasswordRequest
 {
     public string CurrentPassword { get; set; } = string.Empty;
     public string NewPassword { get; set; } = string.Empty;
+}
+
+public class UpdateDobRequest
+{
+    public DateOnly DateOfBirth { get; set; }
 }
 
 public class RequestResetDto

@@ -26,7 +26,7 @@ public class ExportController : ControllerBase
 
     [HttpGet("download")]
     [AllowAnonymous]
-    public IActionResult Download([FromQuery] string? token)
+    public async Task<IActionResult> Download([FromQuery] string? token)
     {
         if (string.IsNullOrWhiteSpace(token))
             return BadRequest("Missing token.");
@@ -35,6 +35,13 @@ public class ExportController : ControllerBase
         var payload = ExportTokenHelper.ValidateToken(token, secret);
         if (payload == null)
             return Content(PinPage(token, "This download link is invalid or has expired."), "text/html");
+
+        var owner = await _db.Users
+            .Include(u => u.Business)
+            .FirstOrDefaultAsync(u => u.Business.Id == payload.BusinessId && u.Role == Models.UserRole.Owner && u.IsActive);
+
+        if (owner?.DateOfBirth == null)
+            return await ServePdf(payload);
 
         return Content(PinPage(token, null), "text/html");
     }
