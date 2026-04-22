@@ -109,7 +109,7 @@ function ProductCard({
       <CardContent className="p-4">
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-slate-900 truncate">{product.name}</p>
+            <p className="font-semibold text-slate-900 truncate" title={product.name}>{product.name}</p>
             {product.category && (
               <p className="text-xs text-slate-400 mt-0.5">
                 {product.category}{product.subcategory ? ` / ${product.subcategory}` : ""}
@@ -976,9 +976,11 @@ export default function InventoryPage() {
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       const starts = items.filter((p) => p.name.toLowerCase().startsWith(q) || p.sku?.toLowerCase().startsWith(q));
-      const contains = items.filter((p) => !p.name.toLowerCase().startsWith(q) && !p.sku?.toLowerCase().startsWith(q)
-        && (p.name.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q)));
-      items = [...starts, ...contains];
+      if (starts.length > 0) {
+        items = starts;
+      } else {
+        items = items.filter((p) => p.name.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q));
+      }
     }
     if (stockFilter === "low") items = items.filter((p) => lowStockIds.has(p.id));
     if (stockFilter === "sufficient") items = items.filter((p) => !lowStockIds.has(p.id));
