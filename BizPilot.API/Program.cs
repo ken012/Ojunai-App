@@ -101,6 +101,7 @@ builder.Services.AddHttpClient("Paystack", client =>
 builder.Services.AddScoped<PaystackService>();
 builder.Services.AddScoped<FlutterwaveService>();
 builder.Services.AddScoped<PlanGuard>();
+builder.Services.AddScoped<VoiceAIGuard>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IBusinessService, BusinessService>();
 builder.Services.AddScoped<IStockHoldService, StockHoldService>();

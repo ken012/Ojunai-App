@@ -820,4 +820,100 @@ public class AdminController : ControllerBase
         }
         return System.Text.RegularExpressions.Regex.Replace(sb.ToString().Trim(), @"\s+", " ");
     }
+
+    // ═════════════════════════════════════════════════════════════════════════════
+    // VOICE AI ADMIN
+    // ═════════════════════════════════════════════════════════════════════════════
+
+    [HttpPatch("business/{id}/voice-ai")]
+    public async Task<IActionResult> UpdateVoiceAI(
+        [FromQuery] string key, [FromRoute] Guid id, [FromBody] UpdateVoiceAIRequest request)
+    {
+        var auth = ValidateAdminKey(key);
+        if (auth != null) return auth;
+
+        var business = await _db.Businesses.FindAsync(id);
+        if (business == null) return NotFound(new { error = "Business not found" });
+
+        var oldStatus = business.VoiceAIPlanStatus;
+        var oldOverride = business.VoiceAIInternalOverride;
+
+        if (request.InternalOverride.HasValue)
+            business.VoiceAIInternalOverride = request.InternalOverride.Value;
+
+        if (!string.IsNullOrEmpty(request.PlanStatus))
+        {
+            var valid = new[] { "inactive", "trial", "active", "suspended" };
+            if (!valid.Contains(request.PlanStatus))
+                return BadRequest(new { error = $"Invalid status. Must be: {string.Join(", ", valid)}" });
+
+            business.VoiceAIPlanStatus = request.PlanStatus;
+
+            if (request.PlanStatus == "active" && oldStatus != "active")
+            {
+                business.VoiceAIEnabled = true;
+                business.VoiceAIEnabledAt ??= DateTime.UtcNow;
+            }
+            else if (request.PlanStatus == "trial" && oldStatus != "trial")
+            {
+                business.VoiceAIEnabled = true;
+                business.VoiceAIEnabledAt ??= DateTime.UtcNow;
+                var trialDays = _config.GetValue<int>("VoiceAI:TrialDurationDays", 14);
+                business.VoiceAITrialEndsAt = DateTime.UtcNow.AddDays(trialDays);
+            }
+            else if (request.PlanStatus is "inactive" or "suspended")
+            {
+                business.VoiceAIEnabled = false;
+            }
+        }
+
+        _db.BillingEvents.Add(new Models.BillingEvent
+        {
+            BusinessId = id,
+            EventType = "voiceai.admin_update",
+            Provider = "admin",
+            Plan = business.VoiceAIPlanStatus,
+            Status = business.VoiceAIPlanStatus,
+            ErrorDetails = $"Override: {oldOverride}->{business.VoiceAIInternalOverride}, Status: {oldStatus}->{business.VoiceAIPlanStatus}"
+        });
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            businessId = id,
+            businessName = business.Name,
+            voiceAIEnabled = business.VoiceAIEnabled,
+            voiceAIPlanStatus = business.VoiceAIPlanStatus,
+            voiceAIInternalOverride = business.VoiceAIInternalOverride,
+            voiceAIEnabledAt = business.VoiceAIEnabledAt,
+            voiceAITrialEndsAt = business.VoiceAITrialEndsAt
+        });
+    }
+
+    [HttpGet("voice-ai/overview")]
+    public async Task<IActionResult> VoiceAIOverview([FromQuery] string key)
+    {
+        var auth = ValidateAdminKey(key);
+        if (auth != null) return auth;
+
+        var businesses = await _db.Businesses
+            .Where(b => b.IsActive && (b.VoiceAIEnabled || b.VoiceAIInternalOverride))
+            .Select(b => new { b.Id, b.Name, b.AccountNumber, b.VoiceAIPlanStatus, b.VoiceAIInternalOverride, b.VoiceAIEnabledAt, b.VoiceAITrialEndsAt })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            totalEnabled = businesses.Count,
+            byStatus = businesses.GroupBy(b => b.VoiceAIPlanStatus).Select(g => new { status = g.Key, count = g.Count() }),
+            overrides = businesses.Count(b => b.VoiceAIInternalOverride),
+            businesses
+        });
+    }
+}
+
+public class UpdateVoiceAIRequest
+{
+    public bool? InternalOverride { get; set; }
+    public string? PlanStatus { get; set; }
 }

@@ -18,19 +18,22 @@ public class BusinessController : BizPilotBaseController
     private readonly AppDbContext _db;
     private readonly PaystackService _paystack;
     private readonly ILogger<BusinessController> _logger;
+    private readonly IConfiguration _config;
 
     public BusinessController(
         IBusinessService business,
         PlanGuard planGuard,
         AppDbContext db,
         PaystackService paystack,
-        ILogger<BusinessController> logger)
+        ILogger<BusinessController> logger,
+        IConfiguration config)
     {
         _business = business;
         _planGuard = planGuard;
         _db = db;
         _paystack = paystack;
         _logger = logger;
+        _config = config;
     }
 
     [HttpGet]
@@ -81,6 +84,13 @@ public class BusinessController : BizPilotBaseController
             IsAutoRenew = biz.IsAutoRenew,
             PaymentMethod = biz.PaymentMethod,
             SubscriptionStatus = PlanGuard.GetSubscriptionStatus(biz),
+            // Voice AI add-on
+            VoiceAIFeatureVisible = _config.GetValue<bool>("VoiceAI:FeatureEnabled"),
+            VoiceAIEnabled = VoiceAIGuard.HasAccess(biz),
+            VoiceAIPlanStatus = biz.VoiceAIPlanStatus,
+            VoiceAITrialDaysLeft = VoiceAIGuard.GetVoiceAITrialDaysLeft(biz),
+            VoiceAITrialEndsAt = biz.VoiceAITrialEndsAt,
+            VoiceAISubscriptionEndsAt = biz.VoiceAISubscriptionEndsAt,
         }));
     }
 
@@ -290,6 +300,39 @@ public class BusinessController : BizPilotBaseController
         _logger.LogWarning("Business {BusinessId} closed and PII anonymized by owner {UserId}", BusinessId, UserId);
         return Ok(ApiResponse<object>.Ok(null!, "Account closed. Thank you for using BizPilot."));
     }
+
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    [HttpGet("voice-ai-check/{accountNumber}")]
+    public async Task<IActionResult> CheckVoiceAIAccess(
+        [FromRoute] string accountNumber,
+        [FromHeader(Name = "X-VoiceAI-Key")] string? apiKey)
+    {
+        var secret = _config["VoiceAI:InternalApiKey"];
+        if (string.IsNullOrEmpty(secret) || secret.Length < 16)
+            return StatusCode(503);
+        if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            System.Text.Encoding.UTF8.GetBytes(apiKey ?? ""),
+            System.Text.Encoding.UTF8.GetBytes(secret)))
+            return Unauthorized();
+
+        if (!_config.GetValue<bool>("VoiceAI:FeatureEnabled"))
+            return Ok(new { allowed = false, error = "Voice AI is not available." });
+
+        var business = await _db.Businesses.AsNoTracking()
+            .FirstOrDefaultAsync(b => b.AccountNumber == accountNumber && b.IsActive);
+        if (business == null)
+            return NotFound(new { allowed = false, error = "Business not found." });
+
+        var allowed = VoiceAIGuard.HasAccess(business);
+        return Ok(new
+        {
+            allowed,
+            businessId = business.Id,
+            businessName = business.Name,
+            status = business.VoiceAIPlanStatus,
+            error = allowed ? (string?)null : "Voice AI is not enabled for this business."
+        });
+    }
 }
 
 public class PlanStatusDto
@@ -316,6 +359,13 @@ public class PlanStatusDto
     public bool IsAutoRenew { get; set; }
     public string? PaymentMethod { get; set; }
     public string SubscriptionStatus { get; set; } = "none";
+    // Voice AI add-on
+    public bool VoiceAIFeatureVisible { get; set; }
+    public bool VoiceAIEnabled { get; set; }
+    public string VoiceAIPlanStatus { get; set; } = "inactive";
+    public int? VoiceAITrialDaysLeft { get; set; }
+    public DateTime? VoiceAITrialEndsAt { get; set; }
+    public DateTime? VoiceAISubscriptionEndsAt { get; set; }
 }
 
 public class StartTrialRequest

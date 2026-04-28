@@ -48,6 +48,8 @@ export interface BusinessDto {
   confirmLargeSales?: boolean;
   confirmLargeSaleThreshold?: number;
   accountNumber?: string;
+  voiceAIEnabled?: boolean;
+  voiceAIPlanStatus?: string;
   plan?: string;
   subscribedPlan?: string;
   trialEndsAt?: string;

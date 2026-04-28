@@ -38,6 +38,8 @@ public class AppDbContext : DbContext
             e.Property(x => x.Timezone).HasMaxLength(50).HasDefaultValue("Africa/Lagos");
             e.Property(x => x.AccountNumber).HasMaxLength(10).IsRequired();
             e.HasIndex(x => x.AccountNumber).IsUnique();
+            e.Property(x => x.VoiceAIPlanStatus).HasMaxLength(20).HasDefaultValue("inactive");
+            e.Property(x => x.VoiceAISubscriptionId).HasMaxLength(200);
         });
 
         mb.Entity<User>(e =>

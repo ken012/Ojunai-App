@@ -26,6 +26,13 @@ export type PlanStatus = {
   paymentMethod: string | null;
   subscriptionStatus: string;
   pendingPlanChange: string | null;
+  // Voice AI add-on
+  voiceAIFeatureVisible: boolean;
+  voiceAIEnabled: boolean;
+  voiceAIPlanStatus: string;
+  voiceAITrialDaysLeft: number | null;
+  voiceAITrialEndsAt: string | null;
+  voiceAISubscriptionEndsAt: string | null;
 };
 
 export function usePlanStatus() {

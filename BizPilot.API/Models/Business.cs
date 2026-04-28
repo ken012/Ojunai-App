@@ -35,6 +35,15 @@ public class Business
     public bool AlertLargeSale { get; set; } = true;
     public bool ConfirmLargeSales { get; set; } = false;
     public decimal ConfirmLargeSaleThreshold { get; set; } = 0;
+    // ── Voice AI add-on ──────────────────────────────
+    public bool VoiceAIEnabled { get; set; } = false;
+    public string VoiceAIPlanStatus { get; set; } = "inactive";
+    public bool VoiceAIInternalOverride { get; set; } = false;
+    public DateTime? VoiceAIEnabledAt { get; set; }
+    public DateTime? VoiceAITrialEndsAt { get; set; }
+    public string? VoiceAISubscriptionId { get; set; }
+    public DateTime? VoiceAISubscriptionEndsAt { get; set; }
+
     public bool IsActive { get; set; } = true;
     public string AccountNumber { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
