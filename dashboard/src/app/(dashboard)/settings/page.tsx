@@ -20,7 +20,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { MessageSquare, Building2, User, Pencil, Bell, Tags, X, Plus, Users, Trash2, KeyRound, CreditCard } from "lucide-react";
+import { MessageSquare, Building2, User, Pencil, Bell, Tags, X, Plus, Users, Trash2, KeyRound, CreditCard, Phone } from "lucide-react";
 import { CATEGORY_NAMES } from "@/lib/categories";
 import { hasPermission, Permission } from "@/lib/permissions";
 import {
@@ -397,6 +397,9 @@ function SettingsPage() {
         </CardContent>
       </Card>
 
+      {/* Voice AI */}
+      <VoiceAISettingsCard />
+
       {/* WhatsApp */}
       <Card>
         <CardHeader className="pb-2">
@@ -518,6 +521,53 @@ function DobField() {
         </button>
       </div>
     </div>
+  );
+}
+
+function VoiceAISettingsCard() {
+  const { data: planStatus } = usePlanStatus();
+  if (!planStatus?.voiceAIFeatureVisible) return null;
+
+  const status = planStatus.voiceAIPlanStatus;
+  const isActive = status === "active" || status === "trial";
+  const isTrial = status === "trial";
+  const isSuspended = status === "suspended";
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <Phone size={15} className="text-violet-500" />
+          Voice AI Receptionist
+          {isActive && (
+            <Badge className={isTrial ? "bg-amber-100 text-amber-700 ml-auto" : "bg-emerald-100 text-emerald-700 ml-auto"}>
+              {isTrial ? `Trial — ${planStatus.voiceAITrialDaysLeft}d left` : "Active"}
+            </Badge>
+          )}
+          {isSuspended && (
+            <Badge className="bg-red-100 text-red-700 ml-auto">Suspended</Badge>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isActive ? (
+          <div className="space-y-2">
+            <p className="text-sm text-slate-600">Your AI receptionist is active.</p>
+            <a href="/voice-ai" className="text-sm text-sky-600 hover:underline">Manage Voice AI settings</a>
+          </div>
+        ) : isSuspended ? (
+          <div className="space-y-2">
+            <p className="text-sm text-red-600">Voice AI is inactive due to billing.</p>
+            <a href="/voice-ai" className="text-sm text-sky-600 hover:underline">Resubscribe</a>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm text-slate-500">Add an AI phone receptionist that handles customer calls 24/7.</p>
+            <a href="/voice-ai" className="text-sm text-sky-600 hover:underline font-medium">Learn more and enable</a>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
