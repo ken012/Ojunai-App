@@ -160,4 +160,39 @@ public static class BillingConfig
         }
         return new { plans = result, currencies = SupportedCurrencies };
     }
+
+    // ── Voice AI add-on pricing ──────────────────────────────────────────────
+
+    private static readonly Dictionary<BillingCycle, Dictionary<string, decimal>> VoiceAIPrices = new()
+    {
+        [BillingCycle.Monthly] = new()
+        {
+            ["NGN"] = 5000, ["GHS"] = 45, ["USD"] = 5, ["GBP"] = 4, ["KES"] = 700, ["ZAR"] = 70
+        },
+        [BillingCycle.Annual] = new()
+        {
+            ["NGN"] = 48000, ["GHS"] = 432, ["USD"] = 48, ["GBP"] = 38, ["KES"] = 6720, ["ZAR"] = 672
+        }
+    };
+
+    public static decimal? GetVoiceAIPrice(BillingCycle cycle, string currency)
+    {
+        if (VoiceAIPrices.TryGetValue(cycle, out var currencies)
+            && currencies.TryGetValue(currency.ToUpper(), out var price))
+            return price;
+        return null;
+    }
+
+    public static object GetVoiceAIPricing() => new
+    {
+        monthly = VoiceAIPrices[BillingCycle.Monthly],
+        annual = VoiceAIPrices[BillingCycle.Annual],
+        annualDiscount = 20
+    };
+
+    public static bool IsValidVoiceAICombination(string cycle, string currency)
+    {
+        if (!Enum.TryParse<BillingCycle>(cycle, true, out var bc)) return false;
+        return GetVoiceAIPrice(bc, currency).HasValue;
+    }
 }

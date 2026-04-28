@@ -119,6 +119,7 @@ builder.Services.AddScoped<OnboardingService>();
 builder.Services.AddScoped<SummaryJobService>();
 builder.Services.AddScoped<TrialReminderJobService>();
 builder.Services.AddScoped<TrialRevertJobService>();
+builder.Services.AddScoped<VoiceAITrialRevertJobService>();
 builder.Services.AddScoped<RenewalReminderJobService>();
 builder.Services.AddScoped<ImportJobService>();
 builder.Services.AddScoped<PaymentReconciliationJobService>();
@@ -327,6 +328,12 @@ RecurringJob.AddOrUpdate<TrialReminderJobService>(
 
 RecurringJob.AddOrUpdate<TrialRevertJobService>(
     "trial-revert",
+    svc => svc.RevertExpiredTrialsAsync(),
+    "0 */4 * * *",
+    new RecurringJobOptions { TimeZone = lagosZone });
+
+RecurringJob.AddOrUpdate<VoiceAITrialRevertJobService>(
+    "voiceai-trial-revert",
     svc => svc.RevertExpiredTrialsAsync(),
     "0 */4 * * *",
     new RecurringJobOptions { TimeZone = lagosZone });

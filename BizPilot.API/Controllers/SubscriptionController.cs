@@ -273,6 +273,104 @@ public class SubscriptionController : BizPilotBaseController
         await _flutterwave.HandleWebhookAsync(payload.RootElement);
         return Ok();
     }
+
+    // ── Voice AI add-on ──────────────────────────────────────────────────────
+
+    [AllowAnonymous]
+    [HttpGet("voice-ai-pricing")]
+    public IActionResult GetVoiceAIPricing()
+    {
+        if (!_config.GetValue<bool>("VoiceAI:FeatureEnabled"))
+            return NotFound();
+        return Ok(BillingConfig.GetVoiceAIPricing());
+    }
+
+    [HttpPost("voice-ai/initialize")]
+    [RequirePermission(Permission.ManageSettings)]
+    public async Task<ActionResult<ApiResponse<object>>> InitializeVoiceAI([FromBody] InitializeVoiceAIRequest request)
+    {
+        if (!_config.GetValue<bool>("VoiceAI:FeatureEnabled"))
+            return NotFound(ApiResponse<object>.Fail("Voice AI is not available."));
+
+        if (_lastInitialize.TryGetValue(BusinessId, out var last) && (DateTime.UtcNow - last).TotalSeconds < 10)
+            return BadRequest(ApiResponse<object>.Fail("Please wait a moment before trying again."));
+        _lastInitialize[BusinessId] = DateTime.UtcNow;
+
+        var business = await _db.Businesses.FindAsync(BusinessId);
+        if (business == null) return NotFound(ApiResponse<object>.Fail("Business not found."));
+        if (!business.IsBillable) return BadRequest(ApiResponse<object>.Fail("This account is not billable."));
+
+        var currency = request.Currency?.ToUpper() ?? business.BillingCurrency ?? business.Currency ?? "NGN";
+        var cycle = request.BillingCycle?.ToLower() ?? "monthly";
+
+        if (!BillingConfig.IsValidVoiceAICombination(cycle, currency))
+            return BadRequest(ApiResponse<object>.Fail($"Invalid cycle/currency for Voice AI: {cycle}/{currency}"));
+
+        if (!Enum.TryParse<BillingConfig.BillingCycle>(cycle, true, out var billingCycle))
+            return BadRequest(ApiResponse<object>.Fail("Invalid billing cycle."));
+
+        var amount = BillingConfig.GetVoiceAIPrice(billingCycle, currency) ?? 0m;
+        var user = await _db.Users.FindAsync(UserId);
+        var email = user?.Email ?? $"{user?.PhoneNumber}@bizpilot-ai.com";
+        var provider = BillingConfig.GetProvider(currency);
+
+        var txRef = $"bizpilot-voiceai-{BusinessId:N}-{cycle}-{DateTime.UtcNow.Ticks}";
+
+        if (provider == BillingConfig.BillingProvider.Paystack)
+        {
+            var url = await _paystack.InitializeVoiceAIAsync(BusinessId, email, amount, currency, cycle);
+            return Ok(ApiResponse<object>.Ok(new { paymentUrl = url, provider = "paystack" },
+                "Redirecting to payment..."));
+        }
+
+        var publicKey = _config["Flutterwave:PublicKey"];
+        if (string.IsNullOrEmpty(publicKey))
+            return StatusCode(500, ApiResponse<object>.Fail("Payment gateway not configured."));
+        var callbackUrl = _config["Flutterwave:CallbackUrl"] ?? "https://app.bizpilot-ai.com/settings";
+
+        return Ok(ApiResponse<object>.Ok(new
+        {
+            provider = "flutterwave",
+            inlineCheckout = true,
+            publicKey,
+            txRef,
+            amount,
+            currency,
+            email,
+            plan = "voice_ai",
+            billingCycle = cycle,
+            callbackUrl,
+            businessId = BusinessId.ToString(),
+            businessName = business.Name,
+            meta = new { product = "voice_ai" },
+        }, "Ready for checkout."));
+    }
+
+    [HttpPost("voice-ai/cancel")]
+    [RequirePermission(Permission.ManageSettings)]
+    public async Task<ActionResult<ApiResponse<object>>> CancelVoiceAI()
+    {
+        var business = await _db.Businesses.FindAsync(BusinessId);
+        if (business == null) return NotFound(ApiResponse<object>.Fail("Business not found."));
+
+        if (business.VoiceAIPlanStatus is not ("active" or "trial"))
+            return BadRequest(ApiResponse<object>.Fail("Voice AI is not active."));
+
+        business.VoiceAIPlanStatus = "suspended";
+        business.VoiceAIEnabled = false;
+
+        _db.BillingEvents.Add(new Models.BillingEvent
+        {
+            BusinessId = BusinessId,
+            EventType = "voiceai.subscription.cancelled",
+            Provider = business.BillingProvider,
+            Plan = "voice_ai",
+            Status = "cancelled"
+        });
+
+        await _db.SaveChangesAsync();
+        return Ok(ApiResponse<object>.Ok(null!, "Voice AI subscription cancelled."));
+    }
 }
 
 public class InitializeSubscriptionRequest
@@ -291,4 +389,10 @@ public class VerifyFlutterwaveRequest
 {
     public string? TransactionId { get; set; }
     public string? TxRef { get; set; }
+}
+
+public class InitializeVoiceAIRequest
+{
+    public string? Currency { get; set; }
+    public string? BillingCycle { get; set; }
 }

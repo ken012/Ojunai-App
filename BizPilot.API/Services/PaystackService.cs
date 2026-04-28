@@ -83,6 +83,36 @@ public class PaystackService
         return response.GetProperty("data").GetProperty("authorization_url").GetString()!;
     }
 
+    public async Task<string> InitializeVoiceAIAsync(Guid businessId, string email, decimal amount, string currency, string cycle)
+    {
+        var business = await _db.Businesses.FindAsync(businessId)
+            ?? throw new KeyNotFoundException("Business not found.");
+
+        var isAnnual = cycle.Equals("annual", StringComparison.OrdinalIgnoreCase);
+        var interval = isAnnual ? "annually" : "monthly";
+        var paystackPlanCode = await GetOrCreatePlanAsync($"voice-ai-{cycle}", amount, interval);
+
+        var customerCode = business.PaystackCustomerCode;
+        if (string.IsNullOrEmpty(customerCode))
+        {
+            customerCode = await CreateCustomerAsync(email, business.Name, businessId);
+            business.PaystackCustomerCode = customerCode;
+            await _db.SaveChangesAsync();
+        }
+
+        var body = new
+        {
+            email,
+            amount = (int)(amount * 100),
+            plan = paystackPlanCode,
+            callback_url = $"{_config["App:DashboardUrl"] ?? "https://app.bizpilot-ai.com"}/settings?voiceai=true",
+            metadata = new { businessId = businessId.ToString(), product = "voice_ai" }
+        };
+
+        var response = await PostAsync("/transaction/initialize", body);
+        return response.GetProperty("data").GetProperty("authorization_url").GetString()!;
+    }
+
     /// <summary>
     /// Processes a Paystack webhook event after signature validation (done in SubscriptionController).
     /// Enforces idempotency (Paystack retries on failure) and dispatches to the right handler.
@@ -277,6 +307,41 @@ public class PaystackService
 
         var business = await _db.Businesses.FindAsync(businessId);
         if (business == null) return;
+
+        // Voice AI add-on payment
+        var product = meta.TryGetProperty("product", out var prodEl) ? prodEl.GetString() : null;
+        if (product == "voice_ai")
+        {
+            decimal? chargedNaira = data.TryGetProperty("amount", out var vaAmtEl) ? vaAmtEl.GetInt64() / 100m : null;
+            var isAnnual = business.BillingCycle?.Equals("annual", StringComparison.OrdinalIgnoreCase) == true;
+
+            business.VoiceAIEnabled = true;
+            business.VoiceAIPlanStatus = "active";
+            business.VoiceAIEnabledAt ??= DateTime.UtcNow;
+            business.VoiceAITrialEndsAt = null;
+            var baseDate = (business.VoiceAISubscriptionEndsAt.HasValue && business.VoiceAISubscriptionEndsAt > DateTime.UtcNow)
+                ? business.VoiceAISubscriptionEndsAt.Value : DateTime.UtcNow;
+            business.VoiceAISubscriptionEndsAt = isAnnual ? baseDate.AddYears(1) : baseDate.AddMonths(1);
+
+            if (data.TryGetProperty("subscription_code", out var scEl))
+                business.VoiceAISubscriptionId = scEl.GetString();
+
+            _db.BillingEvents.Add(new BillingEvent
+            {
+                BusinessId = business.Id,
+                EventType = "voiceai.payment.success",
+                Provider = "paystack",
+                Plan = "voice_ai",
+                Amount = chargedNaira,
+                Currency = "NGN",
+                PaymentMethod = "card",
+                Status = "success"
+            });
+
+            await _db.SaveChangesAsync();
+            _logger.LogInformation("Voice AI payment confirmed: {Business}", business.Name);
+            return;
+        }
 
         var plan = meta.TryGetProperty("plan", out var planEl) ? planEl.GetString() : null;
         if (!string.IsNullOrEmpty(plan))

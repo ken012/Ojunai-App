@@ -557,6 +557,51 @@ public class FlutterwaveService
             _logger.LogWarning("Flutterwave webhook invalid/missing businessId in meta: {Value}, txRef: {TxRef}", bizIdStr, txRef);
             return;
         }
+        // Voice AI add-on payment
+        var product = meta.TryGetProperty("product", out var prodEl) ? prodEl.GetString() : null;
+        if (product == "voice_ai")
+        {
+            if (!string.IsNullOrEmpty(txRef))
+            {
+                var exists = await _db.PaystackEventLogs.AnyAsync(e => e.EventId == txRef);
+                if (exists) { _logger.LogInformation("Duplicate Flutterwave Voice AI event {TxRef}", txRef); return; }
+                _db.PaystackEventLogs.Add(new PaystackEventLog { EventId = txRef, EventType = "flutterwave.voiceai.charge" });
+                await _db.SaveChangesAsync();
+            }
+
+            var vaBiz = await _db.Businesses.FindAsync(businessId);
+            if (vaBiz == null) { _logger.LogWarning("No business for Voice AI payment {TxRef}", txRef); return; }
+
+            var vaChargeAmt = data.TryGetProperty("amount", out var vaAmtEl) ? vaAmtEl.GetDecimal() : (decimal?)null;
+            var vaIsAnnual = (billingCycle ?? "monthly").Equals("annual", StringComparison.OrdinalIgnoreCase);
+            var vaPayMethod = data.TryGetProperty("payment_type", out var vaPtEl) ? vaPtEl.GetString()?.ToLower() : "card";
+
+            vaBiz.VoiceAIEnabled = true;
+            vaBiz.VoiceAIPlanStatus = "active";
+            vaBiz.VoiceAIEnabledAt ??= DateTime.UtcNow;
+            vaBiz.VoiceAITrialEndsAt = null;
+            var vaBase = (vaBiz.VoiceAISubscriptionEndsAt.HasValue && vaBiz.VoiceAISubscriptionEndsAt > DateTime.UtcNow)
+                ? vaBiz.VoiceAISubscriptionEndsAt.Value : DateTime.UtcNow;
+            vaBiz.VoiceAISubscriptionEndsAt = vaIsAnnual ? vaBase.AddYears(1) : vaBase.AddMonths(1);
+
+            _db.BillingEvents.Add(new BillingEvent
+            {
+                BusinessId = businessId,
+                EventType = "voiceai.payment.success",
+                Provider = "flutterwave",
+                Plan = "voice_ai",
+                Amount = vaChargeAmt,
+                Currency = currency,
+                TransactionRef = txRef,
+                PaymentMethod = vaPayMethod,
+                Status = "success"
+            });
+
+            await _db.SaveChangesAsync();
+            _logger.LogInformation("Voice AI Flutterwave payment confirmed: {Business}, txRef: {TxRef}", vaBiz.Name, txRef);
+            return;
+        }
+
         if (string.IsNullOrEmpty(plan))
         {
             _logger.LogWarning("Flutterwave webhook missing plan in meta, txRef: {TxRef}", txRef);
