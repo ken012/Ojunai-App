@@ -49,7 +49,7 @@ function VoiceAIAdminContent() {
     }
   }
 
-  useEffect(() => { fetchOverview(); }, [key]);
+  useEffect(() => { fetchOverview(); }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleUpdate() {
     if (!key || !businessId.trim()) return;
