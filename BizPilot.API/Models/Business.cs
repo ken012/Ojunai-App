@@ -43,6 +43,7 @@ public class Business
     public DateTime? VoiceAITrialEndsAt { get; set; }
     public string? VoiceAISubscriptionId { get; set; }
     public DateTime? VoiceAISubscriptionEndsAt { get; set; }
+    public Guid? VoiceAIBusinessId { get; set; }
 
     public bool IsActive { get; set; } = true;
     public string AccountNumber { get; set; } = string.Empty;

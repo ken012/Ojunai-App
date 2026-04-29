@@ -19,6 +19,7 @@ public class BusinessController : BizPilotBaseController
     private readonly PaystackService _paystack;
     private readonly ILogger<BusinessController> _logger;
     private readonly IConfiguration _config;
+    private readonly IHttpClientFactory _httpFactory;
 
     public BusinessController(
         IBusinessService business,
@@ -26,7 +27,8 @@ public class BusinessController : BizPilotBaseController
         AppDbContext db,
         PaystackService paystack,
         ILogger<BusinessController> logger,
-        IConfiguration config)
+        IConfiguration config,
+        IHttpClientFactory httpFactory)
     {
         _business = business;
         _planGuard = planGuard;
@@ -34,6 +36,7 @@ public class BusinessController : BizPilotBaseController
         _paystack = paystack;
         _logger = logger;
         _config = config;
+        _httpFactory = httpFactory;
     }
 
     [HttpGet]
@@ -476,6 +479,110 @@ public class BusinessController : BizPilotBaseController
             quantityAvailable = Math.Max(0, product.CurrentStock - reserved),
             reorderLevel = product.LowStockThreshold
         });
+    }
+
+    // ── Voice AI Settings Proxy ────────────────────────────────────────────
+
+    [HttpGet("voice-ai-settings")]
+    [RequirePermission(Permission.ManageSettings)]
+    public async Task<IActionResult> GetVoiceAISettings()
+    {
+        var business = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == BusinessId);
+        if (business == null) return NotFound(ApiResponse<object>.Fail("Business not found."));
+
+        if (!VoiceAIGuard.HasAccess(business))
+            return StatusCode(403, ApiResponse<object>.Fail("Voice AI is not enabled for this business."));
+
+        if (!business.VoiceAIBusinessId.HasValue)
+            return NotFound(ApiResponse<object>.Fail("Voice AI not configured for this business. Contact support."));
+
+        var adminKey = _config["VoiceAI:VoiceAdminKey"];
+        if (string.IsNullOrEmpty(adminKey))
+            return StatusCode(503, ApiResponse<object>.Fail("Voice AI settings not configured."));
+
+        try
+        {
+            var client = _httpFactory.CreateClient("VoiceAI");
+            var request = new HttpRequestMessage(HttpMethod.Get,
+                $"/api/admin/businesses/{business.VoiceAIBusinessId}/settings");
+            request.Headers.Add("X-Admin-Key", adminKey);
+
+            var response = await client.SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
+
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                return NotFound(ApiResponse<object>.Fail("Voice AI not configured for this business."));
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                _logger.LogError("Voice AI admin key rejected — check VoiceAI:VoiceAdminKey config");
+                return StatusCode(503, ApiResponse<object>.Fail("Voice AI temporarily unavailable. Please contact support."));
+            }
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Voice AI settings GET failed: {Status} {Body}", response.StatusCode, body);
+                return StatusCode(502, ApiResponse<object>.Fail("Voice AI temporarily unavailable. Try again."));
+            }
+
+            return Content(body, "application/json");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Voice AI settings proxy failed for business {BusinessId}", BusinessId);
+            return StatusCode(502, ApiResponse<object>.Fail("Voice AI temporarily unavailable. Try again."));
+        }
+    }
+
+    [HttpPatch("voice-ai-settings")]
+    [RequirePermission(Permission.ManageSettings)]
+    public async Task<IActionResult> UpdateVoiceAISettings()
+    {
+        var business = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == BusinessId);
+        if (business == null) return NotFound(ApiResponse<object>.Fail("Business not found."));
+
+        if (!VoiceAIGuard.HasAccess(business))
+            return StatusCode(403, ApiResponse<object>.Fail("Voice AI is not enabled for this business."));
+
+        if (!business.VoiceAIBusinessId.HasValue)
+            return NotFound(ApiResponse<object>.Fail("Voice AI not configured for this business. Contact support."));
+
+        var adminKey = _config["VoiceAI:VoiceAdminKey"];
+        if (string.IsNullOrEmpty(adminKey))
+            return StatusCode(503, ApiResponse<object>.Fail("Voice AI settings not configured."));
+
+        try
+        {
+            using var reader = new StreamReader(Request.Body);
+            var requestBody = await reader.ReadToEndAsync();
+
+            var client = _httpFactory.CreateClient("VoiceAI");
+            var request = new HttpRequestMessage(HttpMethod.Patch,
+                $"/api/admin/businesses/{business.VoiceAIBusinessId}/settings");
+            request.Headers.Add("X-Admin-Key", adminKey);
+            request.Content = new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json");
+
+            var response = await client.SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
+
+            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+                return BadRequest(ApiResponse<object>.Fail(body));
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                _logger.LogError("Voice AI admin key rejected on PATCH — check VoiceAI:VoiceAdminKey config");
+                return StatusCode(503, ApiResponse<object>.Fail("Voice AI temporarily unavailable. Please contact support."));
+            }
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Voice AI settings PATCH failed: {Status} {Body}", response.StatusCode, body);
+                return StatusCode(502, ApiResponse<object>.Fail("Voice AI temporarily unavailable. Try again."));
+            }
+
+            return Content(body, "application/json");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Voice AI settings PATCH proxy failed for business {BusinessId}", BusinessId);
+            return StatusCode(502, ApiResponse<object>.Fail("Voice AI temporarily unavailable. Try again."));
+        }
     }
 
     private static object MapVoiceProduct(Models.Product p, string currency) => new

@@ -98,6 +98,11 @@ builder.Services.AddHttpClient("Paystack", client =>
 
 
 // ── Application Services ──────────────────────────────────────────────────────
+builder.Services.AddHttpClient("VoiceAI", client =>
+{
+    client.BaseAddress = new Uri(config["VoiceAI:BaseUrl"] ?? "https://voice.bizpilot-ai.com");
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
 builder.Services.AddScoped<PaystackService>();
 builder.Services.AddScoped<FlutterwaveService>();
 builder.Services.AddScoped<PlanGuard>();
