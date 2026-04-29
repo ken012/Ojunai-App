@@ -333,6 +333,164 @@ public class BusinessController : BizPilotBaseController
             error = allowed ? (string?)null : "Voice AI is not enabled for this business."
         });
     }
+
+    // ── Voice AI Inventory Endpoints ─────────────────────────────────────────
+
+    private IActionResult? ValidateVoiceAIKey(string? apiKey)
+    {
+        var secret = _config["VoiceAI:InternalApiKey"];
+        if (string.IsNullOrEmpty(secret) || secret.Length < 16) return StatusCode(503);
+        if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            System.Text.Encoding.UTF8.GetBytes(apiKey ?? ""),
+            System.Text.Encoding.UTF8.GetBytes(secret)))
+            return Unauthorized();
+        return null;
+    }
+
+    private async Task<(Business? Business, IActionResult? Error)> GetVoiceAIBusiness(string accountNumber, string? apiKey)
+    {
+        var auth = ValidateVoiceAIKey(apiKey);
+        if (auth != null) return (null, auth);
+
+        var business = await _db.Businesses.AsNoTracking()
+            .FirstOrDefaultAsync(b => b.AccountNumber == accountNumber && b.IsActive);
+        if (business == null) return (null, NotFound(new { reason = "not-found", error = "Business not found." }));
+
+        if (!VoiceAIGuard.HasAccess(business))
+            return (null, StatusCode(403, new { reason = "voice-ai-disabled", error = "Voice AI is not enabled for this business." }));
+
+        return (business, null);
+    }
+
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    [HttpGet("voice-ai-products/{accountNumber}")]
+    public async Task<IActionResult> VoiceAIProducts(
+        [FromRoute] string accountNumber,
+        [FromHeader(Name = "X-VoiceAI-Key")] string? apiKey,
+        [FromQuery] string? search = null,
+        [FromQuery] int limit = 50,
+        [FromQuery] bool includeInactive = false)
+    {
+        var (business, error) = await GetVoiceAIBusiness(accountNumber, apiKey);
+        if (error != null) return error;
+
+        limit = Math.Clamp(limit, 1, 200);
+        var currency = business!.Currency;
+
+        var query = _db.Products.AsNoTracking()
+            .Where(p => p.BusinessId == business.Id);
+
+        if (!includeInactive) query = query.Where(p => p.IsActive);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var startPattern = $"{search}%";
+            var wordPattern = $"% {search}%";
+            query = query.Where(p =>
+                EF.Functions.ILike(p.Name, startPattern) || EF.Functions.ILike(p.Name, wordPattern));
+        }
+
+        var raw = await query
+            .OrderBy(p => p.Name)
+            .Take(limit)
+            .ToListAsync();
+
+        var products = raw.Select(p => MapVoiceProduct(p, currency)).ToList();
+        return Ok(new { products });
+    }
+
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    [HttpGet("voice-ai-products/{accountNumber}/find")]
+    public async Task<IActionResult> VoiceAIFindProduct(
+        [FromRoute] string accountNumber,
+        [FromHeader(Name = "X-VoiceAI-Key")] string? apiKey,
+        [FromQuery] string? q = null)
+    {
+        var (business, error) = await GetVoiceAIBusiness(accountNumber, apiKey);
+        if (error != null) return error;
+
+        if (string.IsNullOrWhiteSpace(q))
+            return Ok(new { products = Array.Empty<object>() });
+
+        var currency = business!.Currency;
+        var allActive = _db.Products.AsNoTracking()
+            .Where(p => p.BusinessId == business.Id && p.IsActive);
+
+        // Exact match first (case-insensitive)
+        var exactRaw = await allActive
+            .Where(p => EF.Functions.ILike(p.Name, q))
+            .Take(5)
+            .ToListAsync();
+
+        if (exactRaw.Count >= 5)
+            return Ok(new { products = exactRaw.Select(p => MapVoiceProduct(p, currency)) });
+
+        // Then starts-with
+        var foundIds = exactRaw.Select(p => p.Id).ToList();
+        var startsRaw = await allActive
+            .Where(p => !foundIds.Contains(p.Id) && EF.Functions.ILike(p.Name, $"{q}%"))
+            .Take(5 - exactRaw.Count)
+            .ToListAsync();
+
+        var combined = exactRaw.Concat(startsRaw).ToList();
+        if (combined.Count >= 5)
+            return Ok(new { products = combined.Select(p => MapVoiceProduct(p, currency)) });
+
+        // Then fuzzy (contains)
+        foundIds = combined.Select(p => p.Id).ToList();
+        var fuzzyRaw = await allActive
+            .Where(p => !foundIds.Contains(p.Id) && EF.Functions.ILike(p.Name, $"%{q}%"))
+            .Take(5 - combined.Count)
+            .ToListAsync();
+
+        return Ok(new { products = combined.Concat(fuzzyRaw).Select(p => MapVoiceProduct(p, currency)) });
+    }
+
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    [HttpGet("voice-ai-inventory/{productId:guid}")]
+    public async Task<IActionResult> VoiceAIInventory(
+        [FromRoute] Guid productId,
+        [FromHeader(Name = "X-VoiceAI-Key")] string? apiKey)
+    {
+        var auth = ValidateVoiceAIKey(apiKey);
+        if (auth != null) return auth;
+
+        var product = await _db.Products.AsNoTracking()
+            .Include(p => p.Business)
+            .FirstOrDefaultAsync(p => p.Id == productId);
+
+        if (product == null) return NotFound(new { error = "Product not found." });
+        if (!VoiceAIGuard.HasAccess(product.Business))
+            return StatusCode(403, new { reason = "voice-ai-disabled" });
+
+        // Calculate reserved quantity from active stock holds
+        var reserved = await _db.Set<Models.StockHold>()
+            .Where(h => h.ProductId == productId && h.Status == Models.HoldStatus.Active)
+            .SumAsync(h => h.Quantity);
+
+        return Ok(new
+        {
+            productId = product.Id.ToString(),
+            quantityOnHand = product.CurrentStock,
+            quantityReserved = reserved,
+            quantityAvailable = Math.Max(0, product.CurrentStock - reserved),
+            reorderLevel = product.LowStockThreshold
+        });
+    }
+
+    private static object MapVoiceProduct(Models.Product p, string currency) => new
+    {
+        id = p.Id.ToString(),
+        businessId = p.BusinessId.ToString(),
+        name = p.Name,
+        sku = p.SKU ?? $"BP-{p.Id.ToString("N").Substring(0, 8).ToUpper()}",
+        aliases = new string[0],
+        description = p.Category != null ? $"{p.Unit} — {p.Category}" : p.Unit,
+        unitPriceMinor = (long)((p.SellingPrice ?? 0) * 100),
+        currency,
+        category = p.Category,
+        active = p.IsActive
+    };
 }
 
 public class PlanStatusDto
