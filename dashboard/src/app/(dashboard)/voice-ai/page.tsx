@@ -147,6 +147,8 @@ function EnabledView({ planStatus, business }: {
       const { data } = await api.get<VoiceAISettings>("/business/voice-ai-settings");
       return data;
     },
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
   });
 
   return (
