@@ -156,7 +156,7 @@ function EnabledView({ planStatus, business }: {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Voice AI</h2>
-          <p className="text-slate-500 text-sm mt-0.5">Configure your AI phone receptionist</p>
+          <p className="text-slate-500 text-sm mt-0.5">Configure your AI phone Inventory Control Specialist</p>
         </div>
         <Badge className={isTrial ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}>
           {isTrial ? `Trial — ${daysLeft} day${daysLeft !== 1 ? "s" : ""} left` : "Active"}
