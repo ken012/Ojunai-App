@@ -340,6 +340,9 @@ public class PaystackService
 
             await _db.SaveChangesAsync();
             _logger.LogInformation("Voice AI payment confirmed: {Business}", business.Name);
+
+            var provisioner = _serviceProvider.GetRequiredService<VoiceAIProvisioningService>();
+            await provisioner.EnsureProvisionedAsync(business);
             return;
         }
 

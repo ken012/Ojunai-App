@@ -599,6 +599,9 @@ public class FlutterwaveService
 
             await _db.SaveChangesAsync();
             _logger.LogInformation("Voice AI Flutterwave payment confirmed: {Business}, txRef: {TxRef}", vaBiz.Name, txRef);
+
+            var provisioner = _serviceProvider.GetRequiredService<VoiceAIProvisioningService>();
+            await provisioner.EnsureProvisionedAsync(vaBiz);
             return;
         }
 

@@ -1,5 +1,6 @@
 using BizPilot.API.Data;
 using BizPilot.API.Models;
+using BizPilot.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,8 +14,9 @@ public class AdminController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
+    private readonly VoiceAIProvisioningService _voiceProvisioner;
 
-    public AdminController(AppDbContext db, IConfiguration config) { _db = db; _config = config; }
+    public AdminController(AppDbContext db, IConfiguration config, VoiceAIProvisioningService voiceProvisioner) { _db = db; _config = config; _voiceProvisioner = voiceProvisioner; }
 
     [HttpGet("onboarding-analytics")]
     public async Task<IActionResult> GetOnboardingAnalytics([FromQuery] string key)
@@ -879,6 +881,9 @@ public class AdminController : ControllerBase
 
         await _db.SaveChangesAsync();
 
+        if (business.VoiceAIEnabled && !business.VoiceAIBusinessId.HasValue)
+            await _voiceProvisioner.EnsureProvisionedAsync(business);
+
         return Ok(new
         {
             businessId = id,
@@ -887,7 +892,8 @@ public class AdminController : ControllerBase
             voiceAIPlanStatus = business.VoiceAIPlanStatus,
             voiceAIInternalOverride = business.VoiceAIInternalOverride,
             voiceAIEnabledAt = business.VoiceAIEnabledAt,
-            voiceAITrialEndsAt = business.VoiceAITrialEndsAt
+            voiceAITrialEndsAt = business.VoiceAITrialEndsAt,
+            voiceAIBusinessId = business.VoiceAIBusinessId
         });
     }
 
