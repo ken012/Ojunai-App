@@ -711,7 +711,7 @@ public class BusinessController : BizPilotBaseController
         try
         {
             var client = _httpFactory.CreateClient("VoiceAI");
-            var body = System.Text.Json.JsonSerializer.Serialize(new { status = request.Status, note = request.Note });
+            var body = System.Text.Json.JsonSerializer.Serialize(new { status = request.Status, releaseReason = request.ReleaseReason, note = request.Note });
 
             var httpRequest = new HttpRequestMessage(HttpMethod.Patch,
                 $"/api/admin/reservations/{reservationId}/status");
@@ -808,5 +808,6 @@ public class CloseAccountRequest
 public class UpdateVoiceReservationStatusRequest
 {
     public string Status { get; set; } = string.Empty;
+    public string? ReleaseReason { get; set; }
     public string? Note { get; set; }
 }

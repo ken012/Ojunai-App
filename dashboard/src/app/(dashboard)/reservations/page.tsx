@@ -48,6 +48,8 @@ type UnifiedHold = {
   holdExpiresAt: string | null;
   isVoice: boolean;
   callSessionId: string | null;
+  releaseReason: string | null;
+  releaseNote: string | null;
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -69,15 +71,19 @@ function SourceBadge({ source }: { source: string }) {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  switch (status) {
-    case "Active": case "pending": return <Badge className="bg-amber-100 text-amber-700 border-0">Active</Badge>;
-    case "confirmed": return <Badge className="bg-sky-100 text-sky-700 border-0">Confirmed</Badge>;
-    case "Converted": case "fulfilled": return <Badge className="bg-emerald-100 text-emerald-700 border-0">Fulfilled</Badge>;
-    case "Released": case "cancelled": return <Badge className="bg-slate-100 text-slate-500 border-0">{status === "Released" ? "Released" : "Cancelled"}</Badge>;
-    case "expired": return <Badge className="bg-red-100 text-red-600 border-0">Expired</Badge>;
-    default: return <Badge variant="outline">{status}</Badge>;
-  }
+function StatusBadge({ status, releaseReason, releaseNote }: { status: string; releaseReason?: string | null; releaseNote?: string | null }) {
+  if (status === "Active" || status === "pending") return <Badge className="bg-amber-100 text-amber-700 border-0">Active</Badge>;
+  if (status === "confirmed") return <Badge className="bg-sky-100 text-sky-700 border-0">Confirmed</Badge>;
+  if (status === "Converted" || (status === "fulfilled" && releaseReason === "picked_up")) return <Badge className="bg-emerald-100 text-emerald-700 border-0">Picked up</Badge>;
+  if (status === "fulfilled") return <Badge className="bg-emerald-100 text-emerald-700 border-0">Fulfilled</Badge>;
+  if (status === "cancelled" && releaseReason === "customer_request") return <Badge className="bg-amber-100 text-amber-700 border-0">Cancelled by customer</Badge>;
+  if (status === "cancelled" || status === "Released") return <Badge className="bg-amber-100 text-amber-700 border-0">Cancelled</Badge>;
+  if (status === "expired" && releaseReason === "no_show") return <Badge className="bg-orange-100 text-orange-700 border-0">No show</Badge>;
+  if (status === "expired" && releaseReason === "hold_timeout") return <Badge className="bg-slate-100 text-slate-500 border-0">Auto-expired</Badge>;
+  if (status === "expired" && releaseReason === "owner_release") return <Badge className="bg-slate-100 text-slate-500 border-0">Released</Badge>;
+  if (releaseReason === "other" && releaseNote) return <Badge className="bg-slate-100 text-slate-500 border-0" title={releaseNote}>Released — see note</Badge>;
+  if (status === "expired") return <Badge className="bg-slate-100 text-slate-500 border-0">Released</Badge>;
+  return <Badge variant="outline">{status}</Badge>;
 }
 
 function HoldCountdown({ expiresAt }: { expiresAt: string }) {
@@ -139,6 +145,8 @@ export default function ReservationsPage() {
       holdExpiresAt: null,
       isVoice: false,
       callSessionId: null,
+      releaseReason: null,
+      releaseNote: null,
     })),
     ...(voiceData ?? []).map((r): UnifiedHold => ({
       id: `voice-${r.id}`,
@@ -153,6 +161,8 @@ export default function ReservationsPage() {
       holdExpiresAt: r.holdExpiresAt,
       isVoice: true,
       callSessionId: r.callSessionId,
+      releaseReason: (r as Record<string, unknown>).releaseReason as string ?? null,
+      releaseNote: (r as Record<string, unknown>).releaseNote as string ?? null,
     })),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
@@ -174,15 +184,33 @@ export default function ReservationsPage() {
     }
   }
 
-  async function handleVoiceAction(reservationId: string, status: "fulfilled" | "cancelled" | "expired") {
+  const [reasonModal, setReasonModal] = useState<{ id: string; type: "cancel" | "release" } | null>(null);
+  const [reasonChoice, setReasonChoice] = useState("");
+  const [reasonNote, setReasonNote] = useState("");
+
+  async function handleVoiceAction(reservationId: string, status: "fulfilled" | "cancelled" | "expired", releaseReason?: string, note?: string) {
     const realId = reservationId.replace("voice-", "");
     setActionLoading(reservationId);
     try {
-      await api.patch(`/business/voice-ai-reservations/${realId}/status`, { status });
+      await api.patch(`/business/voice-ai-reservations/${realId}/status`, {
+        status,
+        releaseReason: releaseReason ?? undefined,
+        note: note || undefined,
+      });
       qc.invalidateQueries({ queryKey: ["reservations-voice"] });
+      setReasonModal(null);
+      setReasonChoice("");
+      setReasonNote("");
     } catch { /* silent */ } finally {
       setActionLoading(null);
     }
+  }
+
+  function submitReasonModal() {
+    if (!reasonModal || !reasonChoice) return;
+    const { id, type } = reasonModal;
+    const status = type === "cancel" ? "cancelled" as const : "expired" as const;
+    handleVoiceAction(id, status, reasonChoice, reasonChoice === "other" ? reasonNote : undefined);
   }
 
   async function handleRefresh() {
@@ -268,7 +296,7 @@ export default function ReservationsPage() {
                     <TableCell className="text-sm text-slate-700">{h.contactName}</TableCell>
                     <TableCell className="text-center font-semibold text-slate-900">{h.quantity}</TableCell>
                     <TableCell><SourceBadge source={h.source} /></TableCell>
-                    <TableCell><StatusBadge status={h.status} /></TableCell>
+                    <TableCell><StatusBadge status={h.status} releaseReason={h.releaseReason} releaseNote={h.releaseNote} /></TableCell>
                     {tab !== "completed" && (
                       <TableCell>
                         {h.holdExpiresAt ? <HoldCountdown expiresAt={h.holdExpiresAt} /> : <span className="text-xs text-slate-300">—</span>}
@@ -295,15 +323,15 @@ export default function ReservationsPage() {
                           </div>
                         ) : isActiveStatus(h.status) ? (
                           <div className="flex items-center justify-end gap-1">
-                            <button onClick={() => handleVoiceAction(h.id, "fulfilled")} disabled={actionLoading === h.id}
+                            <button onClick={() => handleVoiceAction(h.id, "fulfilled", "picked_up")} disabled={actionLoading === h.id}
                               className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors">
                               <CheckCircle size={12} /> Picked Up
                             </button>
-                            <button onClick={() => handleVoiceAction(h.id, "expired")} disabled={actionLoading === h.id}
+                            <button onClick={() => { setReasonModal({ id: h.id, type: "release" }); setReasonChoice(""); setReasonNote(""); }}
                               className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
                               <Unlock size={12} /> Released
                             </button>
-                            <button onClick={() => handleVoiceAction(h.id, "cancelled")} disabled={actionLoading === h.id}
+                            <button onClick={() => { setReasonModal({ id: h.id, type: "cancel" }); setReasonChoice(""); setReasonNote(""); }}
                               className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
                               <XCircle size={12} /> Cancel
                             </button>
@@ -323,6 +351,49 @@ export default function ReservationsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Reason modal */}
+      {reasonModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setReasonModal(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-slate-900 mb-3">
+              {reasonModal.type === "cancel" ? "Why are you cancelling?" : "Why are you releasing this hold?"}
+            </h3>
+            <div className="space-y-2 mb-4">
+              {(reasonModal.type === "cancel" ? [
+                { value: "customer_request", label: "Wrong order / customer requested" },
+                { value: "owner_cancel", label: "Stock issue / out of stock" },
+                { value: "other", label: "Other" },
+              ] : [
+                { value: "no_show", label: "Customer didn't show up" },
+                { value: "owner_release", label: "Customer rescheduled / asked us to" },
+                { value: "other", label: "Other" },
+              ]).map((opt) => (
+                <label key={opt.value} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm ${reasonChoice === opt.value ? "border-sky-300 bg-sky-50" : "border-slate-200 hover:bg-slate-50"}`}>
+                  <input type="radio" name="reason" value={opt.value} checked={reasonChoice === opt.value} onChange={() => setReasonChoice(opt.value)} className="sr-only" />
+                  <span className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${reasonChoice === opt.value ? "border-sky-500 bg-sky-500" : "border-slate-300"}`} />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+            {reasonChoice === "other" && (
+              <textarea
+                value={reasonNote}
+                onChange={(e) => setReasonNote(e.target.value)}
+                placeholder="Add a note..."
+                maxLength={500}
+                className="w-full h-20 p-2 rounded-md border border-slate-200 text-sm resize-none mb-3"
+              />
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setReasonModal(null)}>Cancel</Button>
+              <Button size="sm" onClick={submitReasonModal} disabled={!reasonChoice || actionLoading !== null}>
+                {actionLoading ? "Updating..." : "Confirm"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
