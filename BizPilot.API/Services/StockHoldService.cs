@@ -140,6 +140,34 @@ public class StockHoldService : IStockHoldService
             .ToListAsync();
     }
 
+    public async Task<List<StockHoldDto>> GetAllHoldsAsync(Guid businessId, string? status = null)
+    {
+        var query = _db.Set<StockHold>()
+            .Include(h => h.Product)
+            .Where(h => h.BusinessId == businessId);
+
+        if (!string.IsNullOrEmpty(status) && Enum.TryParse<HoldStatus>(status, true, out var hs))
+            query = query.Where(h => h.Status == hs);
+
+        return await query
+            .OrderByDescending(h => h.CreatedAtUtc)
+            .Take(200)
+            .Select(h => new StockHoldDto
+            {
+                Id = h.Id,
+                ProductId = h.ProductId,
+                ProductName = h.Product.Name,
+                Unit = h.Product.Unit,
+                ContactName = h.ContactName,
+                Quantity = h.Quantity,
+                Notes = h.Notes,
+                Status = h.Status.ToString(),
+                Source = h.Source,
+                CreatedAtUtc = h.CreatedAtUtc
+            })
+            .ToListAsync();
+    }
+
     public async Task<decimal> GetHeldQuantityAsync(Guid businessId, Guid productId)
     {
         return await _db.Set<StockHold>()

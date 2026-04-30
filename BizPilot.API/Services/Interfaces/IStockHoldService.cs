@@ -8,5 +8,6 @@ public interface IStockHoldService
     Task<StockHoldDto> ReleaseHoldAsync(Guid businessId, Guid holdId);
     Task<DTOs.Sales.SaleDto> ConvertToSaleAsync(Guid businessId, Guid holdId);
     Task<List<StockHoldDto>> GetActiveHoldsAsync(Guid businessId);
+    Task<List<StockHoldDto>> GetAllHoldsAsync(Guid businessId, string? status = null);
     Task<decimal> GetHeldQuantityAsync(Guid businessId, Guid productId);
 }

@@ -33,6 +33,14 @@ public class StockHoldsController : BizPilotBaseController
         return Ok(ApiResponse<List<StockHoldDto>>.Ok(result));
     }
 
+    [HttpGet("all")]
+    [RequirePermission(Permission.ViewStock)]
+    public async Task<ActionResult<ApiResponse<List<StockHoldDto>>>> GetAll([FromQuery] string? status = null)
+    {
+        var result = await _holds.GetAllHoldsAsync(BusinessId, status);
+        return Ok(ApiResponse<List<StockHoldDto>>.Ok(result));
+    }
+
     [HttpPost("{id:guid}/release")]
     [RequirePermission(Permission.ManageStock)]
     public async Task<ActionResult<ApiResponse<StockHoldDto>>> Release(Guid id)

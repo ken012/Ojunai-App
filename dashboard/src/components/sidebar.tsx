@@ -21,6 +21,7 @@ import {
   FileUp,
   Download,
   Phone,
+  ClipboardList,
 } from "lucide-react";
 import { usePlanStatus } from "@/lib/use-plan-status";
 
@@ -29,6 +30,7 @@ const navItems = [
   { href: "/sales", label: "Sales", icon: ShoppingCart },
   { href: "/expenses", label: "Expenses", icon: Receipt },
   { href: "/inventory", label: "Inventory", icon: Package },
+  { href: "/reservations", label: "Order Reservations", icon: ClipboardList },
   { href: "/contacts", label: "Contacts & Ledger", icon: Users },
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/activity", label: "Activity", icon: Activity },
