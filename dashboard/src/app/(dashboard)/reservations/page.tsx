@@ -97,7 +97,7 @@ function isActiveStatus(status: string) {
 export default function ReservationsPage() {
   const qc = useQueryClient();
   const { data: planStatus } = usePlanStatus();
-  const [tab, setTab] = useState<"active" | "completed">("active");
+  const [tab, setTab] = useState<"active" | "completed" | "all">("active");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -158,7 +158,7 @@ export default function ReservationsPage() {
 
   const activeItems = unified.filter(h => isActiveStatus(h.status));
   const completedItems = unified.filter(h => !isActiveStatus(h.status));
-  const displayed = tab === "active" ? activeItems : completedItems;
+  const displayed = tab === "active" ? activeItems : tab === "completed" ? completedItems : unified;
 
   const isLoading = loadingHolds || (hasVoiceAI && loadingVoice);
 
@@ -214,7 +214,7 @@ export default function ReservationsPage() {
             <p className="text-xs text-slate-500">Completed</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className={`cursor-pointer transition-all ${tab === "all" ? "ring-2 ring-sky-500" : "hover:shadow-md"}`} onClick={() => setTab("all")}>
           <CardContent className="p-4 text-center">
             <Package size={20} className="mx-auto text-slate-400 mb-1" />
             <p className="text-xl font-bold text-slate-900">{unified.length}</p>
@@ -239,10 +239,10 @@ export default function ReservationsPage() {
                   <TableHead className="text-center">Qty</TableHead>
                   <TableHead>Source</TableHead>
                   <TableHead>Status</TableHead>
-                  {tab === "active" && <TableHead>Expires</TableHead>}
+                  {tab !== "completed" && <TableHead>Expires</TableHead>}
                   <TableHead>Date</TableHead>
                   <TableHead>Notes</TableHead>
-                  {tab === "active" && <TableHead className="text-right">Actions</TableHead>}
+                  {tab !== "completed" && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -258,14 +258,14 @@ export default function ReservationsPage() {
                     <TableCell className="text-center font-semibold text-slate-900">{h.quantity}</TableCell>
                     <TableCell><SourceBadge source={h.source} /></TableCell>
                     <TableCell><StatusBadge status={h.status} /></TableCell>
-                    {tab === "active" && (
+                    {tab !== "completed" && (
                       <TableCell>
                         {h.holdExpiresAt ? <HoldCountdown expiresAt={h.holdExpiresAt} /> : <span className="text-xs text-slate-300">—</span>}
                       </TableCell>
                     )}
                     <TableCell className="text-xs text-slate-500">{formatDateTime(h.createdAt)}</TableCell>
                     <TableCell className="text-xs text-slate-500 max-w-xs truncate">{h.notes ?? "—"}</TableCell>
-                    {tab === "active" && (
+                    {tab !== "completed" && (
                       <TableCell className="text-right">
                         {!h.isVoice ? (
                           <div className="flex items-center justify-end gap-1">
