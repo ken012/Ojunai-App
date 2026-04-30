@@ -585,6 +585,63 @@ public class BusinessController : BizPilotBaseController
         }
     }
 
+    // ── Voice AI Reservations Proxy ─────────────────────────────────────────
+
+    [HttpGet("voice-ai-reservations")]
+    [RequirePermission(Permission.ViewStock)]
+    public async Task<IActionResult> GetVoiceAIReservations(
+        [FromQuery] string? status = "all",
+        [FromQuery] int limit = 50,
+        [FromQuery] string? since = null)
+    {
+        var business = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == BusinessId);
+        if (business == null) return NotFound(ApiResponse<object>.Fail("Business not found."));
+
+        if (!VoiceAIGuard.HasAccess(business))
+            return StatusCode(403, ApiResponse<object>.Fail("Voice AI is not enabled for this business."));
+
+        if (!business.VoiceAIBusinessId.HasValue)
+            return Ok(new { reservations = Array.Empty<object>(), total = 0 });
+
+        var adminKey = _config["VoiceAI:VoiceAdminKey"];
+        if (string.IsNullOrEmpty(adminKey))
+            return StatusCode(503, ApiResponse<object>.Fail("Voice AI not configured."));
+
+        try
+        {
+            var client = _httpFactory.CreateClient("VoiceAI");
+            var qs = $"?status={status ?? "all"}&limit={Math.Clamp(limit, 1, 200)}";
+            if (!string.IsNullOrEmpty(since)) qs += $"&since={Uri.EscapeDataString(since)}";
+
+            var request = new HttpRequestMessage(HttpMethod.Get,
+                $"/api/admin/businesses/{business.VoiceAIBusinessId}/reservations{qs}");
+            request.Headers.Add("X-Admin-Key", adminKey);
+
+            var response = await client.SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                _logger.LogError("Voice AI admin key rejected on reservations GET");
+                return StatusCode(503, ApiResponse<object>.Fail("Voice AI temporarily unavailable. Please contact support."));
+            }
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                return Ok(new { reservations = Array.Empty<object>(), total = 0 });
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Voice AI reservations GET failed: {Status} {Body}", response.StatusCode, body);
+                return StatusCode(502, ApiResponse<object>.Fail("Voice AI temporarily unavailable. Try again."));
+            }
+
+            return Content(body, "application/json");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Voice AI reservations proxy failed for business {BusinessId}", BusinessId);
+            return StatusCode(502, ApiResponse<object>.Fail("Voice AI temporarily unavailable. Try again."));
+        }
+    }
+
     private static object MapVoiceProduct(Models.Product p, string currency) => new
     {
         id = p.Id.ToString(),
