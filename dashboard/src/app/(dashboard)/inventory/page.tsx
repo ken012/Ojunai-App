@@ -21,7 +21,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { AlertTriangle, Package, Pencil, Trash2, Lock, Unlock, ShoppingCart, Ban, Minus, Search, X } from "lucide-react";
+import { AlertTriangle, Package, Pencil, Trash2, Lock, Unlock, ShoppingCart, Ban, Minus, Plus, Search, X } from "lucide-react";
 import { formatDateTime } from "@/lib/format";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { UpgradeInline } from "@/components/upgrade-prompt";
@@ -97,12 +97,14 @@ function ProductCard({
   onDelete,
   onDamaged,
   onStockOut,
+  onRestock,
 }: {
   product: ProductDto;
   onEdit: (p: ProductDto) => void;
   onDelete: (p: ProductDto) => void;
   onDamaged: (p: ProductDto) => void;
   onStockOut: (p: ProductDto) => void;
+  onRestock: (p: ProductDto) => void;
 }) {
   return (
     <Card className={product.isLowStock ? "border-amber-300 bg-amber-50" : ""}>
@@ -128,6 +130,13 @@ function ProductCard({
             )}
             {hasPermission(Permission.ManageStock) && (
               <>
+                <button
+                  onClick={() => onRestock(product)}
+                  className="p-1 rounded hover:bg-emerald-50 text-slate-500 hover:text-emerald-600"
+                  title="Restock"
+                >
+                  <Plus size={14} />
+                </button>
                 <button
                   onClick={() => onEdit(product)}
                   className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900"
@@ -784,6 +793,95 @@ function StockOutDialog({ product, open, onClose }: { product: ProductDto | null
   );
 }
 
+// ─── Restock dialog ─────────────────────────────────────────────────────────
+function RestockDialog({ product, open, onClose }: { product: ProductDto | null; open: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const biz = useBusiness();
+  const currencySymbol = biz?.currency ?? "\u20A6";
+  const [qty, setQty] = useState("");
+  const [unitCost, setUnitCost] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    if (!product || !qty) return;
+    const quantity = Number(qty);
+    if (quantity <= 0) { setError("Quantity must be greater than 0"); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      await api.post("/inventory/stock-in", {
+        productId: product.id,
+        quantity,
+        unitCost: unitCost ? Number(unitCost) : undefined,
+      });
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["low-stock"] });
+      handleClose();
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      setError(ax.response?.data?.errors?.[0] ?? "Failed to restock");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleClose() {
+    setQty("");
+    setUnitCost("");
+    setError(null);
+    onClose();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Restock</DialogTitle>
+        </DialogHeader>
+        {product && (
+          <div className="space-y-3">
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+              <p className="text-sm font-medium text-slate-900">{product.name}</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Current stock: {product.currentStock} {product.unit}
+              </p>
+            </div>
+            <div>
+              <Label>Quantity to Add</Label>
+              <Input
+                type="number"
+                value={qty}
+                onChange={(e) => setQty(e.target.value)}
+                placeholder="e.g. 50"
+                min={1}
+              />
+            </div>
+            <div>
+              <Label>Unit Cost ({currencySymbol}) — optional</Label>
+              <Input
+                type="number"
+                value={unitCost}
+                onChange={(e) => setUnitCost(e.target.value)}
+                placeholder={product.costPrice ? String(product.costPrice) : "Cost per unit"}
+                min={0}
+              />
+              <p className="text-[10px] text-slate-400 mt-1">Updates the product cost price if provided</p>
+            </div>
+            {error && <p className="text-xs text-red-500">{error}</p>}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose} disabled={saving}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving || !qty} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            {saving ? "Restocking..." : "Restock"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Wastage dialog ────────────────────────────────────────────────────────
 function WastageDialog({ open, onClose, products }: { open: boolean; onClose: () => void; products: ProductDto[] }) {
   const qc = useQueryClient();
@@ -892,6 +990,7 @@ export default function InventoryPage() {
   const [deleting, setDeleting] = useState<ProductDto | null>(null);
   const [damaging, setDamaging] = useState<ProductDto | null>(null);
   const [removingStock, setRemovingStock] = useState<ProductDto | null>(null);
+  const [restocking, setRestocking] = useState<ProductDto | null>(null);
   const [wastaging, setWastaging] = useState(false);
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
@@ -1227,6 +1326,7 @@ export default function InventoryPage() {
               onDelete={setDeleting}
               onDamaged={setDamaging}
               onStockOut={setRemovingStock}
+              onRestock={setRestocking}
             />
           ))}
           {filteredProducts.length === 0 && (
@@ -1263,6 +1363,11 @@ export default function InventoryPage() {
         product={removingStock}
         open={removingStock !== null}
         onClose={() => setRemovingStock(null)}
+      />
+      <RestockDialog
+        product={restocking}
+        open={restocking !== null}
+        onClose={() => setRestocking(null)}
       />
       <WastageDialog
         open={wastaging}
