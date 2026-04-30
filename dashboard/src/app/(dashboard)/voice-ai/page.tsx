@@ -148,6 +148,7 @@ function EnabledView({ planStatus, business }: {
       return data;
     },
     staleTime: Infinity,
+    refetchInterval: false,
     refetchOnWindowFocus: false,
   });
 
