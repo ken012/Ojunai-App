@@ -685,6 +685,66 @@ public class BusinessController : BizPilotBaseController
         }
     }
 
+    [HttpPatch("voice-ai-reservations/{reservationId:guid}/status")]
+    [RequirePermission(Permission.ManageStock)]
+    public async Task<IActionResult> UpdateVoiceAIReservationStatus(
+        [FromRoute] Guid reservationId,
+        [FromBody] UpdateVoiceReservationStatusRequest request)
+    {
+        var business = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == BusinessId);
+        if (business == null) return NotFound(ApiResponse<object>.Fail("Business not found."));
+
+        if (!VoiceAIGuard.HasAccess(business))
+            return StatusCode(403, ApiResponse<object>.Fail("Voice AI is not enabled for this business."));
+
+        if (!business.VoiceAIBusinessId.HasValue)
+            return NotFound(ApiResponse<object>.Fail("Voice AI not configured for this business."));
+
+        var validStatuses = new[] { "cancelled", "fulfilled", "expired" };
+        if (string.IsNullOrEmpty(request.Status) || !validStatuses.Contains(request.Status))
+            return BadRequest(ApiResponse<object>.Fail("Status must be: cancelled, fulfilled, or expired."));
+
+        var adminKey = _config["VoiceAI:VoiceAdminKey"];
+        if (string.IsNullOrEmpty(adminKey))
+            return StatusCode(503, ApiResponse<object>.Fail("Voice AI not configured."));
+
+        try
+        {
+            var client = _httpFactory.CreateClient("VoiceAI");
+            var body = System.Text.Json.JsonSerializer.Serialize(new { status = request.Status, note = request.Note });
+
+            var httpRequest = new HttpRequestMessage(HttpMethod.Patch,
+                $"/api/admin/reservations/{reservationId}/status");
+            httpRequest.Headers.Add("X-Admin-Key", adminKey);
+            httpRequest.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+
+            var response = await client.SendAsync(httpRequest);
+            var responseBody = await response.Content.ReadAsStringAsync();
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+                return Conflict(ApiResponse<object>.Fail("This reservation is already in a terminal state."));
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                return NotFound(ApiResponse<object>.Fail("Reservation not found."));
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                _logger.LogError("Voice AI admin key rejected on reservation status PATCH");
+                return StatusCode(503, ApiResponse<object>.Fail("Voice AI temporarily unavailable."));
+            }
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Voice AI reservation status PATCH failed: {Status} {Body}", response.StatusCode, responseBody);
+                return StatusCode(502, ApiResponse<object>.Fail("Voice AI temporarily unavailable. Try again."));
+            }
+
+            return Content(responseBody, "application/json");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Voice AI reservation status PATCH failed for {ReservationId}", reservationId);
+            return StatusCode(502, ApiResponse<object>.Fail("Voice AI temporarily unavailable. Try again."));
+        }
+    }
+
     private static object MapVoiceProduct(Models.Product p, string currency) => new
     {
         id = p.Id.ToString(),
@@ -743,4 +803,10 @@ public class CloseAccountRequest
 {
     public string ConfirmationPassword { get; set; } = string.Empty;
     public string Confirm { get; set; } = string.Empty;
+}
+
+public class UpdateVoiceReservationStatusRequest
+{
+    public string Status { get; set; } = string.Empty;
+    public string? Note { get; set; }
 }

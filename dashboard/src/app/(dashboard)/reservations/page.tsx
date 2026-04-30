@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Package, ShoppingCart, Unlock, Clock, CheckCircle, RefreshCw, Phone } from "lucide-react";
+import { Package, ShoppingCart, Unlock, Clock, CheckCircle, RefreshCw, Phone, XCircle } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -174,6 +174,17 @@ export default function ReservationsPage() {
     }
   }
 
+  async function handleVoiceAction(reservationId: string, status: "fulfilled" | "cancelled" | "expired") {
+    const realId = reservationId.replace("voice-", "");
+    setActionLoading(reservationId);
+    try {
+      await api.patch(`/business/voice-ai-reservations/${realId}/status`, { status });
+      qc.invalidateQueries({ queryKey: ["reservations-voice"] });
+    } catch { /* silent */ } finally {
+      setActionLoading(null);
+    }
+  }
+
   async function handleRefresh() {
     setRefreshing(true);
     await Promise.all([
@@ -282,9 +293,22 @@ export default function ReservationsPage() {
                               </button>
                             )}
                           </div>
-                        ) : (
-                          <span className="text-[10px] text-slate-400">Managed by Voice AI</span>
-                        )}
+                        ) : isActiveStatus(h.status) ? (
+                          <div className="flex items-center justify-end gap-1">
+                            <button onClick={() => handleVoiceAction(h.id, "fulfilled")} disabled={actionLoading === h.id}
+                              className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors">
+                              <CheckCircle size={12} /> Picked Up
+                            </button>
+                            <button onClick={() => handleVoiceAction(h.id, "expired")} disabled={actionLoading === h.id}
+                              className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
+                              <Unlock size={12} /> Released
+                            </button>
+                            <button onClick={() => handleVoiceAction(h.id, "cancelled")} disabled={actionLoading === h.id}
+                              className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
+                              <XCircle size={12} /> Cancel
+                            </button>
+                          </div>
+                        ) : null}
                       </TableCell>
                     )}
                   </TableRow>
