@@ -633,6 +633,36 @@ public class BusinessController : BizPilotBaseController
                 return StatusCode(502, ApiResponse<object>.Fail("Voice AI temporarily unavailable. Try again."));
             }
 
+            // Enrich with contact names from BizPilot's Contacts table
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("reservations", out var reservationsEl))
+            {
+                var phones = new HashSet<string>();
+                foreach (var r in reservationsEl.EnumerateArray())
+                {
+                    if (r.TryGetProperty("customerPhone", out var ph) && ph.GetString() is string p)
+                        phones.Add(p);
+                }
+
+                var contactsByPhone = phones.Count > 0
+                    ? await _db.Contacts.AsNoTracking()
+                        .Where(c => c.BusinessId == BusinessId && c.PhoneNumber != null && phones.Contains(c.PhoneNumber))
+                        .ToDictionaryAsync(c => c.PhoneNumber!, c => c.Name)
+                    : new Dictionary<string, string>();
+
+                var enriched = new List<object>();
+                foreach (var r in reservationsEl.EnumerateArray())
+                {
+                    var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(r.GetRawText())!;
+                    var phone = r.TryGetProperty("customerPhone", out var phEl) ? phEl.GetString() : null;
+                    if (phone != null && contactsByPhone.TryGetValue(phone, out var name))
+                        dict["customerName"] = name;
+                    enriched.Add(dict);
+                }
+
+                return Ok(new { reservations = enriched, total = enriched.Count });
+            }
+
             return Content(body, "application/json");
         }
         catch (Exception ex)
