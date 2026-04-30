@@ -137,7 +137,7 @@ function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurre
 
 function EnabledView({ planStatus, business }: {
   planStatus: { voiceAIPlanStatus: string; voiceAITrialDaysLeft: number | null; voiceAITrialEndsAt: string | null; voiceAISubscriptionEndsAt: string | null };
-  business: { name?: string; accountNumber?: string } | null;
+  business: { name?: string; accountNumber?: string; timezone?: string } | null;
 }) {
   const isTrial = planStatus.voiceAIPlanStatus === "trial";
   const daysLeft = planStatus.voiceAITrialDaysLeft;
@@ -196,14 +196,14 @@ function EnabledView({ planStatus, business }: {
           </CardContent>
         </Card>
       )}
-      {settings && <SettingsForm initial={settings} />}
+      {settings && <SettingsForm initial={settings} businessTimezone={business?.timezone ?? "Africa/Lagos"} />}
     </div>
   );
 }
 
 // ── Settings Form ────────────────────────────────────────────────────────────
 
-function SettingsForm({ initial }: { initial: VoiceAISettings }) {
+function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings; businessTimezone: string }) {
   const qc = useQueryClient();
   const [form, setForm] = useState<VoiceAISettings>(initial);
   const [saving, setSaving] = useState(false);
@@ -231,7 +231,7 @@ function SettingsForm({ initial }: { initial: VoiceAISettings }) {
     setSaving(true);
     setSaveResult(null);
     try {
-      await api.patch("/business/voice-ai-settings", diff);
+      await api.patch("/business/voice-ai-settings", { ...diff, timezone: businessTimezone });
       qc.invalidateQueries({ queryKey: ["voice-ai-settings"] });
       setSaveResult({ ok: true, msg: "Settings saved." });
     } catch (err: unknown) {
@@ -302,6 +302,14 @@ function SettingsForm({ initial }: { initial: VoiceAISettings }) {
                 </label>
               ))}
             </div>
+          </div>
+          <div>
+            <Label className="text-xs text-slate-500">Timezone</Label>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-md px-3 py-1.5">{businessTimezone}</span>
+              <a href="/settings" className="text-xs text-sky-600 hover:underline">Change in Settings</a>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1">Synced from your business settings. Used by Voice AI to interpret caller pickup times correctly.</p>
           </div>
         </CardContent>
       </Card>
