@@ -61,29 +61,13 @@ export default function VoiceAIPage() {
 function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurrency }) {
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
   const [currency, setCurrency] = useState<SupportedCurrency>(defaultCurrency);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const price = VOICE_AI_PRICING[cycle]?.[currency] ?? 0;
   const monthlyEquiv = cycle === "annual" ? Math.round(price / 12) : price;
   const sym = CURRENCY_META[currency]?.symbol ?? currency;
 
-  async function handleEnable() {
-    setLoading(true);
-    setError(null);
-    try {
-      const { data } = await api.post<{ data: { paymentUrl?: string } }>(
-        "/subscription/voice-ai/initialize",
-        { currency, billingCycle: cycle }
-      );
-      if (data.data?.paymentUrl) window.location.href = data.data.paymentUrl;
-    } catch (err: unknown) {
-      const ax = err as { response?: { data?: { errors?: string[] } } };
-      setError(ax.response?.data?.errors?.[0] ?? "Failed to start checkout.");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const contactSubject = encodeURIComponent("Voice AI — Enable for my business");
+  const contactBody = encodeURIComponent("Hi BizPilot Team,\n\nI'm interested in enabling Voice AI for my business.\n\nPlease get in touch to set it up.\n\nThank you.");
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
@@ -91,7 +75,7 @@ function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurre
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-violet-100 mb-4">
           <Phone size={28} className="text-violet-600" />
         </div>
-        <h2 className="text-2xl font-bold text-slate-900">Voice AI Receptionist</h2>
+        <h2 className="text-2xl font-bold text-slate-900">Voice AI Inventory Control Specialist</h2>
         <p className="text-slate-500 mt-2 max-w-md mx-auto">
           An AI-powered phone assistant that handles customer calls 24/7 — stock checks,
           reservations, bookings, and more. In English, Yoruba, Hausa, and Igbo.
@@ -108,6 +92,7 @@ function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurre
             ))}
           </div>
           <div className="border-t pt-5">
+            <p className="text-xs text-slate-500 text-center mb-3">Starting from</p>
             <div className="flex items-center justify-center gap-2 mb-4">
               <button onClick={() => setCycle("monthly")} className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${cycle === "monthly" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}>Monthly</button>
               <button onClick={() => setCycle("annual")} className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${cycle === "annual" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"}`}>Annual <span className="ml-1 text-xs text-emerald-500">-{VOICE_AI_ANNUAL_DISCOUNT}%</span></button>
@@ -121,11 +106,16 @@ function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurre
               <p className="text-3xl font-bold text-slate-900">{sym}{price.toLocaleString()}</p>
               <p className="text-xs text-slate-400">{cycle === "annual" ? `per year (${sym}${monthlyEquiv.toLocaleString()}/mo)` : "per month"}</p>
             </div>
-            {error && <p className="text-xs text-red-500 text-center mb-3">{error}</p>}
-            <Button onClick={handleEnable} disabled={loading} className="w-full" size="lg">
-              <Zap size={16} className="mr-2" />
-              {loading ? "Starting checkout..." : "Enable Voice AI"}
-            </Button>
+            <a
+              href={`mailto:hello@bizpilot-ai.com?subject=${contactSubject}&body=${contactBody}`}
+              className="flex items-center justify-center gap-2 w-full py-3 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-sm font-semibold transition-colors"
+            >
+              <Phone size={16} />
+              Contact Our Team to Get Started
+            </a>
+            <p className="text-[11px] text-slate-400 text-center mt-3">
+              Our team will walk you through the setup, configure your phone number, and get your AI receptionist live within 24 hours.
+            </p>
           </div>
         </CardContent>
       </Card>
