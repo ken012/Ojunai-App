@@ -641,21 +641,34 @@ public class BusinessController : BizPilotBaseController
                 foreach (var r in reservationsEl.EnumerateArray())
                 {
                     if (r.TryGetProperty("customerPhone", out var ph) && ph.GetString() is string p)
+                    {
                         phones.Add(p);
+                        phones.Add(p.TrimStart('+'));
+                        if (!p.StartsWith("+")) phones.Add("+" + p);
+                    }
                 }
 
-                var contactsByPhone = phones.Count > 0
-                    ? await _db.Contacts.AsNoTracking()
-                        .Where(c => c.BusinessId == BusinessId && c.PhoneNumber != null && phones.Contains(c.PhoneNumber))
-                        .ToDictionaryAsync(c => c.PhoneNumber!, c => c.Name)
-                    : new Dictionary<string, string>();
+                var contactsByPhone = new Dictionary<string, string>();
+                if (phones.Count > 0)
+                {
+                    var contacts = await _db.Contacts.AsNoTracking()
+                        .Where(c => c.BusinessId == BusinessId && c.PhoneNumber != null)
+                        .Select(c => new { c.PhoneNumber, c.Name })
+                        .ToListAsync();
+                    foreach (var c in contacts)
+                    {
+                        if (c.PhoneNumber == null) continue;
+                        var normalized = c.PhoneNumber.TrimStart('+');
+                        contactsByPhone.TryAdd(normalized, c.Name);
+                    }
+                }
 
                 var enriched = new List<object>();
                 foreach (var r in reservationsEl.EnumerateArray())
                 {
                     var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(r.GetRawText())!;
                     var phone = r.TryGetProperty("customerPhone", out var phEl) ? phEl.GetString() : null;
-                    if (phone != null && contactsByPhone.TryGetValue(phone, out var name))
+                    if (phone != null && contactsByPhone.TryGetValue(phone.TrimStart('+'), out var name))
                         dict["customerName"] = name;
                     enriched.Add(dict);
                 }
