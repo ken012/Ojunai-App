@@ -71,6 +71,8 @@ export interface ProductDto {
   subcategory?: string;
   source?: string;
   recordedByName?: string;
+  aliases?: string[];
+  voiceDescription?: string;
   createdAtUtc: string;
 }
 

@@ -648,11 +648,12 @@ public class BusinessController : BizPilotBaseController
         businessId = p.BusinessId.ToString(),
         name = p.Name,
         sku = p.SKU ?? $"BP-{p.Id.ToString("N").Substring(0, 8).ToUpper()}",
-        aliases = new string[0],
-        description = p.Category != null ? $"{p.Unit} — {p.Category}" : p.Unit,
+        aliases = string.IsNullOrEmpty(p.Aliases) ? Array.Empty<string>() : System.Text.Json.JsonSerializer.Deserialize<string[]>(p.Aliases) ?? Array.Empty<string>(),
+        description = !string.IsNullOrEmpty(p.VoiceDescription) ? p.VoiceDescription : (string?)null,
         unitPriceMinor = (long)((p.SellingPrice ?? 0) * 100),
         currency,
         category = p.Category,
+        quantityOnHand = p.CurrentStock,
         active = p.IsActive
     };
 }

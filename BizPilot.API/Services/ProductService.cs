@@ -124,6 +124,8 @@ public class ProductService : IProductService
         if (request.Category != null) product.Category = string.IsNullOrWhiteSpace(request.Category) ? null : request.Category.Trim();
         if (request.Subcategory != null) product.Subcategory = string.IsNullOrWhiteSpace(request.Subcategory) ? null : request.Subcategory.Trim();
         if (request.IsActive.HasValue) product.IsActive = request.IsActive.Value;
+        if (request.Aliases != null) product.Aliases = request.Aliases.Count > 0 ? System.Text.Json.JsonSerializer.Serialize(request.Aliases) : null;
+        if (request.VoiceDescription != null) product.VoiceDescription = string.IsNullOrWhiteSpace(request.VoiceDescription) ? null : request.VoiceDescription.Trim();
         if (recordedByUserId.HasValue) { product.RecordedByUserId = recordedByUserId; product.RecordedByName = recordedByName; }
 
         await _db.SaveChangesAsync();
@@ -178,6 +180,8 @@ public class ProductService : IProductService
         Subcategory = p.Subcategory,
         Source = p.Source,
         RecordedByName = p.RecordedByName,
+        Aliases = string.IsNullOrEmpty(p.Aliases) ? null : System.Text.Json.JsonSerializer.Deserialize<List<string>>(p.Aliases),
+        VoiceDescription = p.VoiceDescription,
         CreatedAtUtc = p.CreatedAtUtc
     };
 }

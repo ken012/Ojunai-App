@@ -23,6 +23,7 @@ type VoiceAISettings = {
   reservationHoldHours: number;
   voiceTransport: "record" | "streaming";
   fallbackHandoffPhone: string | null;
+  address: string | null;
   greetingTemplateEn: string | null;
   greetingTemplateYo: string | null;
   greetingTemplateHa: string | null;
@@ -314,6 +315,18 @@ function SettingsForm({ initial }: { initial: VoiceAISettings }) {
           <Label className="text-xs text-slate-500">Reservation Hold Duration (hours)</Label>
           <Input type="number" min={1} max={168} value={form.reservationHoldHours} onChange={(e) => set("reservationHoldHours", Math.max(1, Math.min(168, Number(e.target.value) || 1)))} className="w-32" />
           <p className="text-[10px] text-slate-400 mt-1">Hours to hold a reservation before auto-expiring. 4 hours = same-day pickup; 24 = next-day.</p>
+        </CardContent>
+      </Card>
+
+      {/* Location */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold text-slate-700">Location</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Label className="text-xs text-slate-500">Business Address</Label>
+          <Input value={form.address ?? ""} onChange={(e) => set("address", e.target.value || null)} placeholder="e.g. 12 Lekki Road, Lagos" maxLength={500} />
+          <p className="text-[10px] text-slate-400 mt-1">The AI uses this to confirm pickup location with callers (e.g. {'"'}see you at 12 Lekki Road{'"'}).</p>
         </CardContent>
       </Card>
 

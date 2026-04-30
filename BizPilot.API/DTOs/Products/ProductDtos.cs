@@ -25,6 +25,8 @@ public class UpdateProductRequest
     [MaxLength(100)] public string? Category { get; set; }
     [MaxLength(100)] public string? Subcategory { get; set; }
     public bool? IsActive { get; set; }
+    public List<string>? Aliases { get; set; }
+    [MaxLength(500)] public string? VoiceDescription { get; set; }
 }
 
 public class UpdateStockRequest
@@ -57,5 +59,7 @@ public class ProductDto
     public string? Subcategory { get; set; }
     public string? Source { get; set; }
     public string? RecordedByName { get; set; }
+    public List<string>? Aliases { get; set; }
+    public string? VoiceDescription { get; set; }
     public DateTime CreatedAtUtc { get; set; }
 }

@@ -13,6 +13,8 @@ public class Product
     public decimal LowStockThreshold { get; set; } = 5;
     public string? Category { get; set; }
     public string? Subcategory { get; set; }
+    public string? Aliases { get; set; } // JSON array: ["alias1", "alias2"]
+    public string? VoiceDescription { get; set; } // Short factual description for Voice AI LLM context
     public bool IsActive { get; set; } = true;
     public string Source { get; set; } = "Manual";
     public Guid? ImportBatchId { get; set; }
