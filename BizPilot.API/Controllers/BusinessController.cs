@@ -745,6 +745,72 @@ public class BusinessController : BizPilotBaseController
         }
     }
 
+    [HttpPost("voice-ai-reservations/{reservationId:guid}/sell")]
+    [RequirePermission(Permission.RecordSales)]
+    public async Task<IActionResult> SellVoiceAIReservation(
+        [FromRoute] Guid reservationId,
+        [FromBody] SellVoiceReservationRequest request)
+    {
+        var business = await _db.Businesses.AsNoTracking().FirstOrDefaultAsync(b => b.Id == BusinessId);
+        if (business == null) return NotFound(ApiResponse<object>.Fail("Business not found."));
+
+        if (!VoiceAIGuard.HasAccess(business))
+            return StatusCode(403, ApiResponse<object>.Fail("Voice AI is not enabled."));
+
+        // Look up the product to get selling price
+        var product = await _db.Products.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == request.ProductId && p.BusinessId == BusinessId && p.IsActive);
+        if (product == null)
+            return NotFound(ApiResponse<object>.Fail("Product not found."));
+
+        var unitPrice = product.SellingPrice ?? 0;
+
+        // 1. Mark fulfilled on Voice AI
+        var adminKey = _config["VoiceAI:VoiceAdminKey"];
+        if (!string.IsNullOrEmpty(adminKey))
+        {
+            try
+            {
+                var client = _httpFactory.CreateClient("VoiceAI");
+                var voiceBody = System.Text.Json.JsonSerializer.Serialize(new { status = "fulfilled", releaseReason = "picked_up" });
+                var httpReq = new HttpRequestMessage(HttpMethod.Patch, $"/api/admin/reservations/{reservationId}/status");
+                httpReq.Headers.Add("X-Admin-Key", adminKey);
+                httpReq.Content = new StringContent(voiceBody, System.Text.Encoding.UTF8, "application/json");
+                await client.SendAsync(httpReq);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Voice AI fulfill failed for reservation {Id}, continuing with BizPilot sale", reservationId);
+            }
+        }
+
+        // 2. Create sale in BizPilot
+        var salesService = HttpContext.RequestServices.GetRequiredService<Services.Interfaces.ISalesService>();
+        var user = await _db.Users.FindAsync(UserId);
+
+        // Find or create contact from phone
+        Guid? contactId = null;
+        if (!string.IsNullOrEmpty(request.CustomerPhone))
+        {
+            var phone = request.CustomerPhone.TrimStart('+');
+            var contact = await _db.Contacts.FirstOrDefaultAsync(c =>
+                c.BusinessId == BusinessId && c.PhoneNumber != null && c.PhoneNumber.TrimStart('+') == phone);
+            contactId = contact?.Id;
+        }
+
+        var sale = await salesService.CreateAsync(BusinessId, new DTOs.Sales.CreateSaleRequest
+        {
+            Items = new List<DTOs.Sales.SaleItemRequest>
+            {
+                new() { ProductId = request.ProductId, Quantity = request.Quantity, UnitPrice = unitPrice }
+            },
+            ContactId = contactId,
+            PaymentStatus = Models.PaymentStatus.Paid
+        }, "VoiceAI", user?.Id, user?.FullName);
+
+        return Ok(ApiResponse<DTOs.Sales.SaleDto>.Ok(sale, "Reservation fulfilled and sale recorded."));
+    }
+
     private static object MapVoiceProduct(Models.Product p, string currency) => new
     {
         id = p.Id.ToString(),
@@ -803,6 +869,13 @@ public class CloseAccountRequest
 {
     public string ConfirmationPassword { get; set; } = string.Empty;
     public string Confirm { get; set; } = string.Empty;
+}
+
+public class SellVoiceReservationRequest
+{
+    public Guid ProductId { get; set; }
+    public decimal Quantity { get; set; }
+    public string? CustomerPhone { get; set; }
 }
 
 public class UpdateVoiceReservationStatusRequest

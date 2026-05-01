@@ -37,6 +37,7 @@ type VoiceReservation = {
 
 type UnifiedHold = {
   id: string;
+  productId: string | null;
   productName: string;
   contactName: string;
   quantity: number;
@@ -48,6 +49,7 @@ type UnifiedHold = {
   holdExpiresAt: string | null;
   isVoice: boolean;
   callSessionId: string | null;
+  customerPhone: string | null;
   releaseReason: string | null;
   releaseNote: string | null;
 };
@@ -134,6 +136,7 @@ export default function ReservationsPage() {
   const unified: UnifiedHold[] = [
     ...(allHolds ?? []).map((h): UnifiedHold => ({
       id: h.id,
+      productId: h.productId,
       productName: h.productName,
       contactName: h.contactName,
       quantity: h.quantity,
@@ -145,11 +148,13 @@ export default function ReservationsPage() {
       holdExpiresAt: null,
       isVoice: false,
       callSessionId: null,
+      customerPhone: null,
       releaseReason: null,
       releaseNote: null,
     })),
     ...(voiceData ?? []).map((r): UnifiedHold => ({
       id: `voice-${r.id}`,
+      productId: r.productId,
       productName: r.productName,
       contactName: r.customerName ?? r.customerPhone,
       quantity: r.quantity,
@@ -161,6 +166,7 @@ export default function ReservationsPage() {
       holdExpiresAt: r.holdExpiresAt,
       isVoice: true,
       callSessionId: r.callSessionId,
+      customerPhone: r.customerPhone,
       releaseReason: (r as Record<string, unknown>).releaseReason as string ?? null,
       releaseNote: (r as Record<string, unknown>).releaseNote as string ?? null,
     })),
@@ -187,6 +193,24 @@ export default function ReservationsPage() {
   const [reasonModal, setReasonModal] = useState<{ id: string; type: "cancel" | "release" } | null>(null);
   const [reasonChoice, setReasonChoice] = useState("");
   const [reasonNote, setReasonNote] = useState("");
+
+  async function handleVoiceSell(hold: UnifiedHold) {
+    if (!hold.productId) return;
+    const realId = hold.id.replace("voice-", "");
+    setActionLoading(hold.id);
+    try {
+      await api.post(`/business/voice-ai-reservations/${realId}/sell`, {
+        productId: hold.productId,
+        quantity: hold.quantity,
+        customerPhone: hold.customerPhone,
+      });
+      qc.invalidateQueries({ queryKey: ["reservations-voice"] });
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["sales"] });
+    } catch { /* silent */ } finally {
+      setActionLoading(null);
+    }
+  }
 
   async function handleVoiceAction(reservationId: string, status: "fulfilled" | "cancelled" | "expired", releaseReason?: string, note?: string) {
     const realId = reservationId.replace("voice-", "");
@@ -323,9 +347,9 @@ export default function ReservationsPage() {
                           </div>
                         ) : isActiveStatus(h.status) ? (
                           <div className="flex items-center justify-end gap-1">
-                            <button onClick={() => handleVoiceAction(h.id, "fulfilled", "picked_up")} disabled={actionLoading === h.id}
+                            <button onClick={() => handleVoiceSell(h)} disabled={actionLoading === h.id}
                               className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors">
-                              <CheckCircle size={12} /> Picked Up
+                              <ShoppingCart size={12} /> Sold &amp; Picked Up
                             </button>
                             <button onClick={() => { setReasonModal({ id: h.id, type: "release" }); setReasonChoice(""); setReasonNote(""); }}
                               className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
