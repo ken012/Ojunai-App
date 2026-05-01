@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Phone, CheckCircle, AlertTriangle, Clock, Zap, Save } from "lucide-react";
+import { Phone, CheckCircle, AlertTriangle, Clock, Save } from "lucide-react";
 import { VOICE_AI_PRICING, VOICE_AI_ANNUAL_DISCOUNT, VOICE_AI_FEATURES } from "@/lib/voice-ai-pricing";
 import { CURRENCY_META, SUPPORTED_CURRENCIES } from "@/lib/pricing";
 import type { SupportedCurrency, BillingCycle } from "@/lib/pricing";
