@@ -1447,13 +1447,19 @@ public class WhatsAppService : IWhatsAppService
         if (string.IsNullOrEmpty(contactName) || !amount.HasValue)
             return "Please specify who owes you and how much.";
 
-        var contact = await FindOrCreateContactAsync(businessId, contactName, ContactType.Customer);
+        var (contact, ambiguous) = await FindContactWithDisambiguationAsync(businessId, contactName, ContactType.Customer);
+        if (ambiguous != null)
+        {
+            var names = string.Join("\n", ambiguous.Select((c, i) => $"  {i + 1}. {c.Name}"));
+            return $"I found multiple contacts matching \"{contactName}\":\n{names}\n\nPlease use their full name so I pick the right one.";
+        }
+
         await _ledger.CreateReceivableAsync(businessId, new CreateReceivableRequest
         {
-            ContactId = contact.Id, Amount = amount.Value, Notes = ba.GetStringOrNull("notes")
+            ContactId = contact!.Id, Amount = amount.Value, Notes = ba.GetStringOrNull("notes")
         }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
 
-        return $"✅ Recorded: {contactName} owes you {_cs}{amount.Value:N0}";
+        return $"✅ Recorded: {contact.Name} owes you {_cs}{amount.Value:N0}";
     }
 
     private async Task<string> HandleCreatePayableAsync(Guid businessId, JsonElement ba, User? recordedBy = null)
@@ -1467,13 +1473,19 @@ public class WhatsAppService : IWhatsAppService
         if (string.IsNullOrEmpty(contactName) || !amount.HasValue)
             return "Please specify who you owe and how much.";
 
-        var contact = await FindOrCreateContactAsync(businessId, contactName, ContactType.Supplier);
+        var (contact, ambiguous) = await FindContactWithDisambiguationAsync(businessId, contactName, ContactType.Supplier);
+        if (ambiguous != null)
+        {
+            var names = string.Join("\n", ambiguous.Select((c, i) => $"  {i + 1}. {c.Name}"));
+            return $"I found multiple contacts matching \"{contactName}\":\n{names}\n\nPlease use their full name so I pick the right one.";
+        }
+
         await _ledger.CreatePayableAsync(businessId, new CreatePayableRequest
         {
-            ContactId = contact.Id, Amount = amount.Value, Notes = ba.GetStringOrNull("notes")
+            ContactId = contact!.Id, Amount = amount.Value, Notes = ba.GetStringOrNull("notes")
         }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
 
-        return $"✅ Recorded: You owe {contactName} {_cs}{amount.Value:N0}";
+        return $"✅ Recorded: You owe {contact.Name} {_cs}{amount.Value:N0}";
     }
 
     private async Task<string> HandleRecordPaymentAsync(Guid businessId, JsonElement ba, string type, User? recordedBy = null)
@@ -3056,18 +3068,48 @@ public class WhatsAppService : IWhatsAppService
         if (contact != null) return contact;
 
         // Partial match: "Ada" should find "Ada Okafor"
-        var partial = await _db.Contacts
+        var partials = await _db.Contacts
             .Where(c => c.BusinessId == businessId && (
                 EF.Functions.ILike(c.Name, $"{name}%") ||
                 EF.Functions.ILike(c.Name, $"% {name}%")))
             .OrderBy(c => c.Name.Length)
-            .FirstOrDefaultAsync();
-        if (partial != null) return partial;
+            .Take(5)
+            .ToListAsync();
+        if (partials.Count == 1) return partials[0];
+        if (partials.Count > 1) return partials[0]; // Multiple matches — pick shortest for non-critical callers
 
         contact = new Contact { BusinessId = businessId, Name = name, Type = type, Source = EntrySource.WhatsApp };
         _db.Contacts.Add(contact);
         await _db.SaveChangesAsync();
         return contact;
+    }
+
+    /// <summary>
+    /// Like FindOrCreateContactAsync but returns null + disambiguation list when multiple contacts match.
+    /// Used for high-value operations (debt, payments) where picking the wrong contact loses money.
+    /// </summary>
+    private async Task<(Contact? Contact, List<Contact>? Ambiguous)> FindContactWithDisambiguationAsync(Guid businessId, string name, ContactType type)
+    {
+        var contact = await _db.Contacts.FirstOrDefaultAsync(c =>
+            c.BusinessId == businessId && c.Name.ToLower() == name.ToLower());
+        if (contact != null) return (contact, null);
+
+        var partials = await _db.Contacts
+            .Where(c => c.BusinessId == businessId && (
+                EF.Functions.ILike(c.Name, $"{name}%") ||
+                EF.Functions.ILike(c.Name, $"% {name}%")))
+            .OrderBy(c => c.Name.Length)
+            .Take(5)
+            .ToListAsync();
+
+        if (partials.Count == 1) return (partials[0], null);
+        if (partials.Count > 1) return (null, partials);
+
+        // No match — create new
+        contact = new Contact { BusinessId = businessId, Name = name, Type = type, Source = EntrySource.WhatsApp };
+        _db.Contacts.Add(contact);
+        await _db.SaveChangesAsync();
+        return (contact, null);
     }
 
     private static DateTime _lastRateLimitCleanup = DateTime.UtcNow;
