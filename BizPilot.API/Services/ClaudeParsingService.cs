@@ -21,26 +21,55 @@ public class ClaudeParsingService : IClaudeParsingService
         _logger = logger;
     }
 
+    // Intents involving money, corrections, or multi-step actions — always escalate to the primary model.
+    private static readonly HashSet<string> HighRiskIntents = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "create_receivable", "create_payable", "record_receivable_payment", "record_payable_payment",
+        "correct_debt", "batch_action", "undo_last_action", "correct_last_sale", "correct_last_expense",
+        "update_last_sale", "unknown"
+    };
+
+    private const double EscalationConfidenceThreshold = 0.85;
+
     public async Task<ParsedMessage> ParseAsync(string message, BusinessContext context, List<(string Role, string Content)>? history = null)
     {
-        // Claude rejects whitespace-only message bodies with a 400 (and rightly so — there's nothing to parse).
-        // Short-circuit here to avoid the wasted API call, the logged error, and the ~2s latency hit. The
-        // downstream handler will treat this as an unknown low-confidence parse and ask for clarification.
         if (string.IsNullOrWhiteSpace(message))
         {
             return new ParsedMessage { Intent = "unknown", Confidence = 0 };
         }
 
         var systemPrompt = BuildSystemPrompt(context);
-        var model = _config["Claude:Model"] ?? "claude-opus-4-6";
+        var primaryModel = _config["Claude:Model"] ?? "claude-sonnet-4-6";
+        var fastModel = _config["Claude:FastModel"] ?? "claude-haiku-4-5-20251001";
+        var useHybrid = _config.GetValue<bool>("Claude:HybridMode", false);
         var maxTokens = int.Parse(_config["Claude:MaxTokens"] ?? "1024");
 
-        var messages = new List<object>();
+        var msgList = new List<object>();
         if (history != null)
             foreach (var turn in history)
-                messages.Add(new { role = turn.Role, content = turn.Content });
-        messages.Add(new { role = "user", content = message });
+                msgList.Add(new { role = turn.Role, content = turn.Content });
+        msgList.Add(new { role = "user", content = message });
 
+        // If hybrid mode is off, use the primary model directly (existing behavior)
+        if (!useHybrid)
+            return await CallModelAsync(primaryModel, systemPrompt, msgList, maxTokens);
+
+        // Hybrid: try the fast model first
+        var fastResult = await CallModelAsync(fastModel, systemPrompt, msgList, maxTokens);
+
+        // Escalate to primary model if confidence is low or intent is high-risk
+        if (fastResult.Confidence < EscalationConfidenceThreshold || HighRiskIntents.Contains(fastResult.Intent))
+        {
+            _logger.LogInformation("Hybrid escalation: {Intent}@{Confidence} → upgrading to {Model}",
+                fastResult.Intent, fastResult.Confidence, primaryModel);
+            return await CallModelAsync(primaryModel, systemPrompt, msgList, maxTokens);
+        }
+
+        return fastResult;
+    }
+
+    private async Task<ParsedMessage> CallModelAsync(string model, string systemPrompt, List<object> messages, int maxTokens)
+    {
         var requestBody = new
         {
             model,
@@ -57,7 +86,7 @@ public class ClaudeParsingService : IClaudeParsingService
         if (!response.IsSuccessStatusCode)
         {
             var error = await response.Content.ReadAsStringAsync();
-            _logger.LogError("Claude API error {Status}: {Error}", response.StatusCode, error);
+            _logger.LogError("Claude API error {Status} ({Model}): {Error}", response.StatusCode, model, error);
             return new ParsedMessage { Intent = "unknown", Confidence = 0 };
         }
 
