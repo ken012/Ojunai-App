@@ -1541,8 +1541,24 @@ public class WhatsAppService : IWhatsAppService
         // Single contact — auto-lookup balance if clearAll or no amount
         if (!string.IsNullOrEmpty(contactName))
         {
+            // Exact match first, then partial
             var contact = await _db.Contacts.FirstOrDefaultAsync(c =>
-                c.BusinessId == businessId && c.Name.ToLower().Contains(contactName.ToLower()));
+                c.BusinessId == businessId && EF.Functions.ILike(c.Name, contactName));
+            if (contact == null)
+            {
+                // Partial: "Ada" finds "Ada Okafor" (but not if exact "Ada" exists — that's caught above)
+                var partials = await _db.Contacts
+                    .Where(c => c.BusinessId == businessId && EF.Functions.ILike(c.Name, $"{contactName} %"))
+                    .OrderBy(c => c.Name.Length)
+                    .Take(5)
+                    .ToListAsync();
+                if (partials.Count == 1) contact = partials[0];
+                else if (partials.Count > 1)
+                {
+                    var names = string.Join("\n", partials.Select((c, i) => $"  {i + 1}. {c.Name}"));
+                    return $"I found multiple contacts matching \"{contactName}\":\n{names}\n\nPlease use their full name.";
+                }
+            }
             if (contact == null) return $"Contact '{contactName}' not found. Check the name and try again.";
 
             var entries = await _db.LedgerEntries.Where(e => e.ContactId == contact.Id && e.BusinessId == businessId).ToListAsync();
