@@ -1825,8 +1825,15 @@ public class WhatsAppService : IWhatsAppService
         if (string.IsNullOrEmpty(contactName))
             return await HandleGetOutstandingAsync(businessId, "receivable");
 
+        // Exact match first, then partial
         var contact = await _db.Contacts.FirstOrDefaultAsync(c =>
-            c.BusinessId == businessId && c.Name.ToLower() == contactName.ToLower());
+            c.BusinessId == businessId && EF.Functions.ILike(c.Name, contactName));
+        if (contact == null)
+        {
+            var partial = await _db.Contacts.FirstOrDefaultAsync(c =>
+                c.BusinessId == businessId && EF.Functions.ILike(c.Name, $"{contactName} %"));
+            contact = partial;
+        }
         if (contact == null) return $"Contact '{contactName}' not found.";
 
         var entries = await _db.LedgerEntries
@@ -2939,7 +2946,12 @@ public class WhatsAppService : IWhatsAppService
             return "What should the new amount be?";
 
         var contact = await _db.Contacts.FirstOrDefaultAsync(c =>
-            c.BusinessId == businessId && EF.Functions.ILike(c.Name, $"%{contactName}%"));
+            c.BusinessId == businessId && EF.Functions.ILike(c.Name, contactName));
+        if (contact == null)
+        {
+            contact = await _db.Contacts.FirstOrDefaultAsync(c =>
+                c.BusinessId == businessId && EF.Functions.ILike(c.Name, $"{contactName} %"));
+        }
         if (contact == null) return $"Contact '{contactName}' not found.";
 
         // Find the most recent receivable or payable entry for this contact
