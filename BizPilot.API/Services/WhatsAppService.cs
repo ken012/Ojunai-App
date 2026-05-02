@@ -523,7 +523,9 @@ public class WhatsAppService : IWhatsAppService
 
         log.ParsedIntent = parsed.Intent;
         log.ConfidenceScore = (decimal)parsed.Confidence;
-        log.ParsedPayloadJson = JsonSerializer.Serialize(parsed.BusinessAction);
+        log.ParsedPayloadJson = parsed.BusinessAction.ValueKind != JsonValueKind.Undefined
+            ? JsonSerializer.Serialize(parsed.BusinessAction)
+            : null;
         log.ProcessingStatus = MessageProcessingStatus.Parsed;
         await _db.SaveChangesAsync();
 
