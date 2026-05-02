@@ -3050,10 +3050,19 @@ public class WhatsAppService : IWhatsAppService
 
     private async Task<Contact> FindOrCreateContactAsync(Guid businessId, string name, ContactType type)
     {
+        // Exact match first
         var contact = await _db.Contacts.FirstOrDefaultAsync(c =>
             c.BusinessId == businessId && c.Name.ToLower() == name.ToLower());
-
         if (contact != null) return contact;
+
+        // Partial match: "Ada" should find "Ada Okafor"
+        var partial = await _db.Contacts
+            .Where(c => c.BusinessId == businessId && (
+                EF.Functions.ILike(c.Name, $"{name}%") ||
+                EF.Functions.ILike(c.Name, $"% {name}%")))
+            .OrderBy(c => c.Name.Length)
+            .FirstOrDefaultAsync();
+        if (partial != null) return partial;
 
         contact = new Contact { BusinessId = businessId, Name = name, Type = type, Source = EntrySource.WhatsApp };
         _db.Contacts.Add(contact);
