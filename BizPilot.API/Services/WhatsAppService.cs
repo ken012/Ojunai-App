@@ -3062,21 +3062,17 @@ public class WhatsAppService : IWhatsAppService
 
     private async Task<Contact> FindOrCreateContactAsync(Guid businessId, string name, ContactType type)
     {
-        // Exact match first
+        // Exact match first (case-insensitive)
         var contact = await _db.Contacts.FirstOrDefaultAsync(c =>
-            c.BusinessId == businessId && c.Name.ToLower() == name.ToLower());
+            c.BusinessId == businessId && EF.Functions.ILike(c.Name, name));
         if (contact != null) return contact;
 
-        // Partial match: "Ada" should find "Ada Okafor"
-        var partials = await _db.Contacts
-            .Where(c => c.BusinessId == businessId && (
-                EF.Functions.ILike(c.Name, $"{name}%") ||
-                EF.Functions.ILike(c.Name, $"% {name}%")))
+        // Partial match: "Ada" should find "Ada Okafor" (name followed by a space)
+        var partial = await _db.Contacts
+            .Where(c => c.BusinessId == businessId && EF.Functions.ILike(c.Name, $"{name} %"))
             .OrderBy(c => c.Name.Length)
-            .Take(5)
-            .ToListAsync();
-        if (partials.Count == 1) return partials[0];
-        if (partials.Count > 1) return partials[0]; // Multiple matches — pick shortest for non-critical callers
+            .FirstOrDefaultAsync();
+        if (partial != null) return partial;
 
         contact = new Contact { BusinessId = businessId, Name = name, Type = type, Source = EntrySource.WhatsApp };
         _db.Contacts.Add(contact);
@@ -3090,14 +3086,15 @@ public class WhatsAppService : IWhatsAppService
     /// </summary>
     private async Task<(Contact? Contact, List<Contact>? Ambiguous)> FindContactWithDisambiguationAsync(Guid businessId, string name, ContactType type)
     {
-        var contact = await _db.Contacts.FirstOrDefaultAsync(c =>
-            c.BusinessId == businessId && c.Name.ToLower() == name.ToLower());
-        if (contact != null) return (contact, null);
+        // Exact match (case-insensitive) — highest priority, no ambiguity
+        var exact = await _db.Contacts.FirstOrDefaultAsync(c =>
+            c.BusinessId == businessId && EF.Functions.ILike(c.Name, name));
+        if (exact != null) return (exact, null);
 
+        // Partial match — "Ada" finds "Ada Okafor", "Ada Orji", etc.
         var partials = await _db.Contacts
             .Where(c => c.BusinessId == businessId && (
-                EF.Functions.ILike(c.Name, $"{name}%") ||
-                EF.Functions.ILike(c.Name, $"% {name}%")))
+                EF.Functions.ILike(c.Name, $"{name} %")))
             .OrderBy(c => c.Name.Length)
             .Take(5)
             .ToListAsync();
@@ -3106,7 +3103,7 @@ public class WhatsAppService : IWhatsAppService
         if (partials.Count > 1) return (null, partials);
 
         // No match — create new
-        contact = new Contact { BusinessId = businessId, Name = name, Type = type, Source = EntrySource.WhatsApp };
+        var contact = new Contact { BusinessId = businessId, Name = name, Type = type, Source = EntrySource.WhatsApp };
         _db.Contacts.Add(contact);
         await _db.SaveChangesAsync();
         return (contact, null);
