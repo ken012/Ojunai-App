@@ -35,10 +35,10 @@ import {
 import { ChevronLeft, ChevronRight, Ban, Trash2, RotateCcw, Search, X, ShoppingCart } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 
-function statusVariant(status: string) {
-  if (status === "Paid") return "default";
-  if (status === "Unpaid") return "destructive";
-  return "secondary";
+function statusBadgeClass(status: string) {
+  if (status === "Paid") return "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200";
+  if (status === "Unpaid") return "bg-red-50 text-red-700 ring-1 ring-inset ring-red-200";
+  return "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200"; // PartiallyPaid
 }
 
 export default function SalesPage() {
@@ -140,9 +140,9 @@ export default function SalesPage() {
       </div>
 
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700">
-            {data ? `${data.totalCount} total transactions` : "Loading…"}
+        <CardHeader className="pb-3">
+          <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            {data ? `${data.totalCount} ${tab} transaction${data.totalCount !== 1 ? "s" : ""}` : "Loading…"}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -191,7 +191,7 @@ export default function SalesPage() {
                         </span>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={statusVariant(sale.paymentStatus)} className="text-xs">
+                        <Badge className={statusBadgeClass(sale.paymentStatus)}>
                           {sale.paymentStatus}
                         </Badge>
                       </TableCell>
@@ -204,7 +204,7 @@ export default function SalesPage() {
                       <TableCell className="text-xs text-slate-500">
                         {sale.recordedByName ?? <span className="text-slate-300">—</span>}
                       </TableCell>
-                      <TableCell className={`text-right font-semibold ${tab !== "active" ? "text-slate-400 line-through" : "text-emerald-600"}`}>
+                      <TableCell className={`text-right font-semibold tabular-nums ${tab !== "active" ? "text-slate-400 line-through" : "text-slate-900"}`}>
                         {formatNaira(sale.totalAmount)}
                       </TableCell>
                       <TableCell className="text-right">
@@ -702,7 +702,7 @@ function SaleDetailDialog({
               </div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-500">Payment Status</span>
-                <Badge variant={statusVariant(detail.paymentStatus)} className="text-xs">
+                <Badge className={statusBadgeClass(detail.paymentStatus)}>
                   {detail.paymentStatus}
                 </Badge>
               </div>

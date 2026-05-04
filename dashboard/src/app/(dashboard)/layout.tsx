@@ -24,12 +24,10 @@ export default function DashboardLayout({
     <DataSyncProvider>
       <div className="flex min-h-screen bg-slate-50">
         <Sidebar />
-        <main className="flex-1 overflow-auto w-full relative">
-          {/* Subtle ambient brand gradient — not visible, just adds warmth */}
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_900px_500px_at_top,rgba(6,182,212,0.04),transparent),radial-gradient(ellipse_600px_400px_at_bottom_right,rgba(139,92,246,0.04),transparent)]" />
+        <main className="flex-1 overflow-auto w-full">
           <TrialBanner />
           <div className="h-12 lg:hidden" />
-          <div className="relative p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">{children}</div>
+          <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">{children}</div>
         </main>
       </div>
     </DataSyncProvider>
