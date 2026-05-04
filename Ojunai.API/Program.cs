@@ -286,7 +286,7 @@ app.UseHangfireDashboard("/hangfire", new DashboardOptions
 
 app.MapControllers();
 
-app.MapGet("/health", async (AppDbContext db) =>
+app.MapMethods("/health", new[] { "GET", "HEAD" }, async (AppDbContext db) =>
 {
     try
     {

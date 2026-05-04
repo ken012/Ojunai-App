@@ -107,7 +107,7 @@ function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurre
               <p className="text-xs text-slate-400">{cycle === "annual" ? `per year (${sym}${monthlyEquiv.toLocaleString()}/mo)` : "per month"}</p>
             </div>
             <a
-              href={`mailto:hello@ojunai.com?subject=${contactSubject}&body=${contactBody}`}
+              href={`mailto:contact@ojunai.com?subject=${contactSubject}&body=${contactBody}`}
               className="flex items-center justify-center gap-2 w-full py-3 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-sm font-semibold transition-colors"
             >
               <Phone size={16} />
