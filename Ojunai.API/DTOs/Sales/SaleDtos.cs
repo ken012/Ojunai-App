@@ -11,6 +11,8 @@ public class CreateSaleRequest
     [MaxLength(50)] public string? PaymentMethod { get; set; }
     [MaxLength(500)] public string? Notes { get; set; }
     public DateTime? SaleDate { get; set; }
+    /// <summary>Optional VAT amount included in the totals (computed by the dashboard or omitted if business has VAT off).</summary>
+    [Range(0, 999999999)] public decimal? VatAmount { get; set; }
 }
 
 public class SaleItemRequest
@@ -24,12 +26,14 @@ public class SaleDto
 {
     public Guid Id { get; set; }
     public decimal TotalAmount { get; set; }
+    public decimal VatAmount { get; set; }
     public string PaymentStatus { get; set; } = string.Empty;
     public string? PaymentMethod { get; set; }
     public string? Notes { get; set; }
     public string? CustomerName { get; set; }
     public string? RecordedByName { get; set; }
     public string? Source { get; set; } = "Manual";
+    public string? ReceiptNumber { get; set; }
     public List<SaleItemDto> Items { get; set; } = new();
     public DateTime CreatedAtUtc { get; set; }
 

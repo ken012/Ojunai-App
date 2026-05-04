@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { hasPermission, Permission } from "@/lib/permissions";
+import { useBusiness } from "@/lib/data-sync";
 import { formatNaira, formatDateTime } from "@/lib/format";
 import type { PaginatedResult, SaleSummaryDto, SaleDto, ProductDto, ContactDto, ApiResponse } from "@/lib/types";
 import { Input } from "@/components/ui/input";
@@ -32,7 +33,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, Ban, Trash2, RotateCcw, Search, X, ShoppingCart } from "lucide-react";
+import { ChevronLeft, ChevronRight, Ban, Trash2, RotateCcw, Search, X, ShoppingCart, FileDown } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 
 function statusBadgeClass(status: string) {
@@ -65,6 +66,32 @@ export default function SalesPage() {
       setRecording(true);
     }
   }, []);
+
+  // Download receipt PDF from API
+  async function downloadReceipt(saleId: string) {
+    try {
+      const res = await api.get(`/sales/${saleId}/receipt`, { responseType: "blob" });
+      const blob = res.data as Blob;
+      // Try to read filename from Content-Disposition header (e.g., "RCT-MTS-000123.pdf")
+      const cd = res.headers["content-disposition"] as string | undefined;
+      let filename = `receipt-${saleId.slice(0, 8)}.pdf`;
+      if (cd) {
+        const m = /filename="?([^";]+)"?/.exec(cd);
+        if (m && m[1]) filename = m[1];
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Receipt download failed", err);
+      alert("Failed to download receipt. Please try again.");
+    }
+  }
 
   const { data, isLoading } = useQuery({
     queryKey: ["sales", tab, page, statusFilter, methodFilter, sourceFilter, debouncedSearch],
@@ -208,24 +235,33 @@ export default function SalesPage() {
                         {formatNaira(sale.totalAmount)}
                       </TableCell>
                       <TableCell className="text-right">
-                        {tab === "active" && hasPermission(Permission.VoidSales) && (
-                          <div className="flex items-center justify-end gap-1">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setReturning(sale); }}
-                              className="p-1 rounded hover:bg-amber-50 text-slate-500 hover:text-amber-600"
-                              title="Return sale (customer returned product)"
-                            >
-                              <RotateCcw size={14} />
-                            </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setVoiding(sale); }}
-                              className="p-1 rounded hover:bg-red-50 text-slate-500 hover:text-red-600"
-                              title="Void sale (fix a mistake)"
-                            >
-                              <Ban size={14} />
-                            </button>
-                          </div>
-                        )}
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); downloadReceipt(sale.id); }}
+                            className="p-1 rounded hover:bg-cyan-50 text-slate-500 hover:text-cyan-600"
+                            title="Download receipt PDF"
+                          >
+                            <FileDown size={14} />
+                          </button>
+                          {tab === "active" && hasPermission(Permission.VoidSales) && (
+                            <>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setReturning(sale); }}
+                                className="p-1 rounded hover:bg-amber-50 text-slate-500 hover:text-amber-600"
+                                title="Return sale (customer returned product)"
+                              >
+                                <RotateCcw size={14} />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setVoiding(sale); }}
+                                className="p-1 rounded hover:bg-red-50 text-slate-500 hover:text-red-600"
+                                title="Void sale (fix a mistake)"
+                              >
+                                <Ban size={14} />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -314,12 +350,19 @@ type SaleLine = { productId: string; quantity: string; unitPrice: string };
 
 function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
+  const biz = useBusiness();
   const [lines, setLines] = useState<SaleLine[]>([{ productId: "", quantity: "", unitPrice: "" }]);
   const [contactId, setContactId] = useState<string>("");
   const [paymentStatus, setPaymentStatus] = useState<"Paid" | "Unpaid" | "PartiallyPaid">("Paid");
   const [paymentMethod, setPaymentMethod] = useState<string>("Cash");
+  const [includeVat, setIncludeVat] = useState<boolean>(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Default VAT-include based on business setting when dialog opens
+  useEffect(() => {
+    if (open) setIncludeVat(biz?.vatEnabled ?? false);
+  }, [open, biz?.vatEnabled]);
 
   const { data: products } = useQuery({
     queryKey: ["products-for-sale"],
@@ -360,11 +403,14 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
     setLines((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  const total = lines.reduce((sum, l) => {
+  const subtotal = lines.reduce((sum, l) => {
     const q = Number(l.quantity) || 0;
     const p = Number(l.unitPrice) || 0;
     return sum + q * p;
   }, 0);
+  const vatRate = biz?.vatRate ?? 7.5;
+  const vatAmount = includeVat ? Math.round(subtotal * (vatRate / 100) * 100) / 100 : 0;
+  const total = subtotal + vatAmount;
 
   async function handleSave() {
     setError(null);
@@ -384,6 +430,7 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
         contactId: contactId || null,
         paymentStatus,
         paymentMethod,
+        vatAmount: includeVat ? vatAmount : undefined,
       });
       qc.invalidateQueries({ queryKey: ["sales"] });
       qc.invalidateQueries({ queryKey: ["products"] });
@@ -506,9 +553,36 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
             </select>
           </div>
 
-          <div className="flex justify-between pt-2 border-t">
-            <span className="text-sm text-slate-500">Total</span>
-            <span className="text-lg font-semibold text-emerald-600">{formatNaira(total)}</span>
+          {/* VAT toggle (shown if business has VAT enabled, or user wants to add it ad-hoc) */}
+          <label className="flex items-center gap-2 cursor-pointer text-sm pt-2">
+            <input
+              type="checkbox"
+              checked={includeVat}
+              onChange={(e) => setIncludeVat(e.target.checked)}
+              className="rounded border-slate-300"
+            />
+            <span className="text-slate-700">
+              Add VAT ({vatRate.toFixed(1)}%)
+            </span>
+          </label>
+
+          <div className="pt-2 border-t space-y-1">
+            {includeVat && (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">Subtotal</span>
+                  <span className="text-slate-700 tabular-nums">{formatNaira(subtotal)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">VAT ({vatRate.toFixed(1)}%)</span>
+                  <span className="text-slate-700 tabular-nums">{formatNaira(vatAmount)}</span>
+                </div>
+              </>
+            )}
+            <div className="flex justify-between">
+              <span className="text-sm font-semibold text-slate-700">Total</span>
+              <span className="text-lg font-bold text-slate-900 tabular-nums">{formatNaira(total)}</span>
+            </div>
           </div>
 
           {error && <p className="text-xs text-red-500">{error}</p>}

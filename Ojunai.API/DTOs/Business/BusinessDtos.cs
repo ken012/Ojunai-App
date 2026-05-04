@@ -16,4 +16,9 @@ public class UpdateBusinessRequest
     public bool? AlertLargeSale { get; set; }
     public bool? ConfirmLargeSales { get; set; }
     public decimal? ConfirmLargeSaleThreshold { get; set; }
+
+    // ── Receipts ─────────────────────────────────────
+    [MaxLength(300)] public string? Address { get; set; }
+    public bool? VatEnabled { get; set; }
+    [Range(0, 100)] public decimal? VatRate { get; set; }
 }

@@ -1573,6 +1573,9 @@ function EditBusinessDialog({
     city: "",
     state: "",
     country: "",
+    address: "",
+    vatEnabled: false,
+    vatRate: 7.5,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1580,12 +1583,16 @@ function EditBusinessDialog({
 
   // Initialize form when business loads or dialog opens
   if (business && open && !initialized) {
+    const b = business as BusinessShape & { address?: string; vatEnabled?: boolean; vatRate?: number };
     setForm({
       businessType: business.businessType ?? "",
       currency: business.currency ?? "NGN",
       city: business.city ?? "",
       state: business.state ?? "",
       country: business.country ?? "",
+      address: b.address ?? "",
+      vatEnabled: b.vatEnabled ?? false,
+      vatRate: b.vatRate ?? 7.5,
     });
     setInitialized(true);
   }
@@ -1601,6 +1608,9 @@ function EditBusinessDialog({
         city: form.city,
         state: form.state,
         country: form.country,
+        address: form.address,
+        vatEnabled: form.vatEnabled,
+        vatRate: form.vatRate,
       });
       onSaved(data.data!);
       handleClose();
@@ -1613,7 +1623,7 @@ function EditBusinessDialog({
   }
 
   function handleClose() {
-    setForm({ businessType: "", currency: "NGN", city: "", state: "", country: "" });
+    setForm({ businessType: "", currency: "NGN", city: "", state: "", country: "", address: "", vatEnabled: false, vatRate: 7.5 });
     setError(null);
     setInitialized(false);
     onClose();
@@ -1670,6 +1680,40 @@ function EditBusinessDialog({
                 placeholder="e.g. Ikeja"
               />
             </div>
+          </div>
+          <div>
+            <Label>Address (for receipts)</Label>
+            <Input
+              value={form.address}
+              onChange={(e) => setForm({ ...form, address: e.target.value })}
+              placeholder="e.g. 12 Awolowo Way, Ikeja"
+            />
+            <p className="text-[11px] text-slate-400 mt-1">Shown on PDF receipts. Optional.</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 p-3 space-y-2.5">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.vatEnabled}
+                onChange={(e) => setForm({ ...form, vatEnabled: e.target.checked })}
+                className="rounded border-slate-300"
+              />
+              <span className="text-sm font-medium text-slate-700">Charge VAT on sales</span>
+            </label>
+            {form.vatEnabled && (
+              <div>
+                <Label className="text-xs">VAT Rate (%)</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  min={0}
+                  max={100}
+                  value={form.vatRate}
+                  onChange={(e) => setForm({ ...form, vatRate: Number(e.target.value) })}
+                />
+                <p className="text-[11px] text-slate-400 mt-1">Nigeria standard is 7.5%. New sales default to including VAT; you can toggle per-sale.</p>
+              </div>
+            )}
           </div>
           <div>
             <Label>Country</Label>

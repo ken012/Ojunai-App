@@ -1,5 +1,6 @@
 using Ojunai.API.Common;
 using Ojunai.API.DTOs.Sales;
+using Ojunai.API.Services;
 using Ojunai.API.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -12,13 +13,20 @@ public class SalesController : OjunaiBaseController
     private readonly ISalesService _sales;
     private readonly Data.AppDbContext _db;
     private readonly IWhatsAppService _whatsApp;
+    private readonly IReceiptService _receipts;
     private readonly ILogger<SalesController> _logger;
 
-    public SalesController(ISalesService sales, Data.AppDbContext db, IWhatsAppService whatsApp, ILogger<SalesController> logger)
+    public SalesController(
+        ISalesService sales,
+        Data.AppDbContext db,
+        IWhatsAppService whatsApp,
+        IReceiptService receipts,
+        ILogger<SalesController> logger)
     {
         _sales = sales;
         _db = db;
         _whatsApp = whatsApp;
+        _receipts = receipts;
         _logger = logger;
     }
 
@@ -99,6 +107,19 @@ public class SalesController : OjunaiBaseController
     {
         var result = await _sales.GetByIdAsync(BusinessId, id);
         return Ok(ApiResponse<SaleDto>.Ok(result));
+    }
+
+    /// <summary>
+    /// Generate (or re-fetch) a PDF receipt for the sale. First call assigns a sequential
+    /// receipt number; subsequent calls reuse it.
+    /// </summary>
+    [HttpGet("{id:guid}/receipt")]
+    [RequirePermission(Permission.ViewOwnReports)]
+    public async Task<IActionResult> Receipt(Guid id)
+    {
+        var (bytes, receiptNumber) = await _receipts.GenerateAsync(id, BusinessId);
+        var safeName = receiptNumber.Replace("/", "_");
+        return File(bytes, "application/pdf", $"{safeName}.pdf");
     }
 
     [HttpPost("{id:guid}/void")]

@@ -43,6 +43,9 @@ public class BusinessService : IBusinessService
         if (request.AlertLargeSale.HasValue) business.AlertLargeSale = request.AlertLargeSale.Value;
         if (request.ConfirmLargeSales.HasValue) business.ConfirmLargeSales = request.ConfirmLargeSales.Value;
         if (request.ConfirmLargeSaleThreshold.HasValue) business.ConfirmLargeSaleThreshold = request.ConfirmLargeSaleThreshold.Value;
+        if (request.Address != null) business.Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim();
+        if (request.VatEnabled.HasValue) business.VatEnabled = request.VatEnabled.Value;
+        if (request.VatRate.HasValue && request.VatRate.Value >= 0 && request.VatRate.Value <= 100) business.VatRate = request.VatRate.Value;
 
         await _db.SaveChangesAsync();
         return ToDto(business);
@@ -78,6 +81,9 @@ public class BusinessService : IBusinessService
         ConfirmLargeSales = b.ConfirmLargeSales,
         ConfirmLargeSaleThreshold = b.ConfirmLargeSaleThreshold,
         IsActive = b.IsActive,
-        AccountNumber = b.AccountNumber
+        AccountNumber = b.AccountNumber,
+        Address = b.Address,
+        VatEnabled = b.VatEnabled,
+        VatRate = b.VatRate
     };
 }

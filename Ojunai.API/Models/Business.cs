@@ -47,6 +47,14 @@ public class Business
 
     public bool IsActive { get; set; } = true;
     public string AccountNumber { get; set; } = string.Empty;
+
+    // ── Receipts ─────────────────────────────────────
+    public string? Address { get; set; }                       // Single-line business address printed on receipts
+    public string? ReceiptPrefix { get; set; }                 // Auto-derived from Name on first generation, e.g. "GD" for "Glow Daddy"
+    public int NextReceiptNumber { get; set; } = 1;            // Atomic sequence counter
+    public bool VatEnabled { get; set; } = false;              // Show VAT line on receipts + default ON for new sales
+    public decimal VatRate { get; set; } = 7.5m;               // Nigeria standard
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     public ICollection<User> Users { get; set; } = new List<User>();

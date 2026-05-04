@@ -54,6 +54,10 @@ export interface BusinessDto {
   subscribedPlan?: string;
   trialEndsAt?: string;
   isActive: boolean;
+  // Receipts
+  address?: string;
+  vatEnabled?: boolean;
+  vatRate?: number;
 }
 
 export interface ProductDto {
@@ -93,6 +97,8 @@ export interface SaleSummaryDto {
 export interface SaleDto extends SaleSummaryDto {
   paymentMethod?: string;
   notes?: string;
+  vatAmount?: number;
+  receiptNumber?: string | null;
   items: SaleItemDto[];
   contactBalance?: number | null;
   dueDate?: string | null;

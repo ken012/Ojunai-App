@@ -41,4 +41,9 @@ public class BusinessDto
     public decimal ConfirmLargeSaleThreshold { get; set; }
     public bool IsActive { get; set; }
     public string AccountNumber { get; set; } = string.Empty;
+
+    // Receipts
+    public string? Address { get; set; }
+    public bool VatEnabled { get; set; } = false;
+    public decimal VatRate { get; set; } = 7.5m;
 }

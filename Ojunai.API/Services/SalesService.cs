@@ -65,6 +65,7 @@ public class SalesService : ISalesService
             PaymentMethod = request.PaymentMethod,
             Notes = request.Notes,
             Source = source,
+            VatAmount = request.VatAmount ?? 0m,
             RecordedByUserId = recordedByUserId,
             RecordedByName = recordedByName,
             CreatedAtUtc = request.SaleDate ?? DateTime.UtcNow
@@ -454,12 +455,14 @@ public class SalesService : ISalesService
         {
             Id = sale.Id,
             TotalAmount = sale.TotalAmount,
+            VatAmount = sale.VatAmount,
             PaymentStatus = sale.PaymentStatus.ToString(),
             PaymentMethod = sale.PaymentMethod,
             Notes = sale.Notes,
             CustomerName = sale.Contact?.Name,
             RecordedByName = sale.RecordedByName,
             Source = sale.Source,
+            ReceiptNumber = sale.ReceiptNumber,
             CreatedAtUtc = sale.CreatedAtUtc,
             ContactBalance = contactBalance,
             DueDate = dueDate,

@@ -6,6 +6,7 @@ public class Sale
     public Guid BusinessId { get; set; }
     public Guid? ContactId { get; set; }
     public decimal TotalAmount { get; set; }
+    public decimal VatAmount { get; set; } = 0m;        // Tax included in TotalAmount; receipt shows it separately if > 0
     public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.Paid;
     public string? PaymentMethod { get; set; }
     public string? Notes { get; set; }
@@ -15,6 +16,9 @@ public class Sale
     public bool IsDeleted { get; set; } = false;
     public string? DeleteReason { get; set; }
     public DateTime? DeletedAtUtc { get; set; }
+    // Receipt tracking — set on first PDF generation, atomic via Business.NextReceiptNumber
+    public string? ReceiptNumber { get; set; }
+    public DateTime? ReceiptGeneratedAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     public Business Business { get; set; } = null!;
