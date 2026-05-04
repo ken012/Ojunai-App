@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getStoredUser } from "@/lib/auth";
 import { api } from "@/lib/api";
+import { PageHeader } from "@/components/page-header";
 import { useBusiness, useUser, useDataSync } from "@/lib/data-sync";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -138,10 +139,7 @@ function SettingsPage() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900">Settings</h2>
-        <p className="text-slate-500 text-sm mt-0.5">Account and business information</p>
-      </div>
+      <PageHeader title="Settings" subtitle="Account and business information" />
 
       {showSuccess && (
         <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 flex items-center justify-between">

@@ -133,7 +133,7 @@ function printRichReport(title: string, sections: { heading: string; content: st
 <title>${title} — ${businessName}</title>
 <style>
   body { font-family: Arial, sans-serif; margin: 24px; font-size: 12px; color: #1e293b; }
-  h1 { font-size: 20px; margin-bottom: 4px; border-bottom: 2px solid #3b82f6; padding-bottom: 8px; }
+  h1 { font-size: 20px; margin-bottom: 4px; border-bottom: 2px solid #06b6d4; padding-bottom: 8px; }
   .meta { color: #64748b; font-size: 11px; margin-bottom: 20px; }
   h2 { font-size: 14px; margin-top: 20px; margin-bottom: 8px; color: #1e40af; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }

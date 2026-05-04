@@ -7,6 +7,7 @@ import { formatNaira } from "@/lib/format";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { useBusiness } from "@/lib/data-sync";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
+import { PageHeader } from "@/components/page-header";
 import type {
   DailySummaryDto, WeeklySummaryDto, CashPositionDto, DeadStockItemDto,
   StockoutPredictionDto, ProductProfitDto, StaffSalesDto,
@@ -30,6 +31,26 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   BarChart, Bar, Legend, Area, ComposedChart, ReferenceLine
 } from "recharts";
+
+// ───────── Brand chart palette (single source of truth) ─────────
+const CHART = {
+  positive: "#10b981",
+  negative: "#ef4444",
+  brand: "#06b6d4",
+  brandAlt: "#8b5cf6",
+  warning: "#f59e0b",
+  danger: "#f97316",
+  muted: "#94a3b8",
+  grid: "#e2e8f0",
+  axis: "#475569",
+};
+
+// 5-min staleTime, no focus refetch — reports don't change minute-to-minute.
+const REPORT_QUERY_OPTS = {
+  staleTime: 5 * 60 * 1000,
+  refetchOnWindowFocus: false,
+  retry: 1,
+} as const;
 
 // ───────── Shared bits ─────────
 
@@ -118,21 +139,21 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900">Reports</h2>
-        <p className="text-slate-500 text-sm mt-0.5">Daily summaries plus deep financial, customer, and inventory insights</p>
-      </div>
+      <PageHeader
+        title="Reports"
+        subtitle="Deep financial, customer, inventory, and operations insights"
+      />
 
-      <Tabs defaultValue="overview" className="space-y-4">
+      <Tabs defaultValue="financial" className="space-y-4">
         <TabsList className="flex-wrap self-start">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="financial">Financial</TabsTrigger>
           <TabsTrigger value="customers">Customers</TabsTrigger>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="debts">Debts</TabsTrigger>
+          <TabsTrigger value="operations">Operations</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview"><OverviewTab hasAdvanced={hasAdvanced} /></TabsContent>
+        <TabsContent value="operations"><OverviewTab hasAdvanced={hasAdvanced} /></TabsContent>
         <TabsContent value="financial"><FinancialTab hasAdvanced={hasAdvanced} currencySymbol={currencySymbol} /></TabsContent>
         <TabsContent value="customers"><CustomersTab hasAdvanced={hasAdvanced} /></TabsContent>
         <TabsContent value="inventory"><InventoryTab hasAdvanced={hasAdvanced} /></TabsContent>
@@ -149,30 +170,37 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
   const { data: daily, isLoading: loadingDaily } = useQuery({
     queryKey: ["report-daily"],
     queryFn: async () => (await api.get<{ data: DailySummaryDto }>("/reports/daily")).data.data!,
+    ...REPORT_QUERY_OPTS,
   });
   const { data: weekly, isLoading: loadingWeekly } = useQuery({
     queryKey: ["report-weekly"],
     queryFn: async () => (await api.get<{ data: WeeklySummaryDto }>("/reports/weekly")).data.data!,
+    ...REPORT_QUERY_OPTS,
   });
   const { data: cashPos, isLoading: loadingCash } = useQuery({
     queryKey: ["cash-position"],
     queryFn: async () => (await api.get<{ data: CashPositionDto }>("/reports/cash-position")).data.data!,
+    ...REPORT_QUERY_OPTS,
   });
   const { data: deadStock } = useQuery({
     queryKey: ["dead-stock"],
     queryFn: async () => (await api.get<{ data: DeadStockItemDto[] }>("/reports/dead-stock")).data.data!,
+    ...REPORT_QUERY_OPTS,
   });
   const { data: predictions } = useQuery({
     queryKey: ["stockout-predictions"],
     queryFn: async () => (await api.get<{ data: StockoutPredictionDto[] }>("/reports/stockout-predictions")).data.data!,
+    ...REPORT_QUERY_OPTS,
   });
   const { data: profitData } = useQuery({
     queryKey: ["profit-by-product"],
     queryFn: async () => (await api.get<{ data: ProductProfitDto[] }>("/reports/profit-by-product")).data.data!,
+    ...REPORT_QUERY_OPTS,
   });
   const { data: staffSales } = useQuery({
     queryKey: ["staff-sales"],
     queryFn: async () => (await api.get<{ data: StaffSalesDto[] }>("/reports/staff-sales")).data.data!,
+    ...REPORT_QUERY_OPTS,
   });
 
   return (
@@ -365,37 +393,44 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
   const { data: pnl } = useQuery({
     queryKey: ["monthly-pnl"],
     queryFn: async () => (await api.get<{ data: MonthlyPnlDto }>("/reports/monthly-pnl")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: expenses } = useQuery({
     queryKey: ["expense-breakdown"],
     queryFn: async () => (await api.get<{ data: ExpenseBreakdownDto }>("/reports/expense-breakdown")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: trend } = useQuery({
     queryKey: ["monthly-trend"],
     queryFn: async () => (await api.get<{ data: MonthlyTrendDto }>("/reports/monthly-trend?months=12")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: avgTxn } = useQuery({
     queryKey: ["avg-transaction-value"],
     queryFn: async () => (await api.get<{ data: AvgTransactionValueDto }>("/reports/avg-transaction-value?months=12")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: payments } = useQuery({
     queryKey: ["payment-methods"],
     queryFn: async () => (await api.get<{ data: PaymentMethodSplitDto }>("/reports/payment-method-split?months=6")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: heatmap } = useQuery({
     queryKey: ["sales-heatmap"],
     queryFn: async () => (await api.get<{ data: SalesHeatmapDto }>("/reports/sales-heatmap?weeks=12")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const [weeklyMonths, setWeeklyMonths] = useState(6);
   const { data: weeklyTrend } = useQuery({
     queryKey: ["weekly-sales-trend", weeklyMonths],
     queryFn: async () => (await api.get<{ data: WeeklySalesTrendDto }>(`/reports/weekly-sales-trend?months=${weeklyMonths}`)).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
 
@@ -403,16 +438,19 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
   const { data: comparison } = useQuery({
     queryKey: ["sales-comparison", compPeriod],
     queryFn: async () => (await api.get<{ data: SalesComparisonDto }>(`/reports/sales-comparison?period=${compPeriod}`)).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: categoryRevenue } = useQuery({
     queryKey: ["category-revenue"],
     queryFn: async () => (await api.get<{ data: CategoryRevenueDto }>("/reports/category-revenue?days=30")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: cashFlow } = useQuery({
     queryKey: ["cash-flow-forecast"],
     queryFn: async () => (await api.get<{ data: CashFlowForecastDto }>("/reports/cash-flow-forecast")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
 
@@ -428,7 +466,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
               <TrendingUp size={15} className="text-emerald-500" />
               Sales Comparison
             </CardTitle>
-            <select className="h-7 px-2 rounded border border-slate-200 text-xs" value={compPeriod} onChange={(e) => setCompPeriod(e.target.value as "month" | "week")}>
+            <select aria-label="Filter period" className="h-7 px-2 rounded border border-slate-200 text-xs" value={compPeriod} onChange={(e) => setCompPeriod(e.target.value as "month" | "week")}>
               <option value="month">Month vs Month</option>
               <option value="week">Week vs Week</option>
             </select>
@@ -567,7 +605,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Line type="monotone" dataKey="Revenue" stroke="#10b981" strokeWidth={2} dot={false} />
                 <Line type="monotone" dataKey="Expenses" stroke="#ef4444" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="Profit" stroke="#0ea5e9" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="Profit" stroke="#06b6d4" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           ) : <Skeleton className="h-60" />}
@@ -637,7 +675,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                   <Tooltip formatter={(v, name) => name === "Sales" ? v : formatNaira(Number(v))} labelStyle={{ fontSize: 12, fontWeight: 600 }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   <ReferenceLine y={weeklyTrend.avgWeeklyRevenue} stroke="#94a3b8" strokeDasharray="6 3" label={{ value: "Avg", position: "right", fontSize: 10, fill: "#94a3b8" }} />
-                  <Area type="monotone" dataKey="Revenue" fill="#dbeafe" stroke="#3b82f6" strokeWidth={2} fillOpacity={0.4} />
+                  <Area type="monotone" dataKey="Revenue" fill="#cffafe" stroke="#06b6d4" strokeWidth={2} fillOpacity={0.4} />
                   <Line type="monotone" dataKey="4-wk Avg" stroke="#f59e0b" strokeWidth={2} dot={false} strokeDasharray="5 3" />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -727,7 +765,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                   <Tooltip formatter={(v) => formatNaira(Number(v))} />
                   <Legend wrapperStyle={{ fontSize: 10 }} />
                   <Bar dataKey="Cash" stackId="a" fill="#10b981" />
-                  <Bar dataKey="Transfer" stackId="a" fill="#0ea5e9" />
+                  <Bar dataKey="Transfer" stackId="a" fill="#06b6d4" />
                   <Bar dataKey="POS" stackId="a" fill="#8b5cf6" />
                   <Bar dataKey="Credit" stackId="a" fill="#f59e0b" />
                   <Bar dataKey="Other" stackId="a" fill="#94a3b8" />
@@ -882,26 +920,31 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
   const { data: aging } = useQuery({
     queryKey: ["aging-receivables"],
     queryFn: async () => (await api.get<{ data: AgingReportDto }>("/reports/aging-receivables")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: topCustomers } = useQuery({
     queryKey: ["top-customers"],
     queryFn: async () => (await api.get<{ data: TopCustomersReportDto }>("/reports/top-customers?limit=20")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: reliability } = useQuery({
     queryKey: ["customer-reliability"],
     queryFn: async () => (await api.get<{ data: CustomerReliabilityDto[] }>("/reports/customer-reliability")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: retention } = useQuery({
     queryKey: ["customer-retention"],
     queryFn: async () => (await api.get<{ data: CustomerRetentionDto }>("/reports/customer-retention?months=6")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: affinity } = useQuery({
     queryKey: ["product-affinity"],
     queryFn: async () => (await api.get<{ data: ProductAffinityDto[] }>("/reports/product-affinity?limit=15")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
 
@@ -1056,7 +1099,7 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                   <Tooltip />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Bar dataKey="New" fill="#10b981" />
-                  <Bar dataKey="Returning" fill="#0ea5e9" />
+                  <Bar dataKey="Returning" fill="#06b6d4" />
                 </BarChart>
               </ResponsiveContainer>
             ) : <Skeleton className="h-48" />}
@@ -1111,16 +1154,19 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
   const { data: turnover } = useQuery({
     queryKey: ["inventory-turnover"],
     queryFn: async () => (await api.get<{ data: InventoryTurnoverDto[] }>("/reports/inventory-turnover")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: reorder } = useQuery({
     queryKey: ["reorder-suggestions"],
     queryFn: async () => (await api.get<{ data: ReorderSuggestionDto[] }>("/reports/reorder-suggestions?safetyDays=7")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: wastage } = useQuery({
     queryKey: ["wastage"],
     queryFn: async () => (await api.get<{ data: WastageReportDto }>("/reports/wastage?days=30")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
 
@@ -1242,11 +1288,13 @@ function DebtsTab({ hasAdvanced }: { hasAdvanced: boolean }) {
   const { data: aging } = useQuery({
     queryKey: ["aging-payables"],
     queryFn: async () => (await api.get<{ data: AgingReportDto }>("/reports/aging-payables")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: debtSummary } = useQuery({
     queryKey: ["outstanding-debts"],
     queryFn: async () => (await api.get<{ data: OutstandingDebtSummaryDto }>("/reports/outstanding-debts")).data.data!,
+    ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
 

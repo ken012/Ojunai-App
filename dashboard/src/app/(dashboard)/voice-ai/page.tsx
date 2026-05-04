@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Phone, CheckCircle, AlertTriangle, Clock, Save } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 import { VOICE_AI_PRICING, VOICE_AI_ANNUAL_DISCOUNT, VOICE_AI_FEATURES } from "@/lib/voice-ai-pricing";
 import { CURRENCY_META, SUPPORTED_CURRENCIES } from "@/lib/pricing";
 import type { SupportedCurrency, BillingCycle } from "@/lib/pricing";
@@ -144,15 +145,15 @@ function EnabledView({ planStatus, business }: {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Voice AI</h2>
-          <p className="text-slate-500 text-sm mt-0.5">Configure your AI phone Inventory Control Specialist</p>
-        </div>
-        <Badge className={isTrial ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}>
-          {isTrial ? `Trial — ${daysLeft} day${daysLeft !== 1 ? "s" : ""} left` : "Active"}
-        </Badge>
-      </div>
+      <PageHeader
+        title="Voice AI"
+        subtitle="Configure your AI phone inventory specialist"
+        actions={
+          <Badge className={isTrial ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}>
+            {isTrial ? `Trial — ${daysLeft} day${daysLeft !== 1 ? "s" : ""} left` : "Active"}
+          </Badge>
+        }
+      />
 
       {isTrial && daysLeft !== null && daysLeft <= 5 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">

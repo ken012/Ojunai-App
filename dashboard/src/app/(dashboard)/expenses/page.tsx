@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -8,6 +10,7 @@ import { useBusiness } from "@/lib/data-sync";
 import type { PaginatedResult, ExpenseDto, ApiResponse } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/page-header";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -72,6 +75,13 @@ export default function ExpensesPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // Auto-open create dialog from ?new=1 (dashboard quick action)
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("new") === "1" && hasPermission(Permission.RecordExpenses)) {
+      setAdding(true);
+    }
+  }, []);
+
   const { data: filters } = useQuery({
     queryKey: ["expense-filters", expenseTab],
     queryFn: async () => {
@@ -100,13 +110,15 @@ export default function ExpensesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Expenses</h2>
-          <p className="text-slate-500 text-sm mt-0.5">All recorded business expenses</p>
-        </div>
-        {hasPermission(Permission.RecordExpenses) && <Button onClick={() => setAdding(true)}>+ Add Expense</Button>}
-      </div>
+      <PageHeader
+        title="Expenses"
+        subtitle="All recorded business expenses"
+        actions={
+          hasPermission(Permission.RecordExpenses) ? (
+            <Button onClick={() => setAdding(true)}>+ Add Expense</Button>
+          ) : null
+        }
+      />
 
       {/* Expense Type Tabs */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit">

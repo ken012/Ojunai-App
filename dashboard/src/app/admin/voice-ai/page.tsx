@@ -113,7 +113,7 @@ function VoiceAIAdminContent() {
             onClick={handleUpdate}
             disabled={updating || !businessId.trim()}
             style={{
-              height: 36, padding: "0 20px", background: "#0ea5e9", color: "white", border: "none",
+              height: 36, padding: "0 20px", background: "#06b6d4", color: "white", border: "none",
               borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: updating ? 0.6 : 1
             }}
           >

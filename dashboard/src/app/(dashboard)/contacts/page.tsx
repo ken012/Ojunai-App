@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -11,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/page-header";
 // Tabs removed — using plain buttons to avoid base-ui context conflicts between two filter groups
 import {
   Table,
@@ -48,6 +51,13 @@ export default function ContactsPage() {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 250);
     return () => clearTimeout(t);
   }, [search]);
+
+  // Auto-open create dialog from ?new=1 (dashboard quick action)
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("new") === "1") {
+      setAdding(true);
+    }
+  }, []);
 
   // Fetch ALL contacts once (no server-side type filter). Both the type filter and balance filter
   // are applied client-side so they work together synchronously without async timing issues.
@@ -90,20 +100,20 @@ export default function ContactsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Contacts & Ledger</h2>
-          <p className="text-slate-500 text-sm mt-0.5">Customers, suppliers, and outstanding balances</p>
-        </div>
-        {hasPermission(Permission.ManageDebts) && (
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setRecordingDebt(true)}>
-              <CreditCard size={14} className="mr-1" /> Record Debt
-            </Button>
-            <Button onClick={() => setAdding(true)}>+ Add Contact</Button>
-          </div>
-        )}
-      </div>
+      <PageHeader
+        title="Contacts"
+        subtitle="Customers, suppliers, and outstanding balances"
+        actions={
+          hasPermission(Permission.ManageDebts) ? (
+            <>
+              <Button variant="outline" onClick={() => setRecordingDebt(true)}>
+                <CreditCard size={14} className="mr-1" /> Record Debt
+              </Button>
+              <Button onClick={() => setAdding(true)}>+ Add Contact</Button>
+            </>
+          ) : null
+        }
+      />
 
       <div className="grid grid-cols-2 gap-4">
         <Card>

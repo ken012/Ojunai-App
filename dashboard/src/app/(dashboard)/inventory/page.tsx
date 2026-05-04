@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+export const dynamic = "force-dynamic";
+
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { formatNaira } from "@/lib/format";
@@ -25,6 +27,7 @@ import { AlertTriangle, Package, Pencil, Trash2, Lock, Unlock, ShoppingCart, Ban
 import { formatDateTime } from "@/lib/format";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { UpgradeInline } from "@/components/upgrade-prompt";
+import { PageHeader } from "@/components/page-header";
 
 // ─── Category picker (reused in Add + Edit dialogs) ─────────────────────────
 function CategoryPicker({
@@ -998,6 +1001,13 @@ export default function InventoryPage() {
   const { data: planStatus } = usePlanStatus();
   const hasHolds = planStatus?.hasStockHolds ?? true;
 
+  // Auto-open create dialog from ?new=1 (dashboard quick action)
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("new") === "1" && hasPermission(Permission.ManageStock)) {
+      setAdding(true);
+    }
+  }, []);
+
   const { data: productsData, isLoading } = useQuery({
     queryKey: ["products"],
     queryFn: async () => {
@@ -1089,25 +1099,25 @@ export default function InventoryPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Inventory</h2>
-          <p className="text-slate-500 text-sm mt-0.5">Current stock levels for all products</p>
-        </div>
-        {hasPermission(Permission.ManageStock) && (
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setWastaging(true)} className="text-orange-600 border-orange-200 hover:bg-orange-50">
-              <Ban size={14} className="mr-1" /> Wastage
-            </Button>
-            {hasHolds && (
-              <Button variant="outline" onClick={() => setAddingHold(true)}>
-                <Lock size={14} className="mr-1" /> Hold Stock
+      <PageHeader
+        title="Inventory"
+        subtitle="Current stock levels for all products"
+        actions={
+          hasPermission(Permission.ManageStock) ? (
+            <>
+              <Button variant="outline" onClick={() => setWastaging(true)} className="text-orange-600 border-orange-200 hover:bg-orange-50">
+                <Ban size={14} className="mr-1" /> Wastage
               </Button>
-            )}
-            <Button onClick={() => setAdding(true)}>+ Add Product</Button>
-          </div>
-        )}
-      </div>
+              {hasHolds && (
+                <Button variant="outline" onClick={() => setAddingHold(true)}>
+                  <Lock size={14} className="mr-1" /> Hold Stock
+                </Button>
+              )}
+              <Button onClick={() => setAdding(true)}>+ Add Product</Button>
+            </>
+          ) : null
+        }
+      />
 
       {/* Low stock alert banner */}
       {lowStock && lowStock.length > 0 && (

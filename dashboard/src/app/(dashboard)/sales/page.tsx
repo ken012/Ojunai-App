@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -13,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { SourceBadge } from "@/components/source-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/page-header";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -55,6 +58,13 @@ export default function SalesPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // Auto-open create dialog from ?new=1 query param (dashboard quick action)
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("new") === "1" && hasPermission(Permission.RecordSales)) {
+      setRecording(true);
+    }
+  }, []);
+
   const { data, isLoading } = useQuery({
     queryKey: ["sales", tab, page, statusFilter, methodFilter, sourceFilter, debouncedSearch],
     queryFn: async () => {
@@ -71,15 +81,15 @@ export default function SalesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Sales</h2>
-          <p className="text-slate-500 text-sm mt-0.5">All recorded sales transactions</p>
-        </div>
-        {tab === "active" && hasPermission(Permission.RecordSales) && (
-          <Button onClick={() => setRecording(true)}>+ Record Sale</Button>
-        )}
-      </div>
+      <PageHeader
+        title="Sales"
+        subtitle="All recorded sales transactions"
+        actions={
+          tab === "active" && hasPermission(Permission.RecordSales) ? (
+            <Button onClick={() => setRecording(true)}>+ Record Sale</Button>
+          ) : null
+        }
+      />
 
       <Tabs value={tab} onValueChange={(v) => { setTab(v as "active" | "voided" | "returned"); setPage(1); }}>
         <TabsList>

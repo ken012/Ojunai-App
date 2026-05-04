@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { PageHeader } from "@/components/page-header";
 import { formatDateTime } from "@/lib/format";
 import { hasPermission, Permission } from "@/lib/permissions";
 import { usePlanStatus } from "@/lib/use-plan-status";
@@ -248,18 +249,16 @@ export default function ReservationsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Order Reservations</h2>
-          <p className="text-slate-500 text-sm mt-0.5">
-            Track all stock holds from dashboard, WhatsApp{hasVoiceAI ? ", and Voice AI" : ""}
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
-          <RefreshCw size={14} className={`mr-1 ${refreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
-      </div>
+      <PageHeader
+        title="Reservations"
+        subtitle={`Track all stock holds from dashboard, WhatsApp${hasVoiceAI ? ", and Voice AI" : ""}`}
+        actions={
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
+            <RefreshCw size={14} className={`mr-1 ${refreshing ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        }
+      />
 
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4">

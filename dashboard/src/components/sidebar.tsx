@@ -44,11 +44,7 @@ const navGroups: NavGroup[] = [
   },
   {
     label: "Stock",
-    items: [
-      { href: "/inventory", label: "Inventory", icon: Package },
-      { href: "/import", label: "Import", icon: FileUp },
-      { href: "/export", label: "Export", icon: Download },
-    ],
+    items: [{ href: "/inventory", label: "Inventory", icon: Package }],
   },
   {
     label: "People",
@@ -59,6 +55,13 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/reports", label: "Reports", icon: BarChart3 },
       { href: "/activity", label: "Activity", icon: Activity },
+    ],
+  },
+  {
+    label: "Data",
+    items: [
+      { href: "/import", label: "Import", icon: FileUp },
+      { href: "/export", label: "Export", icon: Download },
     ],
   },
   {
