@@ -1,10 +1,10 @@
+"use client";
+
+import { useId } from "react";
+
 /**
- * Ojunai logo mark — matches the marketing website exactly.
- * Inline SVG eye icon on indigo gradient background + wordmark.
- *
- * Brand colors (from website style.css):
- *   --brand:     #4F46E5  (indigo-600)
- *   --brand-mid: #6366F1  (indigo-500)
+ * Ojunai brand logo — exact replica of the website's favicon.svg / apple-touch-icon.
+ * Indigo gradient (#6366F1 → #4338CA), white eye with indigo pupil center.
  */
 
 export function LogoMark({
@@ -18,11 +18,13 @@ export function LogoMark({
   className?: string;
   wordmarkColor?: string;
 }) {
-  const iconClass =
-    size === "sm" ? "w-7 h-7 rounded-lg" :
-    size === "lg" ? "w-12 h-12 rounded-2xl" :
-    "w-9 h-9 rounded-xl";
-  const svgSize = size === "sm" ? 16 : size === "lg" ? 28 : 22;
+  // Unique gradient ID per render so multiple instances don't conflict
+  const gradId = useId();
+
+  const px =
+    size === "sm" ? 28 :
+    size === "lg" ? 56 :
+    36;
   const wordmarkSize =
     size === "sm" ? "text-base" :
     size === "lg" ? "text-2xl" :
@@ -30,22 +32,31 @@ export function LogoMark({
 
   return (
     <div className={`inline-flex items-center gap-2.5 ${className}`}>
-      <div
-        className={`${iconClass} flex items-center justify-center bg-gradient-to-br from-[#4F46E5] to-[#6366F1] flex-shrink-0`}
-        aria-hidden="true"
+      <svg
+        width={px}
+        height={px}
+        viewBox="0 0 64 64"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-label="Ojunai"
+        className="flex-shrink-0"
       >
-        <svg
-          width={svgSize}
-          height={svgSize}
-          viewBox="0 0 24 24"
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#6366F1" />
+            <stop offset="100%" stopColor="#4338CA" />
+          </linearGradient>
+        </defs>
+        <rect width="64" height="64" rx="14" fill={`url(#${gradId})`} />
+        <path
+          d="M10 32 C 18 18, 46 18, 54 32 C 46 46, 18 46, 10 32 Z"
           fill="none"
-          stroke="white"
-          strokeWidth="2"
-        >
-          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
-          <circle cx="12" cy="12" r="3" fill="white" stroke="none" />
-        </svg>
-      </div>
+          stroke="#FFFFFF"
+          strokeWidth="3.5"
+          strokeLinejoin="round"
+        />
+        <circle cx="32" cy="32" r="7" fill="#FFFFFF" />
+        <circle cx="32" cy="32" r="3" fill="#4338CA" />
+      </svg>
       {showWordmark && (
         <span
           className={`${wordmarkSize} font-bold tracking-[0.08em]`}
