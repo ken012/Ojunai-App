@@ -32,7 +32,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, Ban, Trash2, RotateCcw, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Ban, Trash2, RotateCcw, Search, X, ShoppingCart } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
 
 function statusVariant(status: string) {
   if (status === "Paid") return "default";
@@ -230,8 +231,27 @@ export default function SalesPage() {
                   ))}
                   {data?.items.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-8 text-slate-400 text-sm">
-                        {tab === "voided" ? "No voided sales" : tab === "returned" ? "No returned sales" : "No sales yet"}
+                      <TableCell colSpan={9} className="p-0">
+                        <EmptyState
+                          icon={<ShoppingCart size={22} />}
+                          title={
+                            tab === "voided"
+                              ? "No voided sales"
+                              : tab === "returned"
+                              ? "No returned sales"
+                              : "No sales yet"
+                          }
+                          description={
+                            tab === "active"
+                              ? "Record your first sale via WhatsApp or click + Record Sale above."
+                              : undefined
+                          }
+                          action={
+                            tab === "active" && hasPermission(Permission.RecordSales) ? (
+                              <Button onClick={() => setRecording(true)}>+ Record Sale</Button>
+                            ) : undefined
+                          }
+                        />
                       </TableCell>
                     </TableRow>
                   )}

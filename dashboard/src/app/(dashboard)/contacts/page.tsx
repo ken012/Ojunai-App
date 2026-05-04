@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
 // Tabs removed — using plain buttons to avoid base-ui context conflicts between two filter groups
 import {
   Table,
@@ -314,14 +315,28 @@ export default function ContactsPage() {
                 ))}
                 {contacts.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-slate-400">
-                      <Users size={24} className="mx-auto mb-2 opacity-30" />
-                      {debouncedSearch
-                        ? <>No contacts match &ldquo;{debouncedSearch}&rdquo;.</>
-                        : balanceFilter === "bal-receivable" ? "No contacts with outstanding receivables."
-                        : balanceFilter === "bal-payable" ? "No contacts with outstanding payables."
-                        : balanceFilter === "bal-settled" ? "No fully settled contacts."
-                        : "No contacts yet"}
+                    <TableCell colSpan={6} className="p-0">
+                      <EmptyState
+                        icon={<Users size={22} />}
+                        title={
+                          debouncedSearch
+                            ? `No contacts match "${debouncedSearch}"`
+                            : balanceFilter === "bal-receivable" ? "No contacts with outstanding receivables"
+                            : balanceFilter === "bal-payable" ? "No contacts with outstanding payables"
+                            : balanceFilter === "bal-settled" ? "No fully settled contacts"
+                            : "No contacts yet"
+                        }
+                        description={
+                          !debouncedSearch && balanceFilter === "bal-all" && typeFilter === "all"
+                            ? "Add your first customer or supplier to track receivables and payables."
+                            : undefined
+                        }
+                        action={
+                          !debouncedSearch && balanceFilter === "bal-all" && typeFilter === "all" && hasPermission(Permission.ManageDebts) ? (
+                            <Button onClick={() => setAdding(true)}>+ Add Contact</Button>
+                          ) : undefined
+                        }
+                      />
                     </TableCell>
                   </TableRow>
                 )}

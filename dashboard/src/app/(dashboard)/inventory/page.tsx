@@ -28,6 +28,7 @@ import { formatDateTime } from "@/lib/format";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { UpgradeInline } from "@/components/upgrade-prompt";
 import { PageHeader } from "@/components/page-header";
+import { EmptyState } from "@/components/empty-state";
 
 // ─── Category picker (reused in Add + Edit dialogs) ─────────────────────────
 function CategoryPicker({
@@ -1340,13 +1341,25 @@ export default function InventoryPage() {
             />
           ))}
           {filteredProducts.length === 0 && (
-            <div className="col-span-3 text-center py-12 text-slate-400">
-              <Package size={32} className="mx-auto mb-2 opacity-30" />
-              <p>
-                {stockFilter !== "all" || categoryFilter || search
-                  ? "No products match this filter."
-                  : "No products yet. Add them by messaging Ojunai on WhatsApp."}
-              </p>
+            <div className="col-span-3">
+              <EmptyState
+                icon={<Package size={22} />}
+                title={
+                  stockFilter !== "all" || categoryFilter || search
+                    ? "No products match this filter"
+                    : "No products yet"
+                }
+                description={
+                  stockFilter !== "all" || categoryFilter || search
+                    ? "Try clearing filters or searching a different term."
+                    : "Add your first product via WhatsApp or click + Add Product above."
+                }
+                action={
+                  !(stockFilter !== "all" || categoryFilter || search) && hasPermission(Permission.ManageStock) ? (
+                    <Button onClick={() => setAdding(true)}>+ Add Product</Button>
+                  ) : undefined
+                }
+              />
             </div>
           )}
         </div>
