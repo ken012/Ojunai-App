@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy | BizPilot AI",
+  title: "Privacy Policy | Ojunai",
   description:
-    "Privacy Policy for BizPilot AI — how we collect, use, and protect your business data.",
+    "Privacy Policy for Ojunai — how we collect, use, and protect your business data.",
 };
 
 export default function PrivacyPage() {
@@ -16,7 +16,7 @@ export default function PrivacyPage() {
             href="/login"
             className="text-sm text-sky-600 hover:underline"
           >
-            &larr; Back to BizPilot
+            &larr; Back to Ojunai
           </Link>
         </div>
 
@@ -27,7 +27,7 @@ export default function PrivacyPage() {
 
         <div className="space-y-8 text-slate-700 leading-relaxed">
           <p>
-            BizPilot AI (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or
+            Ojunai (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or
             &ldquo;our&rdquo;) is committed to protecting your privacy. This
             Privacy Policy explains how we collect, use, store, and share your
             information when you use our platform.
@@ -55,7 +55,7 @@ export default function PrivacyPage() {
               </li>
               <li>
                 <strong>WhatsApp messages:</strong> Messages you send to and
-                receive from BizPilot AI via WhatsApp, including text, images,
+                receive from Ojunai via WhatsApp, including text, images,
                 and documents shared during conversations.
               </li>
               <li>
@@ -121,7 +121,7 @@ export default function PrivacyPage() {
               4. WhatsApp Messages
             </h2>
             <p>
-              WhatsApp messages you send to BizPilot AI are processed by our AI
+              WhatsApp messages you send to Ojunai are processed by our AI
               (powered by Anthropic&rsquo;s Claude) to understand and fulfil your
               requests. Your conversation history is stored to maintain context
               across interactions and provide a seamless experience.
@@ -157,7 +157,7 @@ export default function PrivacyPage() {
               <li>
                 <strong>Twilio (WhatsApp):</strong> Message delivery. Twilio
                 handles the technical delivery of messages between you and
-                BizPilot AI on WhatsApp.
+                Ojunai on WhatsApp.
               </li>
             </ul>
             <p className="mt-3">
@@ -252,10 +252,10 @@ export default function PrivacyPage() {
             <p className="mt-3">
               To exercise any of these rights, contact us at{" "}
               <a
-                href="mailto:contact@bizpilot-ai.com"
+                href="mailto:contact@ojunai.com"
                 className="text-sky-600 hover:underline"
               >
-                contact@bizpilot-ai.com
+                contact@ojunai.com
               </a>
               . We will respond within 30 days.
             </p>
@@ -302,10 +302,10 @@ export default function PrivacyPage() {
               If you have questions or concerns about this Privacy Policy or how
               we handle your data, please contact us at{" "}
               <a
-                href="mailto:contact@bizpilot-ai.com"
+                href="mailto:contact@ojunai.com"
                 className="text-sky-600 hover:underline"
               >
-                contact@bizpilot-ai.com
+                contact@ojunai.com
               </a>
               .
             </p>

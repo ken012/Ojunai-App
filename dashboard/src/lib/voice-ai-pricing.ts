@@ -17,5 +17,5 @@ export const VOICE_AI_FEATURES = [
   "Multi-language support (English, Yoruba, Hausa, Igbo)",
   "24/7 availability — never miss a customer call",
   "Call logs and interaction history",
-  "Seamless BizPilot inventory integration",
+  "Seamless Ojunai inventory integration",
 ];

@@ -410,7 +410,7 @@ function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-slate-600">
-            BizPilot understands natural language. Here are some example commands you can send via WhatsApp:
+            Ojunai understands natural language. Here are some example commands you can send via WhatsApp:
           </p>
           <div className="grid grid-cols-1 gap-2 mt-2">
             {[
@@ -440,7 +440,7 @@ function SettingsPage() {
             className="flex items-center justify-center gap-2 w-full px-4 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors"
           >
             <MessageSquare size={16} />
-            Chat with BizPilot on WhatsApp
+            Chat with Ojunai on WhatsApp
           </a>
         </CardContent>
       </Card>
@@ -1077,9 +1077,9 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
         currency: result.currency,
       },
       customizations: {
-        title: "BizPilot AI",
+        title: "Ojunai",
         description: `${(result.plan as string).charAt(0).toUpperCase() + (result.plan as string).slice(1)} Plan — ${result.billingCycle}`,
-        logo: "https://app.bizpilot-ai.com/favicon.ico",
+        logo: "https://app.ojunai.com/favicon.ico",
       },
       callback: async (response: { transaction_id?: string; tx_ref?: string }) => {
         clearTimeout(timeout);
@@ -1359,8 +1359,8 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
                     );
                   })}
                 <a
-                  href={`mailto:contact@bizpilot-ai.com?subject=${encodeURIComponent("Business Plan Enquiry")}&body=${encodeURIComponent(
-                    `Hi BizPilot Team,\n\nI'm interested in the Business plan.\n\nI'd like to learn more about:\n- Multi-branch support\n- Custom report exports\n- Bulk CSV import\n- API access\n- Unlimited staff accounts\n\nPlease get in touch to discuss my requirements.\n\nBusiness name: ${business?.name ?? "[Your business name]"}\n\nThank you.`
+                  href={`mailto:contact@ojunai.com?subject=${encodeURIComponent("Business Plan Enquiry")}&body=${encodeURIComponent(
+                    `Hi Ojunai Team,\n\nI'm interested in the Business plan.\n\nI'd like to learn more about:\n- Multi-branch support\n- Custom report exports\n- Bulk CSV import\n- API access\n- Unlimited staff accounts\n\nPlease get in touch to discuss my requirements.\n\nBusiness name: ${business?.name ?? "[Your business name]"}\n\nThank you.`
                   )}`}
                   className="flex items-center justify-center w-full h-9 text-sm font-medium rounded-lg border-2 border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:border-amber-500 transition-colors"
                 >
@@ -1404,8 +1404,8 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
             {/* Business — contact us */}
             {PLAN_ORDER.indexOf(plan) < PLAN_ORDER.indexOf("business") && (
               <a
-                href={`mailto:contact@bizpilot-ai.com?subject=${encodeURIComponent("Business Plan Enquiry")}&body=${encodeURIComponent(
-                  `Hi BizPilot Team,\n\nI'm currently on the ${details.label} plan and I'm interested in upgrading to the Business plan.\n\nI'd like to learn more about:\n- Multi-branch support\n- Custom report exports\n- Bulk CSV import\n- API access\n- Unlimited staff accounts\n\nPlease get in touch to discuss my requirements.\n\nBusiness name: ${business?.name ?? "[Your business name]"}\n\nThank you.`
+                href={`mailto:contact@ojunai.com?subject=${encodeURIComponent("Business Plan Enquiry")}&body=${encodeURIComponent(
+                  `Hi Ojunai Team,\n\nI'm currently on the ${details.label} plan and I'm interested in upgrading to the Business plan.\n\nI'd like to learn more about:\n- Multi-branch support\n- Custom report exports\n- Bulk CSV import\n- API access\n- Unlimited staff accounts\n\nPlease get in touch to discuss my requirements.\n\nBusiness name: ${business?.name ?? "[Your business name]"}\n\nThank you.`
                 )}`}
                 className="flex items-center justify-center w-full h-11 text-base font-semibold rounded-lg border-2 border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:border-amber-500 transition-colors shadow-sm"
               >

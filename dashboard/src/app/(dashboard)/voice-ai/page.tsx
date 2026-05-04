@@ -67,7 +67,7 @@ function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurre
   const sym = CURRENCY_META[currency]?.symbol ?? currency;
 
   const contactSubject = encodeURIComponent("Voice AI — Enable for my business");
-  const contactBody = encodeURIComponent("Hi BizPilot Team,\n\nI'm interested in enabling Voice AI for my business.\n\nPlease get in touch to set it up.\n\nThank you.");
+  const contactBody = encodeURIComponent("Hi Ojunai Team,\n\nI'm interested in enabling Voice AI for my business.\n\nPlease get in touch to set it up.\n\nThank you.");
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
@@ -107,7 +107,7 @@ function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurre
               <p className="text-xs text-slate-400">{cycle === "annual" ? `per year (${sym}${monthlyEquiv.toLocaleString()}/mo)` : "per month"}</p>
             </div>
             <a
-              href={`mailto:hello@bizpilot-ai.com?subject=${contactSubject}&body=${contactBody}`}
+              href={`mailto:hello@ojunai.com?subject=${contactSubject}&body=${contactBody}`}
               className="flex items-center justify-center gap-2 w-full py-3 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-sm font-semibold transition-colors"
             >
               <Phone size={16} />

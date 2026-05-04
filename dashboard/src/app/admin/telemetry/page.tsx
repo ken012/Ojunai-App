@@ -77,7 +77,7 @@ function TelemetryPageInner() {
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="max-w-6xl mx-auto space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">BizPilot Telemetry</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Ojunai Telemetry</h1>
           <p className="text-sm text-slate-500 mt-1">
             Production observability over WhatsApp message logs. Misparse rate, retry chains, confidence distribution, and top failing phrasings.
           </p>

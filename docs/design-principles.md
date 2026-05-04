@@ -1,4 +1,4 @@
-# BizPilot Design Principles
+# Ojunai Design Principles
 
 Six rules every code change in this repo is reviewed against. Each one exists because a specific class of bug appeared more than once. These aren't guidelines — they're invariants.
 
@@ -44,7 +44,7 @@ When two layers both call `BeginTransactionAsync` on the same `DbContext`, Npgsq
 
 ## 5. Every new intent flag has at least 10 test cases before it ships.
 
-When we add a new Claude flag (`sellHalfProduct`, `clearAllDebts`, `discountPercent`), we need realistic test coverage across phrasing variations, Pidgin, typos, follow-up patterns, and edge cases (empty stock, missing price, multiple products). The test corpus at `BizPilot.Tests/Corpus/conversation-corpus.yml` is where these live.
+When we add a new Claude flag (`sellHalfProduct`, `clearAllDebts`, `discountPercent`), we need realistic test coverage across phrasing variations, Pidgin, typos, follow-up patterns, and edge cases (empty stock, missing price, multiple products). The test corpus at `Ojunai.Tests/Corpus/conversation-corpus.yml` is where these live.
 
 **Why.** Users don't write the canonical phrasing. They write "Sell half my shampoo", "half of the shampoo", "sell halfff my shampoo", "I wan sell half". If the new flag only works for the single phrasing the developer tested manually, half of production will misparse.
 

@@ -1,4 +1,4 @@
-# BizPilot AI — Production Secrets Rotation Plan
+# Ojunai — Production Secrets Rotation Plan
 
 **Date:** April 2026  
 **Status:** Pre-production  
@@ -8,7 +8,7 @@
 
 ## Overview
 
-BizPilot AI uses environment variables for all secrets in production. The `appsettings.json` file contains empty placeholders. Development secrets in `appsettings.Development.json` are gitignored and never committed.
+Ojunai uses environment variables for all secrets in production. The `appsettings.json` file contains empty placeholders. Development secrets in `appsettings.Development.json` are gitignored and never committed.
 
 Before go-live, all test keys must be replaced with live/production keys from each provider.
 
@@ -29,7 +29,7 @@ Before go-live, all test keys must be replaced with live/production keys from ea
 | `Flutterwave:ClientId` | Flutterwave Dashboard | OAuth credentials (live) |
 | `Flutterwave:ClientSecret` | Flutterwave Dashboard | OAuth credentials (live) |
 | `Flutterwave:WebhookSecret` | Self-generated | Run `openssl rand -hex 32` and set in Flutterwave webhook settings |
-| Database password | PostgreSQL | `ALTER USER bizpilot_user WITH PASSWORD 'new-strong-password';` |
+| Database password | PostgreSQL | `ALTER USER ojunai_user WITH PASSWORD 'new-strong-password';` |
 
 ---
 
@@ -38,19 +38,19 @@ Before go-live, all test keys must be replaced with live/production keys from ea
 Edit your environment file:
 
 ```bash
-sudo nano /etc/bizpilot/api.env
+sudo nano /etc/ojunai/api.env
 ```
 
 Set all secrets using double-underscore notation for nested keys:
 
 ```env
 # Database
-ConnectionStrings__DefaultConnection=Host=your-db-host;Port=5432;Database=bizpilot;Username=bizpilot_user;Password=NEW_PASSWORD
+ConnectionStrings__DefaultConnection=Host=your-db-host;Port=5432;Database=ojunai;Username=ojunai_user;Password=NEW_PASSWORD
 
 # JWT
 Jwt__Secret=NEW_64_BYTE_BASE64_KEY
-Jwt__Issuer=bizpilot-api
-Jwt__Audience=bizpilot-dashboard
+Jwt__Issuer=ojunai-api
+Jwt__Audience=ojunai-dashboard
 Jwt__ExpiryHours=24
 
 # Claude AI
@@ -74,10 +74,10 @@ Flutterwave__ClientId=YOUR_LIVE_CLIENT_ID
 Flutterwave__ClientSecret=YOUR_LIVE_CLIENT_SECRET
 Flutterwave__ApiBaseUrl=https://api.flutterwave.com
 Flutterwave__WebhookSecret=NEW_HEX_HASH
-Flutterwave__CallbackUrl=https://app.bizpilot-ai.com/settings
+Flutterwave__CallbackUrl=https://app.ojunai.com/settings
 
 # CORS
-Cors__AllowedOrigins=https://app.bizpilot-ai.com
+Cors__AllowedOrigins=https://app.ojunai.com
 ```
 
 ---
@@ -86,9 +86,9 @@ Cors__AllowedOrigins=https://app.bizpilot-ai.com
 
 | Provider | Dashboard Location | Webhook URL |
 |----------|--------------------|-------------|
-| Paystack | Settings > Webhooks | `https://api.bizpilot-ai.com/api/subscription/webhook` |
-| Flutterwave | Settings > Webhooks | `https://api.bizpilot-ai.com/api/subscription/webhook/flutterwave` |
-| Twilio | Phone Numbers > WhatsApp | `https://api.bizpilot-ai.com/api/webhooks/whatsapp` |
+| Paystack | Settings > Webhooks | `https://api.ojunai.com/api/subscription/webhook` |
+| Flutterwave | Settings > Webhooks | `https://api.ojunai.com/api/subscription/webhook/flutterwave` |
+| Twilio | Phone Numbers > WhatsApp | `https://api.ojunai.com/api/webhooks/whatsapp` |
 
 For Flutterwave, also set the **Secret Hash** to the same value as `Flutterwave__WebhookSecret`.
 
@@ -98,14 +98,14 @@ For Flutterwave, also set the **Secret Hash** to the same value as `Flutterwave_
 
 ```bash
 # 1. Restart the API server
-sudo systemctl restart bizpilot-api
+sudo systemctl restart ojunai-api
 
 # 2. Check health
-curl https://api.bizpilot-ai.com/health
+curl https://api.ojunai.com/health
 # Expected: {"status":"ok","database":"connected"}
 
 # 3. Check pricing endpoint (public, no auth)
-curl https://api.bizpilot-ai.com/api/subscription/pricing
+curl https://api.ojunai.com/api/subscription/pricing
 # Expected: JSON with plan pricing
 
 # 4. Test WhatsApp
@@ -150,7 +150,7 @@ After confirming production works:
 
 1. Immediately rotate the compromised key at the provider
 2. Update the environment variable on the server
-3. Restart the API: `sudo systemctl restart bizpilot-api`
+3. Restart the API: `sudo systemctl restart ojunai-api`
 4. If JWT secret was compromised: all users are force-logged-out (tokens invalid)
 5. If payment key was compromised: check provider dashboard for unauthorized transactions
 6. Monitor logs for 24 hours after rotation

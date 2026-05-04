@@ -6,7 +6,7 @@ import { Providers } from "./providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "BizPilot AI",
+  title: "Ojunai",
   description: "WhatsApp-first AI business operator for Nigerian SMEs",
   verification: {
     google: "8-npwdTxdHqH0oAP7Nii75oolo1dgozM1oKUTwRJGR0",
