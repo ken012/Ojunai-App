@@ -14,6 +14,7 @@ public class SalesController : OjunaiBaseController
     private readonly Data.AppDbContext _db;
     private readonly IWhatsAppService _whatsApp;
     private readonly IReceiptService _receipts;
+    private readonly IEmailService _email;
     private readonly ILogger<SalesController> _logger;
 
     public SalesController(
@@ -21,12 +22,14 @@ public class SalesController : OjunaiBaseController
         Data.AppDbContext db,
         IWhatsAppService whatsApp,
         IReceiptService receipts,
+        IEmailService email,
         ILogger<SalesController> logger)
     {
         _sales = sales;
         _db = db;
         _whatsApp = whatsApp;
         _receipts = receipts;
+        _email = email;
         _logger = logger;
     }
 
@@ -120,6 +123,72 @@ public class SalesController : OjunaiBaseController
         var (bytes, receiptNumber) = await _receipts.GenerateAsync(id, BusinessId);
         var safeName = receiptNumber.Replace("/", "_");
         return File(bytes, "application/pdf", $"{safeName}.pdf");
+    }
+
+    /// <summary>
+    /// Email the receipt PDF to a recipient. Returns 503 if SMTP isn't configured.
+    /// </summary>
+    [HttpPost("{id:guid}/receipt/email")]
+    [RequirePermission(Permission.ViewOwnReports)]
+    public async Task<IActionResult> EmailReceipt(Guid id, [FromBody] EmailReceiptRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.To) || !request.To.Contains('@'))
+            return BadRequest(ApiResponse<object>.Fail("Provide a valid recipient email address."));
+
+        if (!_email.IsConfigured)
+        {
+            return StatusCode(503, ApiResponse<object>.Fail(
+                "Email is not configured for this server. Ask your admin to set the Email__* environment variables."));
+        }
+
+        var (bytes, receiptNumber) = await _receipts.GenerateAsync(id, BusinessId);
+        var sale = await _db.Sales.Include(s => s.Contact)
+            .FirstOrDefaultAsync(s => s.Id == id && s.BusinessId == BusinessId)
+            ?? throw new KeyNotFoundException("Sale not found.");
+        var business = await _db.Businesses.FindAsync(BusinessId)
+            ?? throw new KeyNotFoundException("Business not found.");
+
+        var customerName = sale.Contact?.Name ?? "there";
+        var subject = $"Your receipt from {business.Name} ({receiptNumber})";
+        var html = $@"
+<!DOCTYPE html>
+<html>
+<body style=""font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; color: #1e293b; max-width: 560px; margin: 0 auto; padding: 24px;"">
+  <h2 style=""color: #0f172a; margin: 0 0 16px;"">Thank you, {System.Net.WebUtility.HtmlEncode(customerName)}</h2>
+  <p style=""color: #475569; line-height: 1.6;"">Here is your receipt from <strong>{System.Net.WebUtility.HtmlEncode(business.Name)}</strong>.</p>
+  <div style=""background: #f1f5f9; border-radius: 8px; padding: 16px; margin: 16px 0;"">
+    <div style=""font-size: 11px; font-weight: bold; color: #06b6d4; letter-spacing: 1.2px;"">RECEIPT</div>
+    <div style=""font-size: 16px; font-weight: bold; margin-top: 4px;"">{receiptNumber}</div>
+    <div style=""font-size: 12px; color: #94a3b8; margin-top: 4px;"">Total: {BillingConfig.Symbol(business.Currency)}{sale.TotalAmount:N2}</div>
+  </div>
+  <p style=""color: #475569; line-height: 1.6;"">The full receipt is attached as a PDF.</p>
+  <p style=""color: #94a3b8; font-size: 12px; margin-top: 24px; border-top: 1px solid #e2e8f0; padding-top: 16px;"">
+    Sent by {System.Net.WebUtility.HtmlEncode(business.Name)} via Ojunai.
+  </p>
+</body>
+</html>";
+
+        try
+        {
+            await _email.SendAsync(
+                toAddress: request.To.Trim(),
+                toName: customerName,
+                subject: subject,
+                htmlBody: html,
+                attachments: new[] { new EmailAttachment($"{receiptNumber}.pdf", bytes, "application/pdf") }
+            );
+            return Ok(ApiResponse<object>.Ok(null!, $"Receipt sent to {request.To}."));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to email receipt {ReceiptNumber}", receiptNumber);
+            return StatusCode(500, ApiResponse<object>.Fail("Failed to send email. Check server logs."));
+        }
+    }
+
+    public class EmailReceiptRequest
+    {
+        public string To { get; set; } = string.Empty;
     }
 
     [HttpPost("{id:guid}/void")]

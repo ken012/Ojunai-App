@@ -33,7 +33,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, Ban, Trash2, RotateCcw, Search, X, ShoppingCart, FileDown } from "lucide-react";
+import { ChevronLeft, ChevronRight, Ban, Trash2, RotateCcw, Search, X, ShoppingCart, FileDown, Mail } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 
 function statusBadgeClass(status: string) {
@@ -48,6 +48,7 @@ export default function SalesPage() {
   const [viewing, setViewing] = useState<SaleSummaryDto | null>(null);
   const [voiding, setVoiding] = useState<SaleSummaryDto | null>(null);
   const [returning, setReturning] = useState<SaleSummaryDto | null>(null);
+  const [emailingSale, setEmailingSale] = useState<SaleSummaryDto | null>(null);
   const [tab, setTab] = useState<"active" | "voided" | "returned">("active");
   const [statusFilter, setStatusFilter] = useState("");
   const [methodFilter, setMethodFilter] = useState("");
@@ -243,6 +244,13 @@ export default function SalesPage() {
                           >
                             <FileDown size={14} />
                           </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setEmailingSale(sale); }}
+                            className="p-1 rounded hover:bg-violet-50 text-slate-500 hover:text-violet-600"
+                            title="Email receipt"
+                          >
+                            <Mail size={14} />
+                          </button>
                           {tab === "active" && hasPermission(Permission.VoidSales) && (
                             <>
                               <button
@@ -325,6 +333,11 @@ export default function SalesPage() {
       </Card>
 
       <RecordSaleDialog open={recording} onClose={() => setRecording(false)} />
+      <EmailReceiptDialog
+        sale={emailingSale}
+        open={emailingSale !== null}
+        onClose={() => setEmailingSale(null)}
+      />
       <VoidSaleDialog
         sale={voiding}
         open={voiding !== null}
@@ -347,6 +360,95 @@ export default function SalesPage() {
 }
 
 type SaleLine = { productId: string; quantity: string; unitPrice: string };
+
+// ── Email receipt dialog ─────────────────────────────────────────────────────
+function EmailReceiptDialog({
+  sale,
+  open,
+  onClose,
+}: {
+  sale: SaleSummaryDto | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  // Pre-fill (best-effort) on open from existing customer email if we had it.
+  useEffect(() => {
+    if (open) {
+      setEmail("");
+      setError(null);
+      setSuccess(null);
+    }
+  }, [open]);
+
+  async function handleSend() {
+    if (!sale || !email.includes("@")) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+    setSending(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await api.post<{ message?: string; errors?: string[] }>(
+        `/sales/${sale.id}/receipt/email`,
+        { to: email.trim() }
+      );
+      setSuccess(res.data.message ?? "Receipt sent.");
+      setTimeout(() => onClose(), 1200);
+    } catch (err: unknown) {
+      const ax = err as { response?: { status?: number; data?: { errors?: string[] } } };
+      if (ax.response?.status === 503) {
+        setError(ax.response?.data?.errors?.[0] ?? "Email is not configured for this server. Ask your admin to set SMTP credentials.");
+      } else {
+        setError(ax.response?.data?.errors?.[0] ?? "Failed to send. Try again.");
+      }
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Email receipt</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <p className="text-sm text-slate-500">
+            Send the PDF receipt for {sale?.customerName ?? "this sale"} to an email address.
+          </p>
+          <div>
+            <Label>Recipient email</Label>
+            <Input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="customer@example.com"
+              autoFocus
+            />
+          </div>
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-md px-3 py-2 text-xs text-red-700">{error}</div>
+          )}
+          {success && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 text-xs text-emerald-700">{success}</div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={sending}>Cancel</Button>
+          <Button onClick={handleSend} disabled={sending || !email}>
+            {sending ? "Sending…" : "Send receipt"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
