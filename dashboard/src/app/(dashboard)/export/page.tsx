@@ -724,7 +724,7 @@ export default function ExportPage() {
 
         {/* Inventory / Products */}
         <ExportCard
-          icon={<Package size={16} className="text-sky-600" />}
+          icon={<Package size={16} className="text-cyan-600" />}
           title="Inventory / Products"
           description="Full product catalog with pricing, stock levels, and status."
           onExport={() => handleProducts("csv")}

@@ -150,7 +150,7 @@ export default function ExpensesPage() {
             placeholder="Search by category, paid to, or notes..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            className="h-8 w-full pl-8 pr-8 rounded-md border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="h-8 w-full pl-8 pr-8 rounded-md border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500"
           />
           {search && (
             <button onClick={() => { setSearch(""); setPage(1); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-0.5 rounded" type="button">

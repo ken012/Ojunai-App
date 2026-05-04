@@ -53,7 +53,7 @@ function KpiCard({
 }) {
   return (
     <Card
-      className={`${onClick ? "cursor-pointer hover:shadow-md transition-all" : ""} ${active ? "ring-2 ring-sky-500" : ""}`}
+      className={`${onClick ? "cursor-pointer hover:shadow-md transition-all" : ""} ${active ? "ring-2 ring-cyan-500" : ""}`}
       onClick={onClick}
     >
       <CardContent className="p-5">
@@ -230,7 +230,7 @@ export default function DashboardPage() {
           value={formatNaira(ov.outstandingReceivables)}
           sub="Owed to you"
           icon={<TrendingUp size={18} />}
-          accent="text-sky-600"
+          accent="text-cyan-600"
           onClick={() => toggleExpand("receivables")}
           active={expanded === "receivables"}
         />
@@ -280,7 +280,7 @@ export default function DashboardPage() {
 
       {/* Expandable detail panels */}
       {expanded === "net" && (
-        <Card className="border-sky-200 bg-sky-50/30">
+        <Card className="border-cyan-200 bg-cyan-50/30">
           <CardContent className="p-4">
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-slate-600">Sales</span><span className="text-emerald-600 font-medium">{formatNaira(ov.todaySales)}</span></div>
@@ -294,16 +294,16 @@ export default function DashboardPage() {
       )}
 
       {expanded === "receivables" && (
-        <Card className="border-sky-200 bg-sky-50/30">
+        <Card className="border-cyan-200 bg-cyan-50/30">
           <CardContent className="p-4">
             <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Who owes you</p>
             {receivables && receivables.length > 0 ? (
               <div className="space-y-2">
                 {receivables.slice(0, 10).map((r) => (
-                  <div key={r.contactId} className="border-b border-sky-100 pb-2 last:border-0">
+                  <div key={r.contactId} className="border-b border-cyan-100 pb-2 last:border-0">
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-700 font-medium">{r.contactName}</span>
-                      <span className="text-sky-600 font-semibold">{formatNaira(r.totalReceivable)}</span>
+                      <span className="text-cyan-600 font-semibold">{formatNaira(r.totalReceivable)}</span>
                     </div>
                     {r.recentNotes && r.recentNotes.length > 0 && (
                       <div className="mt-0.5">
@@ -319,7 +319,7 @@ export default function DashboardPage() {
             ) : (
               <p className="text-sm text-slate-400">No outstanding receivables</p>
             )}
-            <button onClick={() => router.push("/contacts")} className="text-xs text-sky-600 hover:underline mt-3 block">View all contacts →</button>
+            <button onClick={() => router.push("/contacts")} className="text-xs text-cyan-600 hover:underline mt-3 block">View all contacts →</button>
           </CardContent>
         </Card>
       )}
@@ -706,7 +706,7 @@ export default function DashboardPage() {
           </CardTitle>
           <button
             onClick={() => router.push("/activity")}
-            className="text-xs text-sky-600 hover:underline"
+            className="text-xs text-cyan-600 hover:underline"
           >
             View all →
           </button>

@@ -244,7 +244,7 @@ function SettingsPage() {
             <label key={key} className="flex items-start gap-3 cursor-pointer">
               <input
                 type="checkbox"
-                className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
                 checked={business?.[key] ?? true}
                 onChange={async (e) => {
                   try {
@@ -264,7 +264,7 @@ function SettingsPage() {
           <label className="flex items-start gap-3 cursor-pointer">
             <input
               type="checkbox"
-              className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
               checked={business?.alertLargeSale ?? true}
               onChange={async (e) => {
                 try {
@@ -315,7 +315,7 @@ function SettingsPage() {
           <label className="flex items-start gap-3 cursor-pointer">
             <input
               type="checkbox"
-              className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
               checked={business?.confirmLargeSales ?? false}
               onChange={async (e) => {
                 try {
@@ -516,7 +516,7 @@ function DobField() {
       <span className="text-sm text-slate-500">Birth Year</span>
       <div className="flex items-center gap-2">
         <span className="text-sm text-slate-500">{hasDob ? "Saved" : "Not set"}</span>
-        <button onClick={() => setEditing(true)} className="text-xs text-sky-600 hover:underline">
+        <button onClick={() => setEditing(true)} className="text-xs text-cyan-600 hover:underline">
           {hasDob ? "Change" : "Set"}
         </button>
       </div>
@@ -553,17 +553,17 @@ function VoiceAISettingsCard() {
         {isActive ? (
           <div className="space-y-2">
             <p className="text-sm text-slate-600">Your AI receptionist is active.</p>
-            <a href="/voice-ai" className="text-sm text-sky-600 hover:underline">Manage Voice AI settings</a>
+            <a href="/voice-ai" className="text-sm text-cyan-600 hover:underline">Manage Voice AI settings</a>
           </div>
         ) : isSuspended ? (
           <div className="space-y-2">
             <p className="text-sm text-red-600">Voice AI is inactive due to billing.</p>
-            <a href="/voice-ai" className="text-sm text-sky-600 hover:underline">Resubscribe</a>
+            <a href="/voice-ai" className="text-sm text-cyan-600 hover:underline">Resubscribe</a>
           </div>
         ) : (
           <div className="space-y-2">
             <p className="text-sm text-slate-500">Add an AI phone receptionist that handles customer calls 24/7.</p>
-            <a href="/voice-ai" className="text-sm text-sky-600 hover:underline font-medium">Learn more and enable</a>
+            <a href="/voice-ai" className="text-sm text-cyan-600 hover:underline font-medium">Learn more and enable</a>
           </div>
         )}
       </CardContent>
@@ -698,7 +698,7 @@ function TeamMembersCard() {
                           alert(`Password reset for ${s.fullName}. They must change it on next login.`);
                         } catch { alert("Failed to reset password."); }
                       }}
-                      className="p-1 rounded hover:bg-sky-50 text-slate-400 hover:text-sky-600"
+                      className="p-1 rounded hover:bg-cyan-50 text-slate-400 hover:text-cyan-600"
                       title="Reset password"
                     >
                       <KeyRound size={14} />
@@ -816,7 +816,7 @@ function ManageCategoriesCard({
           ) : (
             <div className="flex flex-wrap gap-1.5 mt-1">
               {customCats.map((c) => (
-                <span key={c} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-sky-50 text-sky-700 border border-sky-200">
+                <span key={c} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-cyan-50 text-cyan-700 border border-cyan-200">
                   {c}
                   <button
                     onClick={() => removeCategory(c)}
@@ -886,7 +886,7 @@ const PLAN_DETAILS: Record<string, { label: string; tagline: string; color: stri
   shop: {
     label: "Shop",
     tagline: "For growing shops with staff",
-    color: "bg-sky-100 text-sky-700",
+    color: "bg-cyan-100 text-cyan-700",
     features: [
       { text: "Everything in Starter", included: true },
       { text: "Unlimited products", included: true },
@@ -1214,7 +1214,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
               onClick={() => setSelectedCurrency(c)}
               className={`px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
                 selectedCurrency === c
-                  ? "bg-sky-100 text-sky-700 border border-sky-200"
+                  ? "bg-cyan-100 text-cyan-700 border border-cyan-200"
                   : "bg-slate-50 text-slate-500 border border-slate-200 hover:bg-slate-100"
               }`}
             >
@@ -1279,12 +1279,12 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
 
         {/* Payment method picker for Flutterwave */}
         {payMethodPick && (
-          <div className="rounded-lg border border-sky-200 bg-sky-50 p-4 space-y-3">
+          <div className="rounded-lg border border-cyan-200 bg-cyan-50 p-4 space-y-3">
             <p className="text-sm font-medium text-slate-700">How would you like to pay?</p>
             <div className="grid grid-cols-1 gap-2">
               <button
                 onClick={() => openFlutterwaveCheckout(true)}
-                className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-200 bg-white hover:border-sky-300 hover:bg-sky-50 transition-colors text-left"
+                className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-200 bg-white hover:border-cyan-300 hover:bg-cyan-50 transition-colors text-left"
               >
                 <div>
                   <p className="text-sm font-medium text-slate-900">Card payment</p>
@@ -1294,7 +1294,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
               </button>
               <button
                 onClick={() => openFlutterwaveCheckout(false)}
-                className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-200 bg-white hover:border-sky-300 hover:bg-sky-50 transition-colors text-left"
+                className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-200 bg-white hover:border-cyan-300 hover:bg-cyan-50 transition-colors text-left"
               >
                 <div>
                   <p className="text-sm font-medium text-slate-900">Mobile money / Bank transfer</p>
@@ -1332,7 +1332,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
         {isBillable && !isSubscriber && (
           <div className="pt-3 space-y-3">
             <Button
-              className="w-full h-11 text-base font-semibold bg-sky-600 hover:bg-sky-700 text-white shadow-sm"
+              className="w-full h-11 text-base font-semibold bg-cyan-600 hover:bg-cyan-700 text-white shadow-sm"
               onClick={() => handleSubscribe(plan)}
               disabled={subscribing !== null}
             >
@@ -1390,7 +1390,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
                     return (
                       <Button
                         key={key}
-                        className="w-full h-11 text-base font-semibold bg-sky-600 hover:bg-sky-700 text-white shadow-sm"
+                        className="w-full h-11 text-base font-semibold bg-cyan-600 hover:bg-cyan-700 text-white shadow-sm"
                         onClick={() => handleSubscribe(key)}
                         disabled={subscribing !== null}
                       >

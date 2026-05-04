@@ -110,7 +110,7 @@ function TelemetryPageInner() {
           <button
             onClick={fetchAll}
             disabled={loading || !key}
-            className="h-9 px-4 rounded bg-sky-600 text-white text-sm font-medium hover:bg-sky-700 disabled:opacity-50"
+            className="h-9 px-4 rounded bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 disabled:opacity-50"
           >
             {loading ? "Loading..." : "Load telemetry"}
           </button>
@@ -185,7 +185,7 @@ function TelemetryPageInner() {
                     <div
                       className={
                         b.bucket.startsWith("0.90") ? "h-full bg-emerald-500"
-                        : b.bucket.startsWith("0.75") ? "h-full bg-sky-500"
+                        : b.bucket.startsWith("0.75") ? "h-full bg-cyan-500"
                         : b.bucket.startsWith("0.60") ? "h-full bg-amber-500"
                         : "h-full bg-red-500"
                       }

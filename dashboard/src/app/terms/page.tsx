@@ -14,7 +14,7 @@ export default function TermsPage() {
         <div className="mb-6">
           <Link
             href="/login"
-            className="text-sm text-sky-600 hover:underline"
+            className="text-sm text-cyan-600 hover:underline"
           >
             &larr; Back to Ojunai
           </Link>
@@ -141,7 +141,7 @@ export default function TermsPage() {
               made in error or you have a billing dispute, please contact us at{" "}
               <a
                 href="mailto:contact@ojunai.com"
-                className="text-sky-600 hover:underline"
+                className="text-cyan-600 hover:underline"
               >
                 contact@ojunai.com
               </a>
@@ -208,7 +208,7 @@ export default function TermsPage() {
               Your use of Ojunai is also governed by our{" "}
               <Link
                 href="/privacy"
-                className="text-sky-600 hover:underline font-medium"
+                className="text-cyan-600 hover:underline font-medium"
               >
                 Privacy Policy
               </Link>
@@ -280,7 +280,7 @@ export default function TermsPage() {
               us at{" "}
               <a
                 href="mailto:contact@ojunai.com"
-                className="text-sky-600 hover:underline"
+                className="text-cyan-600 hover:underline"
               >
                 contact@ojunai.com
               </a>
@@ -293,14 +293,14 @@ export default function TermsPage() {
           <p>
             <Link
               href="/privacy"
-              className="text-sky-600 hover:underline"
+              className="text-cyan-600 hover:underline"
             >
               Privacy Policy
             </Link>
             {" | "}
             <Link
               href="/login"
-              className="text-sky-600 hover:underline"
+              className="text-cyan-600 hover:underline"
             >
               Sign In
             </Link>

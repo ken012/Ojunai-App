@@ -14,7 +14,7 @@ export default function PrivacyPage() {
         <div className="mb-6">
           <Link
             href="/login"
-            className="text-sm text-sky-600 hover:underline"
+            className="text-sm text-cyan-600 hover:underline"
           >
             &larr; Back to Ojunai
           </Link>
@@ -253,7 +253,7 @@ export default function PrivacyPage() {
               To exercise any of these rights, contact us at{" "}
               <a
                 href="mailto:contact@ojunai.com"
-                className="text-sky-600 hover:underline"
+                className="text-cyan-600 hover:underline"
               >
                 contact@ojunai.com
               </a>
@@ -303,7 +303,7 @@ export default function PrivacyPage() {
               we handle your data, please contact us at{" "}
               <a
                 href="mailto:contact@ojunai.com"
-                className="text-sky-600 hover:underline"
+                className="text-cyan-600 hover:underline"
               >
                 contact@ojunai.com
               </a>
@@ -316,14 +316,14 @@ export default function PrivacyPage() {
           <p>
             <Link
               href="/terms"
-              className="text-sky-600 hover:underline"
+              className="text-cyan-600 hover:underline"
             >
               Terms of Service
             </Link>
             {" | "}
             <Link
               href="/login"
-              className="text-sky-600 hover:underline"
+              className="text-cyan-600 hover:underline"
             >
               Sign In
             </Link>

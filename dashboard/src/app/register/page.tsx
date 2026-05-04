@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -66,10 +67,15 @@ export default function RegisterPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4 py-8">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-black text-slate-900">
-            Biz<span className="text-sky-500">Pilot</span>
-          </h1>
-          <p className="text-slate-500 mt-1 text-sm">Create your business account</p>
+          <Image
+            src="/logo.jpg"
+            alt="Ojunai"
+            width={1540}
+            height={540}
+            priority
+            className="h-12 w-auto mx-auto"
+          />
+          <p className="text-slate-500 mt-3 text-sm">Create your business account</p>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
@@ -141,7 +147,7 @@ export default function RegisterPage() {
 
         <p className="text-center text-sm text-slate-500 mt-4">
           Already have an account?{" "}
-          <Link href="/login" className="text-sky-600 font-medium hover:underline">
+          <Link href="/login" className="text-cyan-600 font-medium hover:underline">
             Sign in
           </Link>
         </p>

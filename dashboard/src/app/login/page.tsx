@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -49,10 +50,15 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-black text-slate-900">
-            Biz<span className="text-sky-500">Pilot</span>
-          </h1>
-          <p className="text-slate-500 mt-1 text-sm">Sign in to your business</p>
+          <Image
+            src="/logo.jpg"
+            alt="Ojunai"
+            width={1540}
+            height={540}
+            priority
+            className="h-12 w-auto mx-auto"
+          />
+          <p className="text-slate-500 mt-3 text-sm">The eye that never blinks.</p>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
@@ -102,13 +108,13 @@ export default function LoginPage() {
 
         <div className="text-center mt-4 space-y-2">
           <p className="text-sm text-slate-500">
-            <Link href="/forgot-password" className="text-sky-600 font-medium hover:underline">
+            <Link href="/forgot-password" className="text-cyan-600 font-medium hover:underline">
               Forgot password?
             </Link>
           </p>
           <p className="text-sm text-slate-500">
             New business?{" "}
-            <Link href="/register" className="text-sky-600 font-medium hover:underline">
+            <Link href="/register" className="text-cyan-600 font-medium hover:underline">
               Register here
             </Link>
           </p>

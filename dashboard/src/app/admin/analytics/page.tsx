@@ -108,7 +108,7 @@ function AdminAnalyticsPage() {
               <span className="text-xs text-slate-500 w-36 text-right">{f.label}</span>
               <div className="flex-1 bg-slate-100 rounded-full h-6 overflow-hidden">
                 <div
-                  className="bg-sky-500 h-full rounded-full transition-all"
+                  className="bg-cyan-500 h-full rounded-full transition-all"
                   style={{ width: `${(f.count / maxCount) * 100}%` }}
                 />
               </div>

@@ -27,7 +27,7 @@ function Tabs({
 
 const tabsListVariants = cva(
   // Base: a rounded pill container that reads as a clickable button group.
-  // Matches the dashboard's sidebar aesthetic (slate surfaces with sky-500 accents on active state).
+  // Matches the dashboard's sidebar aesthetic (slate surfaces with cyan-500 accents on active state).
   "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg border border-slate-200 bg-slate-100 p-1 gap-1 text-slate-600",
   {
     variants: {
@@ -67,11 +67,11 @@ function TabsTrigger({ className, ...props }: TabsPrimitive.Tab.Props) {
         // base-ui's Tab sets aria-selected="true" on the active tab — more reliable than data-active.
         "relative cursor-pointer select-none rounded-md px-4 py-2 text-sm font-medium whitespace-nowrap transition-all outline-none",
         "text-slate-600 hover:bg-white hover:text-slate-900",
-        "focus-visible:ring-2 focus-visible:ring-sky-400/50 focus-visible:ring-offset-1",
+        "focus-visible:ring-2 focus-visible:ring-cyan-400/50 focus-visible:ring-offset-1",
         "disabled:pointer-events-none disabled:opacity-50",
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        // Active state — sky-500 blue to match the contact filter buttons
-        "aria-selected:bg-sky-500 aria-selected:text-white aria-selected:shadow-sm aria-selected:font-semibold",
+        // Active state — cyan-500 blue to match the contact filter buttons
+        "aria-selected:bg-cyan-500 aria-selected:text-white aria-selected:shadow-sm aria-selected:font-semibold",
         className
       )}
       {...props}

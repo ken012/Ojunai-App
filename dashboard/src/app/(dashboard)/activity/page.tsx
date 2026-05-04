@@ -29,7 +29,7 @@ const TYPE_CONFIG: Record<string, { label: string; color: string }> = {
   void_event: { label: "Void", color: "bg-red-100 text-red-700" },
   expense: { label: "Expense", color: "bg-orange-100 text-orange-700" },
   expense_voided: { label: "Expense [Voided]", color: "bg-red-100 text-red-700 line-through" },
-  inventory: { label: "Inventory", color: "bg-sky-100 text-sky-700" },
+  inventory: { label: "Inventory", color: "bg-cyan-100 text-cyan-700" },
   debt_recorded: { label: "Debt", color: "bg-violet-100 text-violet-700" },
   payment_received: { label: "Payment In", color: "bg-emerald-100 text-emerald-700" },
   payment_made: { label: "Payment Out", color: "bg-orange-100 text-orange-700" },
@@ -131,7 +131,7 @@ export default function ActivityPage() {
           </div>
 
           {hasFilters && (
-            <button onClick={clearFilters} className="text-xs text-sky-600 hover:underline whitespace-nowrap">
+            <button onClick={clearFilters} className="text-xs text-cyan-600 hover:underline whitespace-nowrap">
               Clear all filters
             </button>
           )}
@@ -244,7 +244,7 @@ export default function ActivityPage() {
                         variant={pageNum === page ? "default" : "outline"}
                         size="sm"
                         onClick={() => setPage(pageNum)}
-                        className={`text-xs w-8 ${pageNum === page ? "bg-sky-500 text-white" : ""}`}
+                        className={`text-xs w-8 ${pageNum === page ? "bg-cyan-500 text-white" : ""}`}
                       >
                         {pageNum}
                       </Button>

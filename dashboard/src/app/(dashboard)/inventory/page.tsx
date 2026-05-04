@@ -1132,7 +1132,7 @@ export default function InventoryPage() {
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-2 mb-3">
-              <Lock size={16} className="text-sky-500" />
+              <Lock size={16} className="text-cyan-500" />
               <h3 className="text-sm font-semibold text-slate-700">
                 Active Holds ({holds.length})
               </h3>
@@ -1185,7 +1185,7 @@ export default function InventoryPage() {
       {/* Clickable summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card
-          className={`cursor-pointer transition-all ${stockFilter === "all" ? "ring-2 ring-sky-500" : "hover:shadow-md"}`}
+          className={`cursor-pointer transition-all ${stockFilter === "all" ? "ring-2 ring-cyan-500" : "hover:shadow-md"}`}
           onClick={() => setStockFilter("all")}
         >
           <CardContent className="p-4 text-center">
@@ -1261,7 +1261,7 @@ export default function InventoryPage() {
           {(categoryFilter || search) && (
             <button
               onClick={() => { setCategoryFilter(""); setSearch(""); }}
-              className="text-xs text-sky-600 hover:underline"
+              className="text-xs text-cyan-600 hover:underline"
             >
               Clear filters
             </button>

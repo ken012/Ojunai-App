@@ -359,21 +359,21 @@ export default function ImportPage() {
           <CardContent className="pt-4">
             <p className="text-sm font-semibold text-slate-700 mb-3">How should we handle this import?</p>
             <div className="space-y-3">
-              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "new_purchase" ? "border-sky-300 bg-sky-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "new_purchase" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
                 <input type="radio" name="inv-mode" value="new_purchase" checked={importMode === "new_purchase"} onChange={() => setImportMode("new_purchase")} className="mt-0.5" />
                 <div>
                   <p className="text-sm font-medium text-slate-700">New purchase — I just bought this stock</p>
                   <p className="text-xs text-slate-500 mt-0.5">Creates products, adds stock, and records an expense.</p>
                 </div>
               </label>
-              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "existing_stock" ? "border-sky-300 bg-sky-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "existing_stock" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
                 <input type="radio" name="inv-mode" value="existing_stock" checked={importMode === "existing_stock"} onChange={() => setImportMode("existing_stock")} className="mt-0.5" />
                 <div>
                   <p className="text-sm font-medium text-slate-700">Existing stock — I already own this, moving to Ojunai</p>
                   <p className="text-xs text-slate-500 mt-0.5">Creates products and stock levels. No expense recorded since these were already paid for.</p>
                 </div>
               </label>
-              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "price_update" ? "border-sky-300 bg-sky-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "price_update" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
                 <input type="radio" name="inv-mode" value="price_update" checked={importMode === "price_update"} onChange={() => setImportMode("price_update")} className="mt-0.5" />
                 <div>
                   <p className="text-sm font-medium text-slate-700">Price update only — Just update my catalog prices</p>
@@ -390,14 +390,14 @@ export default function ImportPage() {
           <CardContent className="pt-4">
             <p className="text-sm font-semibold text-slate-700 mb-3">How should we handle this import?</p>
             <div className="space-y-3">
-              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "new_sales" ? "border-sky-300 bg-sky-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "new_sales" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
                 <input type="radio" name="sales-mode" value="new_sales" checked={importMode === "new_sales"} onChange={() => setImportMode("new_sales")} className="mt-0.5" />
                 <div>
                   <p className="text-sm font-medium text-slate-700">New sales — Record these sales and deduct stock</p>
                   <p className="text-xs text-slate-500 mt-0.5">Deducts inventory and creates receivables for credit sales.</p>
                 </div>
               </label>
-              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "historical_sales" ? "border-sky-300 bg-sky-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "historical_sales" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
                 <input type="radio" name="sales-mode" value="historical_sales" checked={importMode === "historical_sales"} onChange={() => setImportMode("historical_sales")} className="mt-0.5" />
                 <div>
                   <p className="text-sm font-medium text-slate-700">Historical sales — Import for reporting only</p>
@@ -414,14 +414,14 @@ export default function ImportPage() {
           <CardContent className="pt-4">
             <p className="text-sm font-semibold text-slate-700 mb-3">How should we handle this import?</p>
             <div className="space-y-3">
-              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "new_debts" ? "border-sky-300 bg-sky-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "new_debts" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
                 <input type="radio" name="ledger-mode" value="new_debts" checked={importMode === "new_debts"} onChange={() => setImportMode("new_debts")} className="mt-0.5" />
                 <div>
                   <p className="text-sm font-medium text-slate-700">New debts — Recording new money owed</p>
                   <p className="text-xs text-slate-500 mt-0.5">Creates receivable or payable entries as new transactions.</p>
                 </div>
               </label>
-              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "existing_debts" ? "border-sky-300 bg-sky-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "existing_debts" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
                 <input type="radio" name="ledger-mode" value="existing_debts" checked={importMode === "existing_debts"} onChange={() => setImportMode("existing_debts")} className="mt-0.5" />
                 <div>
                   <p className="text-sm font-medium text-slate-700">Existing debts — Migrating balances I{"'"}m already tracking</p>
@@ -451,7 +451,7 @@ export default function ImportPage() {
               className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
                 isProcessing
                   ? "border-slate-200 bg-slate-50 cursor-not-allowed"
-                  : "border-slate-200 hover:border-sky-400 hover:bg-sky-50/30 cursor-pointer"
+                  : "border-slate-200 hover:border-cyan-400 hover:bg-cyan-50/30 cursor-pointer"
               }`}
             >
               <Upload size={28} className="mx-auto text-slate-400 mb-2" />
@@ -522,7 +522,7 @@ export default function ImportPage() {
                           return (
                             <TableCell key={j} className="text-xs text-slate-600 p-0">
                               <input
-                                className="w-full border-0 bg-transparent text-xs px-2 py-1.5 focus:bg-white focus:ring-1 focus:ring-sky-300 rounded outline-none"
+                                className="w-full border-0 bg-transparent text-xs px-2 py-1.5 focus:bg-white focus:ring-1 focus:ring-cyan-300 rounded outline-none"
                                 value={cell}
                                 onChange={(e) => {
                                   const newRows = [...allRows];
@@ -689,13 +689,13 @@ export default function ImportPage() {
             : job.status === "Completed" && job.errorCount === 0 ? "border-emerald-200"
             : job.status === "Completed" ? "border-amber-200"
             : job.status === "Failed" ? "border-red-200"
-            : "border-sky-200"
+            : "border-cyan-200"
         }>
           <CardContent className="pt-4 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 {job.status === "Queued" && <Clock size={18} className="text-slate-400" />}
-                {job.status === "Running" && <Clock size={18} className="text-sky-500 animate-pulse" />}
+                {job.status === "Running" && <Clock size={18} className="text-cyan-500 animate-pulse" />}
                 {job.status === "Completed" && job.errorCount === 0 && <CheckCircle size={18} className="text-emerald-500" />}
                 {job.status === "Completed" && job.errorCount > 0 && <AlertTriangle size={18} className="text-amber-500" />}
                 {job.status === "Failed" && <AlertTriangle size={18} className="text-red-500" />}
@@ -716,7 +716,7 @@ export default function ImportPage() {
             {isProcessing && (
               <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-sky-500 transition-all duration-500 ease-out"
+                  className="h-full bg-cyan-500 transition-all duration-500 ease-out"
                   style={{ width: `${job.progressPercent}%` }}
                 />
               </div>

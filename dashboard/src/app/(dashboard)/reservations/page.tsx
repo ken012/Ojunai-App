@@ -57,7 +57,7 @@ type UnifiedHold = {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const SOURCE_STYLES: Record<string, { bg: string; text: string; label: string; icon?: typeof Phone }> = {
-  Manual: { bg: "bg-sky-100", text: "text-sky-700", label: "Dashboard" },
+  Manual: { bg: "bg-cyan-100", text: "text-cyan-700", label: "Dashboard" },
   WhatsApp: { bg: "bg-green-100", text: "text-green-700", label: "WhatsApp" },
   VoiceAI: { bg: "bg-violet-100", text: "text-violet-700", label: "Voice AI", icon: Phone },
   Import: { bg: "bg-slate-100", text: "text-slate-600", label: "Import" },
@@ -75,7 +75,7 @@ function SourceBadge({ source }: { source: string }) {
 
 function StatusBadge({ status, releaseReason, releaseNote }: { status: string; releaseReason?: string | null; releaseNote?: string | null }) {
   if (status === "Active" || status === "pending") return <Badge className="bg-amber-100 text-amber-700 border-0">Active</Badge>;
-  if (status === "confirmed") return <Badge className="bg-sky-100 text-sky-700 border-0">Confirmed</Badge>;
+  if (status === "confirmed") return <Badge className="bg-cyan-100 text-cyan-700 border-0">Confirmed</Badge>;
   if (status === "Converted" || (status === "fulfilled" && releaseReason === "picked_up")) return <Badge className="bg-emerald-100 text-emerald-700 border-0">Picked up</Badge>;
   if (status === "fulfilled") return <Badge className="bg-emerald-100 text-emerald-700 border-0">Fulfilled</Badge>;
   if (status === "cancelled" && releaseReason === "customer_request") return <Badge className="bg-amber-100 text-amber-700 border-0">Cancelled by customer</Badge>;
@@ -277,7 +277,7 @@ export default function ReservationsPage() {
             <p className="text-xs text-slate-500">Completed</p>
           </CardContent>
         </Card>
-        <Card className={`cursor-pointer transition-all ${tab === "all" ? "ring-2 ring-sky-500" : "hover:shadow-md"}`} onClick={() => setTab("all")}>
+        <Card className={`cursor-pointer transition-all ${tab === "all" ? "ring-2 ring-cyan-500" : "hover:shadow-md"}`} onClick={() => setTab("all")}>
           <CardContent className="p-4 text-center">
             <Package size={20} className="mx-auto text-slate-400 mb-1" />
             <p className="text-xl font-bold text-slate-900">{unified.length}</p>
@@ -393,9 +393,9 @@ export default function ReservationsPage() {
                 { value: "owner_release", label: "Customer rescheduled / asked us to" },
                 { value: "other", label: "Other" },
               ]).map((opt) => (
-                <label key={opt.value} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm ${reasonChoice === opt.value ? "border-sky-300 bg-sky-50" : "border-slate-200 hover:bg-slate-50"}`}>
+                <label key={opt.value} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm ${reasonChoice === opt.value ? "border-cyan-300 bg-cyan-50" : "border-slate-200 hover:bg-slate-50"}`}>
                   <input type="radio" name="reason" value={opt.value} checked={reasonChoice === opt.value} onChange={() => setReasonChoice(opt.value)} className="sr-only" />
-                  <span className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${reasonChoice === opt.value ? "border-sky-500 bg-sky-500" : "border-slate-300"}`} />
+                  <span className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${reasonChoice === opt.value ? "border-cyan-500 bg-cyan-500" : "border-slate-300"}`} />
                   {opt.label}
                 </label>
               ))}

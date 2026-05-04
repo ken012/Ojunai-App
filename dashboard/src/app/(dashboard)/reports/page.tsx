@@ -194,7 +194,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                 <StatRow label="Transactions" value={`${daily.saleCount}`} />
                 <StatRow label="Total Expenses" value={formatNaira(daily.totalExpenses)} accent="text-red-500" />
                 <StatRow label="Net Cash In" value={formatNaira(daily.netCashIn)} accent={daily.netCashIn >= 0 ? "text-emerald-600" : "text-red-500"} />
-                <StatRow label="Receivables" value={formatNaira(daily.outstandingReceivables)} accent="text-sky-600" />
+                <StatRow label="Receivables" value={formatNaira(daily.outstandingReceivables)} accent="text-cyan-600" />
                 <StatRow label="Payables" value={formatNaira(daily.outstandingPayables)} accent="text-orange-500" />
                 {daily.lowStockCount > 0 && (
                   <div className="mt-3 flex items-center gap-2 text-amber-600 text-xs">
@@ -210,7 +210,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <TrendingUp size={15} className="text-sky-500" />
+              <TrendingUp size={15} className="text-cyan-500" />
               This Week
             </CardTitle>
           </CardHeader>
@@ -253,7 +253,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                   <StatRow label="Sales (MTD)" value={formatNaira(cashPos.totalSalesThisMonth)} accent="text-emerald-600" />
                   <StatRow label="Expenses (MTD)" value={formatNaira(cashPos.totalExpensesThisMonth)} accent="text-red-500" />
                   <StatRow label="Est. Cash In" value={formatNaira(cashPos.estimatedCashIn)} />
-                  <StatRow label="Receivables" value={formatNaira(cashPos.outstandingReceivables)} accent="text-sky-600" />
+                  <StatRow label="Receivables" value={formatNaira(cashPos.outstandingReceivables)} accent="text-cyan-600" />
                   <StatRow label="Payables" value={formatNaira(cashPos.outstandingPayables)} accent="text-orange-500" />
                   <div className="mt-3 pt-3 border-t">
                     <div className="flex justify-between">
@@ -328,7 +328,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <Users size={15} className="text-sky-500" />
+              <Users size={15} className="text-cyan-500" />
               Staff Sales Today
             </CardTitle>
           </CardHeader>
@@ -517,7 +517,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                   <div className="space-y-2">
                     {expenses.categories.slice(0, 8).map((c, i) => {
                       const colors = [
-                        "bg-sky-500", "bg-emerald-500", "bg-violet-500", "bg-amber-500",
+                        "bg-cyan-500", "bg-emerald-500", "bg-violet-500", "bg-amber-500",
                         "bg-rose-500", "bg-teal-500", "bg-orange-500", "bg-indigo-500"
                       ];
                       return (
@@ -547,7 +547,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-            <Activity size={15} className="text-sky-500" />
+            <Activity size={15} className="text-cyan-500" />
             12-Month Trend
           </CardTitle>
         </CardHeader>
@@ -613,12 +613,12 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                   <p className="text-sm font-bold text-amber-700">{formatNaira(weeklyTrend.worstWeekRevenue)}</p>
                   <p className="text-[10px] text-amber-500">{weeklyTrend.worstWeekLabel}</p>
                 </div>
-                <div className="bg-sky-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-sky-500">Avg Growth</p>
+                <div className="bg-cyan-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-cyan-500">Avg Growth</p>
                   <p className={`text-sm font-bold ${weeklyTrend.avgGrowthPercent >= 0 ? "text-emerald-700" : "text-red-600"}`}>
                     {weeklyTrend.avgGrowthPercent >= 0 ? "+" : ""}{weeklyTrend.avgGrowthPercent}%
                   </p>
-                  <p className="text-[10px] text-sky-500">week-over-week</p>
+                  <p className="text-[10px] text-cyan-500">week-over-week</p>
                 </div>
               </div>
 
@@ -710,7 +710,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <CreditCard size={15} className="text-sky-500" />
+              <CreditCard size={15} className="text-cyan-500" />
               Payment Methods (6 months)
             </CardTitle>
           </CardHeader>
@@ -790,7 +790,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-            <DollarSign size={15} className="text-sky-500" />
+            <DollarSign size={15} className="text-cyan-500" />
             Cash Flow Forecast
           </CardTitle>
         </CardHeader>
@@ -806,9 +806,9 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                   <p className="text-xs text-red-500">Avg Weekly Out</p>
                   <p className="text-sm font-bold text-red-700">{formatNaira(cashFlow.avgWeeklyCashOut)}</p>
                 </div>
-                <div className={`rounded-lg p-3 text-center ${cashFlow.projectedMonthEndBalance >= 0 ? "bg-sky-50" : "bg-amber-50"}`}>
+                <div className={`rounded-lg p-3 text-center ${cashFlow.projectedMonthEndBalance >= 0 ? "bg-cyan-50" : "bg-amber-50"}`}>
                   <p className="text-xs text-slate-500">Month-End Projection</p>
-                  <p className={`text-sm font-bold ${cashFlow.projectedMonthEndBalance >= 0 ? "text-sky-700" : "text-amber-700"}`}>{formatNaira(cashFlow.projectedMonthEndBalance)}</p>
+                  <p className={`text-sm font-bold ${cashFlow.projectedMonthEndBalance >= 0 ? "text-cyan-700" : "text-amber-700"}`}>{formatNaira(cashFlow.projectedMonthEndBalance)}</p>
                 </div>
               </div>
               <ResponsiveContainer width="100%" height={220}>
@@ -862,10 +862,10 @@ function Heatmap({ data }: { data: SalesHeatmapDto }) {
                 const v = grid.get(`${d}-${h}`) ?? 0;
                 const intensity = max > 0 ? v / max : 0;
                 const bg = intensity === 0 ? "bg-slate-50"
-                  : intensity < 0.25 ? "bg-sky-100"
-                  : intensity < 0.5 ? "bg-sky-300"
-                  : intensity < 0.75 ? "bg-sky-500"
-                  : "bg-sky-700";
+                  : intensity < 0.25 ? "bg-cyan-100"
+                  : intensity < 0.5 ? "bg-cyan-300"
+                  : intensity < 0.75 ? "bg-cyan-500"
+                  : "bg-cyan-700";
                 return <div key={h} className={`w-5 h-5 ${bg} border border-white`} title={v > 0 ? `${day} ${h}:00 — ${formatNaira(v)}` : ""} />;
               })}
             </div>
@@ -922,7 +922,7 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
             <>
               <div className="grid grid-cols-4 gap-3 mb-4">
                 <AgingBucket label="0-30 days" amount={aging.total0To30} tone="text-emerald-600" />
-                <AgingBucket label="31-60 days" amount={aging.total31To60} tone="text-sky-600" />
+                <AgingBucket label="31-60 days" amount={aging.total31To60} tone="text-cyan-600" />
                 <AgingBucket label="61-90 days" amount={aging.total61To90} tone="text-amber-600" />
                 <AgingBucket label="90+ days" amount={aging.total90Plus} tone="text-red-600" />
               </div>
@@ -1002,7 +1002,7 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
         </Card>
 
         {/* Customer Reliability */}
-        <ExpandableList title="Customer Payment Reliability" icon={<UserCheck size={15} className="text-sky-500" />}>
+        <ExpandableList title="Customer Payment Reliability" icon={<UserCheck size={15} className="text-cyan-500" />}>
             {reliability ? (
               reliability.length > 0 ? (
                 <div className="space-y-1">
@@ -1017,7 +1017,7 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                           variant="outline"
                           className={
                             c.classification === "Prompt" ? "text-emerald-700 border-emerald-200"
-                            : c.classification === "Regular" ? "text-sky-700 border-sky-200"
+                            : c.classification === "Regular" ? "text-cyan-700 border-cyan-200"
                             : c.classification === "Slow" ? "text-amber-700 border-amber-200"
                             : "text-red-700 border-red-200"
                           }
@@ -1067,7 +1067,7 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <Link2 size={15} className="text-sky-500" />
+              <Link2 size={15} className="text-cyan-500" />
               Frequently Bought Together
             </CardTitle>
           </CardHeader>
@@ -1160,7 +1160,7 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
       </ExpandableList>
 
       {/* Inventory Turnover */}
-      <ExpandableList title="Inventory Turnover (30 days)" icon={<Activity size={15} className="text-sky-500" />} maxH="max-h-80">
+      <ExpandableList title="Inventory Turnover (30 days)" icon={<Activity size={15} className="text-cyan-500" />} maxH="max-h-80">
           {turnover ? (
             turnover.length > 0 ? (
               <div className="overflow-x-auto">
@@ -1186,7 +1186,7 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                         <td className="text-right">
                           <Badge variant="outline" className={
                             t.classification === "Fast" ? "text-emerald-700 border-emerald-200"
-                            : t.classification === "Healthy" ? "text-sky-700 border-sky-200"
+                            : t.classification === "Healthy" ? "text-cyan-700 border-cyan-200"
                             : t.classification === "Slow" ? "text-amber-700 border-amber-200"
                             : "text-red-700 border-red-200"
                           }>{t.classification}</Badge>
@@ -1258,7 +1258,7 @@ function DebtsTab({ hasAdvanced }: { hasAdvanced: boolean }) {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-            <DollarSign size={15} className="text-sky-500" />
+            <DollarSign size={15} className="text-cyan-500" />
             Outstanding Debts Summary
           </CardTitle>
         </CardHeader>
@@ -1336,7 +1336,7 @@ function DebtsTab({ hasAdvanced }: { hasAdvanced: boolean }) {
             <>
               <div className="grid grid-cols-4 gap-3 mb-4">
                 <AgingBucket label="0-30 days" amount={aging.total0To30} tone="text-emerald-600" />
-                <AgingBucket label="31-60 days" amount={aging.total31To60} tone="text-sky-600" />
+                <AgingBucket label="31-60 days" amount={aging.total31To60} tone="text-cyan-600" />
                 <AgingBucket label="61-90 days" amount={aging.total61To90} tone="text-amber-600" />
                 <AgingBucket label="90+ days" amount={aging.total90Plus} tone="text-red-600" />
               </div>

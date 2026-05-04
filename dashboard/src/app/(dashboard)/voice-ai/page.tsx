@@ -274,7 +274,7 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
             <p className="text-[10px] text-slate-400 mb-2">Language the AI greets in if it can{"'"}t auto-detect the caller{"'"}s language.</p>
             <div className="flex gap-2">
               {LANGUAGES.map((lang) => (
-                <label key={lang} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-sm ${form.defaultLanguage === lang ? "border-sky-300 bg-sky-50 text-sky-700" : "border-slate-200 text-slate-600"}`}>
+                <label key={lang} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-sm ${form.defaultLanguage === lang ? "border-cyan-300 bg-cyan-50 text-cyan-700" : "border-slate-200 text-slate-600"}`}>
                   <input type="radio" name="defaultLang" value={lang} checked={form.defaultLanguage === lang} onChange={() => set("defaultLanguage", lang)} className="sr-only" />
                   {LANG_LABELS[lang]}
                 </label>
@@ -286,7 +286,7 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
             <p className="text-[10px] text-slate-400 mb-2">Record: TwiML turn-by-turn (reliable, recommended). Streaming: real-time via Twilio ConversationRelay (lower latency, experimental).</p>
             <div className="flex gap-2">
               {(["record", "streaming"] as const).map((t) => (
-                <label key={t} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-sm ${form.voiceTransport === t ? "border-sky-300 bg-sky-50 text-sky-700" : "border-slate-200 text-slate-600"}`}>
+                <label key={t} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-sm ${form.voiceTransport === t ? "border-cyan-300 bg-cyan-50 text-cyan-700" : "border-slate-200 text-slate-600"}`}>
                   <input type="radio" name="transport" value={t} checked={form.voiceTransport === t} onChange={() => set("voiceTransport", t)} className="sr-only" />
                   {t === "record" ? "Record (recommended)" : "Streaming (experimental)"}
                 </label>
@@ -297,7 +297,7 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
             <Label className="text-xs text-slate-500">Timezone</Label>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-sm font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-md px-3 py-1.5">{businessTimezone}</span>
-              <a href="/settings" className="text-xs text-sky-600 hover:underline">Change in Settings</a>
+              <a href="/settings" className="text-xs text-cyan-600 hover:underline">Change in Settings</a>
             </div>
             <p className="text-[10px] text-slate-400 mt-1">Synced from your business settings. Used by Voice AI to interpret caller pickup times correctly.</p>
           </div>

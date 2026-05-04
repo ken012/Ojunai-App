@@ -109,7 +109,7 @@ export default function ContactsPage() {
         <Card>
           <CardContent className="p-5">
             <p className="text-xs text-slate-500 uppercase tracking-wide">Total Receivable</p>
-            <p className="text-2xl font-bold text-sky-600 mt-1">{formatNaira(totalReceivable)}</p>
+            <p className="text-2xl font-bold text-cyan-600 mt-1">{formatNaira(totalReceivable)}</p>
             <p className="text-xs text-slate-400">Owed to you</p>
           </CardContent>
         </Card>
@@ -157,7 +157,7 @@ export default function ContactsPage() {
               onClick={() => setTypeFilter(opt.value)}
               className={`px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
                 typeFilter === opt.value
-                  ? "bg-sky-500 text-white border-sky-500 shadow-sm"
+                  ? "bg-cyan-500 text-white border-cyan-500 shadow-sm"
                   : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
               }`}
             >
@@ -179,7 +179,7 @@ export default function ContactsPage() {
               onClick={() => setBalanceFilter(opt.value)}
               className={`px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
                 balanceFilter === opt.value
-                  ? "bg-sky-500 text-white border-sky-500 shadow-sm"
+                  ? "bg-cyan-500 text-white border-cyan-500 shadow-sm"
                   : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
               }`}
             >
@@ -249,7 +249,7 @@ export default function ContactsPage() {
                       {contact.outstandingReceivable > 0 ? (
                         <button
                           onClick={() => setViewingLedger(contact)}
-                          className="text-sm font-medium text-sky-600 hover:underline"
+                          className="text-sm font-medium text-cyan-600 hover:underline"
                         >
                           {formatNaira(contact.outstandingReceivable)}
                         </button>
@@ -543,8 +543,8 @@ function RecordPaymentDialog({ contact, open, onClose }: { contact: ContactDto |
               </div>
             )}
             {hasReceivable && !hasPayable && (
-              <div className="rounded-lg bg-sky-50 border border-sky-200 p-3">
-                <p className="text-sm text-sky-800">{contact.name} owes you <strong>{formatNaira(contact.outstandingReceivable)}</strong></p>
+              <div className="rounded-lg bg-cyan-50 border border-cyan-200 p-3">
+                <p className="text-sm text-cyan-800">{contact.name} owes you <strong>{formatNaira(contact.outstandingReceivable)}</strong></p>
               </div>
             )}
             <div>
@@ -558,7 +558,7 @@ function RecordPaymentDialog({ contact, open, onClose }: { contact: ContactDto |
               <button
                 type="button"
                 onClick={() => setForm({ ...form, amount: outstanding.toString() })}
-                className="text-xs text-sky-600 hover:underline mt-1"
+                className="text-xs text-cyan-600 hover:underline mt-1"
               >
                 Pay full balance ({formatNaira(outstanding)})
               </button>
@@ -648,7 +648,7 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
 
   const typeColor = (t: string, source?: string) => {
     if (source === "Adjustment") return "text-amber-600";
-    if (t === "Receivable") return "text-sky-600";
+    if (t === "Receivable") return "text-cyan-600";
     if (t === "Payable") return "text-orange-500";
     if (t.includes("Payment")) return "text-emerald-600";
     return "text-slate-600";
@@ -665,9 +665,9 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
         {contact && (contact.outstandingReceivable > 0 || contact.outstandingPayable > 0) && (
           <div className="flex gap-3 mb-2">
             {contact.outstandingReceivable > 0 && (
-              <div className="flex-1 rounded-lg bg-sky-50 border border-sky-200 px-3 py-2">
-                <p className="text-[10px] text-sky-500 uppercase tracking-wide">They owe you</p>
-                <p className="text-lg font-bold text-sky-700">{formatNaira(contact.outstandingReceivable)}</p>
+              <div className="flex-1 rounded-lg bg-cyan-50 border border-cyan-200 px-3 py-2">
+                <p className="text-[10px] text-cyan-500 uppercase tracking-wide">They owe you</p>
+                <p className="text-lg font-bold text-cyan-700">{formatNaira(contact.outstandingReceivable)}</p>
               </div>
             )}
             {contact.outstandingPayable > 0 && (
