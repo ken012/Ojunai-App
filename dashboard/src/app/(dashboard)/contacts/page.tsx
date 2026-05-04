@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Avatar } from "@/components/avatar";
+import { Drawer, DrawerHeader, DrawerBody, DrawerFooter } from "@/components/ui/drawer";
 // Tabs removed — using plain buttons to avoid base-ui context conflicts between two filter groups
 import {
   Table,
@@ -690,99 +691,109 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
 
   const canManage = hasPermission(Permission.ManageDebts);
 
+  const handleClose = () => { setEditingEntry(null); onClose(); };
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) { setEditingEntry(null); onClose(); } }}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Ledger — {contact?.name}</DialogTitle>
-        </DialogHeader>
-        {contact && (contact.outstandingReceivable > 0 || contact.outstandingPayable > 0) && (
-          <div className="flex gap-3 mb-2">
-            {contact.outstandingReceivable > 0 && (
-              <div className="flex-1 rounded-lg bg-cyan-50 border border-cyan-200 px-3 py-2">
-                <p className="text-[10px] text-cyan-500 uppercase tracking-wide">They owe you</p>
-                <p className="text-lg font-bold text-cyan-700">{formatNaira(contact.outstandingReceivable)}</p>
-              </div>
-            )}
-            {contact.outstandingPayable > 0 && (
-              <div className="flex-1 rounded-lg bg-orange-50 border border-orange-200 px-3 py-2">
-                <p className="text-[10px] text-orange-500 uppercase tracking-wide">You owe them</p>
-                <p className="text-lg font-bold text-orange-700">{formatNaira(contact.outstandingPayable)}</p>
-              </div>
-            )}
-          </div>
-        )}
-        {contact && contact.outstandingReceivable === 0 && contact.outstandingPayable === 0 && (
-          <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 mb-2">
-            <p className="text-sm font-medium text-emerald-700">Fully settled — no outstanding balance</p>
-          </div>
-        )}
-        <div className="max-h-[400px] overflow-y-auto space-y-2">
-          {isLoading ? (
-            <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16" />)}</div>
-          ) : entries && entries.length > 0 ? (
-            entries.map((e) => (
-              <div key={e.id} className="border rounded-lg px-3 py-2">
-                {editingEntry?.id === e.id ? (
-                  <div className="space-y-2">
-                    <p className="text-xs text-slate-500">Set the new total outstanding balance:</p>
-                    <div>
-                      <Label className="text-xs">New balance amount</Label>
-                      <Input type="number" value={editAmount} onChange={(ev) => setEditAmount(ev.target.value)} />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Notes</Label>
-                      <Input value={editNotes} onChange={(ev) => setEditNotes(ev.target.value)} />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" onClick={saveEdit} disabled={saving || !editAmount}>
-                        {saving ? "Saving..." : "Save"}
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => setEditingEntry(null)}>Cancel</Button>
-                    </div>
+    <Drawer open={open} onClose={handleClose} width="md">
+      {contact && (
+        <>
+          <DrawerHeader
+            title={contact.name}
+            subtitle={contact.type + (contact.phoneNumber ? ` · ${contact.phoneNumber}` : "")}
+            onClose={handleClose}
+            actions={<Avatar name={contact.name} size="md" />}
+          />
+          <DrawerBody>
+            {(contact.outstandingReceivable > 0 || contact.outstandingPayable > 0) && (
+              <div className="grid grid-cols-2 gap-3 mb-5">
+                {contact.outstandingReceivable > 0 && (
+                  <div className="rounded-lg bg-cyan-50 border border-cyan-200 px-4 py-3">
+                    <p className="text-[11px] font-semibold text-cyan-600 uppercase tracking-wider">They owe you</p>
+                    <p className="text-xl font-bold text-cyan-700 mt-1 tabular-nums">{formatNaira(contact.outstandingReceivable)}</p>
                   </div>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <span className={`text-sm font-medium ${typeColor(e.entryType, e.source)}`}>
-                        {typeLabel(e.entryType, e.source)}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm font-semibold ${typeColor(e.entryType, e.source)}`}>
-                          {e.entryType.includes("Payment") ? "-" : "+"}{formatNaira(e.amount)}
-                        </span>
-                        {canManage && e.source !== "Adjustment" && (
-                          <div className="flex gap-0.5">
-                            <button onClick={() => startEdit(e)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700" title="Edit">
-                              <Pencil size={12} />
-                            </button>
-                            <button onClick={() => deleteEntry(e.id)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500" title="Delete">
-                              <Trash2 size={12} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    {e.notes && (
-                      <p className="text-xs text-slate-600 mt-1">{e.notes}</p>
-                    )}
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-slate-400">{formatDateTime(e.createdAtUtc)}</span>
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{e.source}</Badge>
-                    </div>
-                  </>
+                )}
+                {contact.outstandingPayable > 0 && (
+                  <div className="rounded-lg bg-orange-50 border border-orange-200 px-4 py-3">
+                    <p className="text-[11px] font-semibold text-orange-600 uppercase tracking-wider">You owe them</p>
+                    <p className="text-xl font-bold text-orange-700 mt-1 tabular-nums">{formatNaira(contact.outstandingPayable)}</p>
+                  </div>
                 )}
               </div>
-            ))
-          ) : (
-            <p className="text-sm text-slate-400 text-center py-6">No ledger entries for this contact.</p>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => { setEditingEntry(null); onClose(); }}>Close</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            )}
+            {contact.outstandingReceivable === 0 && contact.outstandingPayable === 0 && (
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 mb-5">
+                <p className="text-sm font-medium text-emerald-700">Fully settled — no outstanding balance</p>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Activity</p>
+              {isLoading ? (
+                <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16" />)}</div>
+              ) : entries && entries.length > 0 ? (
+                entries.map((e) => (
+                  <div key={e.id} className="border border-slate-200 rounded-lg px-3 py-2.5 bg-white">
+                    {editingEntry?.id === e.id ? (
+                      <div className="space-y-2">
+                        <p className="text-xs text-slate-500">Set the new total outstanding balance:</p>
+                        <div>
+                          <Label className="text-xs">New balance amount</Label>
+                          <Input type="number" value={editAmount} onChange={(ev) => setEditAmount(ev.target.value)} />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Notes</Label>
+                          <Input value={editNotes} onChange={(ev) => setEditNotes(ev.target.value)} />
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={saveEdit} disabled={saving || !editAmount}>
+                            {saving ? "Saving..." : "Save"}
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => setEditingEntry(null)}>Cancel</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className={`text-sm font-medium ${typeColor(e.entryType, e.source)}`}>
+                            {typeLabel(e.entryType, e.source)}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-sm font-semibold tabular-nums ${typeColor(e.entryType, e.source)}`}>
+                              {e.entryType.includes("Payment") ? "-" : "+"}{formatNaira(e.amount)}
+                            </span>
+                            {canManage && e.source !== "Adjustment" && (
+                              <div className="flex gap-0.5">
+                                <button onClick={() => startEdit(e)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700" title="Edit">
+                                  <Pencil size={12} />
+                                </button>
+                                <button onClick={() => deleteEntry(e.id)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500" title="Delete">
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {e.notes && (
+                          <p className="text-xs text-slate-600 mt-1">{e.notes}</p>
+                        )}
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-xs text-slate-400">{formatDateTime(e.createdAtUtc)}</span>
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{e.source}</Badge>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-400 text-center py-6">No ledger entries for this contact.</p>
+              )}
+            </div>
+          </DrawerBody>
+          <DrawerFooter>
+            <Button variant="outline" onClick={handleClose}>Close</Button>
+          </DrawerFooter>
+        </>
+      )}
+    </Drawer>
   );
 }
 
