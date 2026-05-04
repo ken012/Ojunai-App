@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Roll the BizPilot API back to a previous backup.
+# Roll the Ojunai API back to a previous backup.
 # Usage:  ./rollback-api.sh
 set -e
 
-SERVER="bizpilot@46.225.108.35"
-REMOTE_DIR="/var/www/bizpilot-api"
-BACKUPS_DIR="/var/www/bizpilot-api-backups"
+SERVER="ojunai@46.225.108.35"
+REMOTE_DIR="/var/www/ojunai-api"
+BACKUPS_DIR="/var/www/ojunai-api-backups"
 
 echo "Available API backups (newest first):"
 ssh -t "$SERVER" "sudo ls -1t $BACKUPS_DIR 2>/dev/null | grep '^api-' | head -5 | nl"
@@ -24,7 +24,7 @@ echo "⏪ Rolling back to $BACKUP_NAME..."
 ssh -t "$SERVER" "
   sudo rm -rf $REMOTE_DIR
   sudo cp -r $BACKUPS_DIR/$BACKUP_NAME $REMOTE_DIR
-  sudo systemctl restart bizpilot-api
+  sudo systemctl restart ojunai-api
   sleep 3
   curl -fs http://localhost:5000/health
 "

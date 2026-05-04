@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Deploy the BizPilot Next.js dashboard to production.
+# Deploy the Ojunai Next.js dashboard to production.
 # Builds locally to catch errors, uploads source, builds on server, restarts PM2.
 # Usage:  ./deploy-dashboard.sh
 set -e
 
-SERVER="bizpilot@46.225.108.35"
-REMOTE_DIR="/var/www/bizpilot-dashboard"
-BACKUPS_DIR="/var/www/bizpilot-dashboard-backups"
-LOCAL_DIR="$HOME/Desktop/BizPilot-AI/dashboard"
+SERVER="ojunai@46.225.108.35"
+REMOTE_DIR="/var/www/ojunai-dashboard"
+BACKUPS_DIR="/var/www/ojunai-dashboard-backups"
+LOCAL_DIR="$HOME/Desktop/Ojunai-AI/dashboard"
 
 echo "🧪 Building dashboard locally to catch errors first..."
 cd "$LOCAL_DIR"
@@ -30,7 +30,7 @@ ssh -t "$SERVER" "
   cd $REMOTE_DIR
   npm ci --legacy-peer-deps
   npm run build
-  pm2 restart bizpilot-dashboard
+  pm2 restart ojunai-dashboard
   sleep 3
   curl -fs http://localhost:3000 > /dev/null
 "

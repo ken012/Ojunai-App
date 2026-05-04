@@ -292,7 +292,7 @@ export default function ExportPage() {
         s.source ?? "",
         s.recordedByName ?? "",
       ]);
-      if (mode === "csv") downloadCsv(`bizpilot-sales-${todayStamp()}.csv`, headers, rows);
+      if (mode === "csv") downloadCsv(`ojunai-sales-${todayStamp()}.csv`, headers, rows);
       else printReport("Sales Report", headers, rows, bizName);
     } catch {
       alert("Failed to export sales. Please try again.");
@@ -325,7 +325,7 @@ export default function ExportPage() {
         e.source ?? "",
         (e as ExpenseDto & { recordedByName?: string }).recordedByName ?? "",
       ]);
-      if (mode === "csv") downloadCsv(`bizpilot-expenses-${todayStamp()}.csv`, headers, rows);
+      if (mode === "csv") downloadCsv(`ojunai-expenses-${todayStamp()}.csv`, headers, rows);
       else printReport("Expenses Report", headers, rows, bizName);
     } catch {
       alert("Failed to export expenses. Please try again.");
@@ -356,7 +356,7 @@ export default function ExportPage() {
         String(p.lowStockThreshold),
         p.isActive ? "Active" : "Inactive",
       ]);
-      if (mode === "csv") downloadCsv(`bizpilot-inventory-${todayStamp()}.csv`, headers, rows);
+      if (mode === "csv") downloadCsv(`ojunai-inventory-${todayStamp()}.csv`, headers, rows);
       else printReport("Inventory Report", headers, rows, bizName);
     } catch {
       alert("Failed to export products. Please try again.");
@@ -382,7 +382,7 @@ export default function ExportPage() {
         String(c.outstandingReceivable),
         String(c.outstandingPayable),
       ]);
-      if (mode === "csv") downloadCsv(`bizpilot-contacts-${todayStamp()}.csv`, headers, rows);
+      if (mode === "csv") downloadCsv(`ojunai-contacts-${todayStamp()}.csv`, headers, rows);
       else printReport("Contacts Report", headers, rows, bizName);
     } catch {
       alert("Failed to export contacts. Please try again.");
@@ -414,7 +414,7 @@ export default function ExportPage() {
         a.recordedBy ?? "",
         fmtDate(a.createdAtUtc, tz),
       ]);
-      if (mode === "csv") downloadCsv(`bizpilot-activity-${todayStamp()}.csv`, headers, rows);
+      if (mode === "csv") downloadCsv(`ojunai-activity-${todayStamp()}.csv`, headers, rows);
       else printReport("Activity Log", headers, rows, bizName);
     } catch {
       alert("Failed to export activity log. Please try again.");
@@ -459,7 +459,7 @@ export default function ExportPage() {
           "",
         ],
       ];
-      if (mode === "csv") downloadCsv(`bizpilot-pnl-${todayStamp()}.csv`, headers, rows);
+      if (mode === "csv") downloadCsv(`ojunai-pnl-${todayStamp()}.csv`, headers, rows);
       else printReport("Profit & Loss Statement", headers, rows, bizName);
     } catch {
       alert("Failed to export P&L. Please try again.");
@@ -592,7 +592,7 @@ export default function ExportPage() {
       const contacts = contactsRes.data.data?.items ?? [];
 
       downloadCsv(
-        `bizpilot-revenue-${todayStamp()}.csv`,
+        `ojunai-revenue-${todayStamp()}.csv`,
         ["Date", "Customer", "Items", "Payment Status", "Payment Method", "Amount", "Source"],
         sales.map((s) => [
           fmtDate(s.createdAtUtc, tz),
@@ -608,7 +608,7 @@ export default function ExportPage() {
       await new Promise((r) => setTimeout(r, 500));
 
       downloadCsv(
-        `bizpilot-expenses-${todayStamp()}.csv`,
+        `ojunai-expenses-${todayStamp()}.csv`,
         ["Date", "Category", "Expense Type", "Amount", "Paid To", "Notes"],
         expenses.map((e) => [
           fmtDate(e.createdAtUtc, tz),
@@ -623,7 +623,7 @@ export default function ExportPage() {
       await new Promise((r) => setTimeout(r, 500));
 
       downloadCsv(
-        `bizpilot-contacts-balances-${todayStamp()}.csv`,
+        `ojunai-contacts-balances-${todayStamp()}.csv`,
         ["Name", "Type", "Phone", "Outstanding Receivable", "Outstanding Payable"],
         contacts.map((c) => [
           c.name,

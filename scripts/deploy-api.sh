@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Deploy the BizPilot .NET API to production.
+# Deploy the Ojunai .NET API to production.
 # Usage:  ./deploy-api.sh
 set -e
 
-SERVER="bizpilot@46.225.108.35"
-REMOTE_DIR="/var/www/bizpilot-api"
-BACKUPS_DIR="/var/www/bizpilot-api-backups"
-LOCAL_DIR="$HOME/Desktop/BizPilot-AI/BizPilot.API"
+SERVER="ojunai@46.225.108.35"
+REMOTE_DIR="/var/www/ojunai-api"
+BACKUPS_DIR="/var/www/ojunai-api-backups"
+LOCAL_DIR="$HOME/Desktop/Ojunai-AI/Ojunai.API"
 
 echo "🔨 Building API locally..."
 cd "$LOCAL_DIR"
@@ -33,7 +33,7 @@ echo "🔄 Restarting service..."
 # Restart, then poll /health for up to 30 seconds so we wait through migrations and Hangfire startup
 # before declaring the deploy done. Without this, a slow cold start would fail a single 3-second health
 # check and the script would abort before printing the success message even when the app is actually fine.
-ssh -t "$SERVER" "sudo systemctl restart bizpilot-api && \
+ssh -t "$SERVER" "sudo systemctl restart ojunai-api && \
   for i in \$(seq 1 30); do \
     if curl -fs http://localhost:5000/health > /dev/null; then \
       echo \"✓ Health check passed after \${i}s\"; \
@@ -42,7 +42,7 @@ ssh -t "$SERVER" "sudo systemctl restart bizpilot-api && \
     sleep 1; \
   done; \
   echo \"✗ Health check never passed after 30s\"; \
-  sudo systemctl status bizpilot-api --no-pager | head -20; \
+  sudo systemctl status ojunai-api --no-pager | head -20; \
   exit 1"
 
 echo ""

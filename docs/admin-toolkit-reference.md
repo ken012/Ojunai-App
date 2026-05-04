@@ -1,7 +1,7 @@
-# BizPilot AI — Admin Toolkit & Metrics Reference
+# Ojunai — Admin Toolkit & Metrics Reference
 
 **Last updated:** April 2026  
-**Base URL:** `https://api.bizpilot-ai.com/api`  
+**Base URL:** `https://api.ojunai.com/api`  
 **Authentication:** All admin endpoints require `?key=YOUR_ADMIN_KEY` query parameter.
 
 ---

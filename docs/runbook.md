@@ -1,4 +1,4 @@
-# BizPilot Runbook — Diagnosing Real User Issues
+# Ojunai Runbook — Diagnosing Real User Issues
 
 When a customer complains that the bot did something wrong, follow this flow. It should take 5-10 minutes from "user complaint" to "fix identified."
 
@@ -16,7 +16,7 @@ Without those three, you're debugging blind.
 On the Hetzner box:
 
 ```bash
-ssh bizpilot@46.225.108.35
+ssh ojunai@46.225.108.35
 psql -h localhost -U <user> -d <db>
 ```
 
@@ -64,7 +64,7 @@ The `ParsedPayloadJson` field shows exactly what Claude emitted. Common issues:
 If the parse was clean but the handler failed or returned wrong output:
 
 ```bash
-sudo journalctl -u bizpilot-api --since "1 hour ago" --no-pager | grep -i "Intent execution failed\|error\|exception" | head -50
+sudo journalctl -u ojunai-api --since "1 hour ago" --no-pager | grep -i "Intent execution failed\|error\|exception" | head -50
 ```
 
 Look for exceptions with the same timestamp as the message. The `Intent execution failed for {Intent}` line tells you which handler threw.
@@ -79,7 +79,7 @@ Common handler-level bugs:
 
 This is the step that prevents the bug from recurring. For every real failure:
 
-1. Add a YAML entry to `BizPilot.Tests/Corpus/conversation-corpus.yml` with the exact message and expected outcome
+1. Add a YAML entry to `Ojunai.Tests/Corpus/conversation-corpus.yml` with the exact message and expected outcome
 2. Run the corpus runner locally; the new entry should fail
 3. Make the fix (prompt, handler, flag, etc.)
 4. Re-run; it should pass
@@ -102,7 +102,7 @@ If the fix requires data repair (e.g., their sale got recorded wrong), do the da
 # Did we receive the message?
 psql -c "SELECT * FROM \"MessageLogs\" WHERE \"RawMessage\" ILIKE '%<snippet>%' ORDER BY \"CreatedAtUtc\" DESC LIMIT 5;"
 # If no row, Twilio webhook failed — check logs for 500s around that time
-sudo journalctl -u bizpilot-api --since "15 minutes ago" | grep -i webhook
+sudo journalctl -u ojunai-api --since "15 minutes ago" | grep -i webhook
 ```
 
 **"The bot said something weird."**
@@ -149,7 +149,7 @@ WHERE "ReceivedAtUtc" > now() - interval '7 days' ORDER BY "ReceivedAtUtc" DESC;
 
 ## Once a week
 
-Check the telemetry dashboard (`app.bizpilot-ai.com/admin/telemetry`) for:
+Check the telemetry dashboard (`app.ojunai.com/admin/telemetry`) for:
 - Misparse rate trending up (alert bar fills red above 5%)
 - Retry patterns (users sending repeat messages after a clarification)
 - New top-failure clusters (phrasings the bot can't handle)

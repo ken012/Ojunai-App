@@ -1,0 +1,13 @@
+using Ojunai.API.Common;
+using Ojunai.API.DTOs.Expenses;
+
+namespace Ojunai.API.Services.Interfaces;
+
+public interface IExpenseService
+{
+    Task<ExpenseDto> CreateAsync(Guid businessId, CreateExpenseRequest request, string source = "Manual", Guid? recordedByUserId = null, string? recordedByName = null);
+    Task<PaginatedResult<ExpenseDto>> GetAllAsync(Guid businessId, int page, int pageSize, DateTime? from, DateTime? to, string? expenseType = null, string? category = null, string? paymentMethod = null, string? source = null, string? search = null);
+    Task<ExpenseFiltersDto> GetFiltersAsync(Guid businessId, string? expenseType = null);
+    Task<ExpenseDto> UpdateAsync(Guid businessId, Guid expenseId, UpdateExpenseRequest request);
+    Task DeleteAsync(Guid businessId, Guid expenseId);
+}

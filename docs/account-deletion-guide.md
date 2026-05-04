@@ -1,4 +1,4 @@
-# BizPilot AI — Account Deletion Guide
+# Ojunai — Account Deletion Guide
 
 **Last updated:** April 2026  
 **Purpose:** Step-by-step guide for fully deleting a business account from the production database.
@@ -16,7 +16,7 @@
 ## Prerequisites
 
 1. SSH access to the production server
-2. PostgreSQL access: `sudo -u postgres psql bizpilot_prod` or `psql -d bizpilot_prod`
+2. PostgreSQL access: `sudo -u postgres psql ojunai_prod` or `psql -d ojunai_prod`
 3. The business ID (UUID) of the account to delete
 
 ---
@@ -188,7 +188,7 @@ COMMIT;
 - **Always use `BEGIN`/`COMMIT`** — if anything fails, `ROLLBACK` undoes everything
 - **Always verify the business ID first** — wrong ID deletes the wrong account
 - **This is irreversible after `COMMIT`** — there is no undo
-- **Back up first if unsure:** `pg_dump bizpilot_prod > backup_$(date +%Y%m%d).sql`
+- **Back up first if unsure:** `pg_dump ojunai_prod > backup_$(date +%Y%m%d).sql`
 - **Do not delete during peak hours** — large deletes can lock tables
 
 ---

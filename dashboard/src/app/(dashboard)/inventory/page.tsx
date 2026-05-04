@@ -1335,7 +1335,7 @@ export default function InventoryPage() {
               <p>
                 {stockFilter !== "all" || categoryFilter || search
                   ? "No products match this filter."
-                  : "No products yet. Add them by messaging BizPilot on WhatsApp."}
+                  : "No products yet. Add them by messaging Ojunai on WhatsApp."}
               </p>
             </div>
           )}

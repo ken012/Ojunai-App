@@ -288,7 +288,7 @@ export default function ImportPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `bizpilot-${type}-template.csv`;
+    a.download = `ojunai-${type}-template.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -369,7 +369,7 @@ export default function ImportPage() {
               <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "existing_stock" ? "border-sky-300 bg-sky-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
                 <input type="radio" name="inv-mode" value="existing_stock" checked={importMode === "existing_stock"} onChange={() => setImportMode("existing_stock")} className="mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-slate-700">Existing stock — I already own this, moving to BizPilot</p>
+                  <p className="text-sm font-medium text-slate-700">Existing stock — I already own this, moving to Ojunai</p>
                   <p className="text-xs text-slate-500 mt-0.5">Creates products and stock levels. No expense recorded since these were already paid for.</p>
                 </div>
               </label>

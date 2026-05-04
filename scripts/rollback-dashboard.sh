@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Roll the BizPilot dashboard back to a previous .next backup.
+# Roll the Ojunai dashboard back to a previous .next backup.
 # Usage:  ./rollback-dashboard.sh
 set -e
 
-SERVER="bizpilot@46.225.108.35"
-REMOTE_DIR="/var/www/bizpilot-dashboard"
-BACKUPS_DIR="/var/www/bizpilot-dashboard-backups"
+SERVER="ojunai@46.225.108.35"
+REMOTE_DIR="/var/www/ojunai-dashboard"
+BACKUPS_DIR="/var/www/ojunai-dashboard-backups"
 
 echo "Available dashboard backups (newest first):"
 ssh -t "$SERVER" "sudo ls -1t $BACKUPS_DIR 2>/dev/null | grep '^dashboard-' | head -5 | nl"
@@ -24,7 +24,7 @@ echo "⏪ Rolling back .next to $BACKUP_NAME..."
 ssh -t "$SERVER" "
   sudo rm -rf $REMOTE_DIR/.next
   sudo cp -r $BACKUPS_DIR/$BACKUP_NAME $REMOTE_DIR/.next
-  pm2 restart bizpilot-dashboard
+  pm2 restart ojunai-dashboard
   sleep 3
   curl -fs http://localhost:3000 > /dev/null
 "
