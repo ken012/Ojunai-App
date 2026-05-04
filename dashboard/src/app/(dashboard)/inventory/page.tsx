@@ -180,7 +180,7 @@ function ProductCard({
 
         <div className="mt-3 flex items-end justify-between">
           <div>
-            <p className="text-2xl font-bold text-slate-900">
+            <p className="text-2xl font-bold text-slate-900 tabular-nums">
               {product.currentStock}
               <span className="text-sm font-normal text-slate-500 ml-1">{product.unit}</span>
             </p>
@@ -190,15 +190,29 @@ function ProductCard({
           </div>
           <div className="text-right">
             {product.sellingPrice && (
-              <p className="text-sm font-semibold text-emerald-600">
+              <p className="text-sm font-semibold text-slate-900 tabular-nums">
                 {formatNaira(product.sellingPrice)}
               </p>
             )}
             {product.costPrice && (
-              <p className="text-xs text-slate-400">Cost: {formatNaira(product.costPrice)}</p>
+              <p className="text-xs text-slate-400 tabular-nums">Cost: {formatNaira(product.costPrice)}</p>
             )}
           </div>
         </div>
+
+        {/* Stock-level visual indicator */}
+        {product.lowStockThreshold > 0 && (() => {
+          const ratio = Math.max(0, Math.min(2, product.currentStock / Math.max(1, product.lowStockThreshold)));
+          const pct = Math.min(100, (ratio / 2) * 100);
+          const tone = ratio < 0.5 ? "bg-red-500" : ratio < 1 ? "bg-amber-500" : "bg-emerald-500";
+          return (
+            <div className="mt-2.5">
+              <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full transition-all ${tone}`} style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="mt-2 flex items-center gap-2 flex-wrap">
           {product.isLowStock && (

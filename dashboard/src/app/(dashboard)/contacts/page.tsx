@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
+import { Avatar } from "@/components/avatar";
 // Tabs removed — using plain buttons to avoid base-ui context conflicts between two filter groups
 import {
   Table,
@@ -244,23 +245,31 @@ export default function ContactsPage() {
               <TableBody>
                 {contacts.map((contact) => (
                   <TableRow key={contact.id}>
-                    <TableCell className="font-medium">{contact.name}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <Avatar name={contact.name} size="sm" />
+                        <span className="font-medium text-slate-900">{contact.name}</span>
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <Badge
-                        variant={contact.type === "Customer" ? "default" : "secondary"}
-                        className="text-xs"
+                        className={
+                          contact.type === "Customer"
+                            ? "bg-cyan-50 text-cyan-700 ring-1 ring-inset ring-cyan-200"
+                            : "bg-violet-50 text-violet-700 ring-1 ring-inset ring-violet-200"
+                        }
                       >
                         {contact.type}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-sm text-slate-500">
+                    <TableCell className="text-sm text-slate-500 tabular-nums">
                       {contact.phoneNumber ?? "—"}
                     </TableCell>
                     <TableCell className="text-right">
                       {contact.outstandingReceivable > 0 ? (
                         <button
                           onClick={() => setViewingLedger(contact)}
-                          className="text-sm font-medium text-cyan-600 hover:underline"
+                          className="text-sm font-semibold text-cyan-600 hover:underline tabular-nums"
                         >
                           {formatNaira(contact.outstandingReceivable)}
                         </button>
@@ -272,7 +281,7 @@ export default function ContactsPage() {
                       {contact.outstandingPayable > 0 ? (
                         <button
                           onClick={() => setViewingLedger(contact)}
-                          className="text-sm font-medium text-orange-500 hover:underline"
+                          className="text-sm font-semibold text-orange-600 hover:underline tabular-nums"
                         >
                           {formatNaira(contact.outstandingPayable)}
                         </button>
