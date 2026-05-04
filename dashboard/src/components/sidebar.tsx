@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
+import { LogoMark } from "@/components/logo-mark";
 import { cn } from "@/lib/utils";
 import { logout } from "@/lib/auth";
 import { useBusiness } from "@/lib/data-sync";
@@ -85,12 +85,7 @@ export function Sidebar() {
     <>
       {/* Mobile top bar with hamburger */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-30 flex items-center justify-between bg-slate-900 text-white px-4 py-3 border-b border-slate-700">
-        <div className="flex items-center gap-2">
-          <Image src="/icon.png" alt="" width={28} height={28} priority />
-          <h1 className="text-xl font-black bg-gradient-to-r from-cyan-400 to-violet-400 bg-clip-text text-transparent">
-            Ojunai
-          </h1>
-        </div>
+        <LogoMark size="sm" wordmarkColor="white" />
         <button
           onClick={() => setOpen(!open)}
           className="p-2 rounded hover:bg-slate-800"
@@ -121,14 +116,9 @@ export function Sidebar() {
       >
         {/* Logo */}
         <div className="p-5 border-b border-slate-700">
-          <div className="flex items-center gap-2.5">
-            <Image src="/icon.png" alt="" width={36} height={36} priority />
-            <h1 className="text-2xl font-black bg-gradient-to-r from-cyan-400 to-violet-400 bg-clip-text text-transparent">
-              Ojunai
-            </h1>
-          </div>
+          <LogoMark size="md" wordmarkColor="white" />
           {business && (
-            <p className="text-xs text-slate-400 mt-2 truncate">{business.name}</p>
+            <p className="text-xs text-slate-400 mt-2.5 truncate">{business.name}</p>
           )}
         </div>
 

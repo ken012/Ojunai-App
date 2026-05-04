@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
+import { LogoMark } from "@/components/logo-mark";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,15 +53,10 @@ export default function ChangePasswordPage() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Image
-            src="/logo.jpg"
-            alt="Ojunai"
-            width={1540}
-            height={540}
-            priority
-            className="h-12 w-auto mx-auto"
-          />
-          <p className="text-slate-500 mt-3 text-sm">Set your new password</p>
+          <div className="flex justify-center">
+            <LogoMark size="lg" wordmarkColor="#0F172A" />
+          </div>
+          <p className="text-slate-500 mt-4 text-sm">Set your new password</p>
           <p className="text-xs text-slate-400 mt-1">You must change your password before continuing.</p>
         </div>
 
