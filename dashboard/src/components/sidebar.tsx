@@ -26,18 +26,45 @@ import {
 } from "lucide-react";
 import { usePlanStatus } from "@/lib/use-plan-status";
 
-const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/sales", label: "Sales", icon: ShoppingCart },
-  { href: "/expenses", label: "Expenses", icon: Receipt },
-  { href: "/inventory", label: "Inventory", icon: Package },
-  { href: "/reservations", label: "Order Reservations", icon: ClipboardList },
-  { href: "/contacts", label: "Contacts & Ledger", icon: Users },
-  { href: "/reports", label: "Reports", icon: BarChart3 },
-  { href: "/activity", label: "Activity", icon: Activity },
-  { href: "/export", label: "Export & Share", icon: Download },
-  { href: "/import", label: "Import", icon: FileUp },
-  { href: "/settings", label: "Settings", icon: Settings },
+type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
+type NavGroup = { label: string | null; items: NavItem[] };
+
+const navGroups: NavGroup[] = [
+  {
+    label: null,
+    items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }],
+  },
+  {
+    label: "Sell",
+    items: [
+      { href: "/sales", label: "Sales", icon: ShoppingCart },
+      { href: "/expenses", label: "Expenses", icon: Receipt },
+      { href: "/reservations", label: "Reservations", icon: ClipboardList },
+    ],
+  },
+  {
+    label: "Stock",
+    items: [
+      { href: "/inventory", label: "Inventory", icon: Package },
+      { href: "/import", label: "Import", icon: FileUp },
+      { href: "/export", label: "Export", icon: Download },
+    ],
+  },
+  {
+    label: "People",
+    items: [{ href: "/contacts", label: "Contacts", icon: Users }],
+  },
+  {
+    label: "Insights",
+    items: [
+      { href: "/reports", label: "Reports", icon: BarChart3 },
+      { href: "/activity", label: "Activity", icon: Activity },
+    ],
+  },
+  {
+    label: null,
+    items: [{ href: "/settings", label: "Settings", icon: Settings }],
+  },
 ];
 
 export function Sidebar() {
@@ -103,41 +130,57 @@ export function Sidebar() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {navItems.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href;
-            return (
+        <nav className="flex-1 p-3 overflow-y-auto">
+          {navGroups.map((group, gi) => (
+            <div key={gi} className={gi > 0 ? "mt-4" : ""}>
+              {group.label && (
+                <p className="px-3 mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  {group.label}
+                </p>
+              )}
+              <div className="space-y-1">
+                {group.items.map(({ href, label, icon: Icon }) => {
+                  const active = pathname === href;
+                  return (
+                    <Link
+                      key={href}
+                      href={href}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                        active
+                          ? "bg-gradient-to-r from-cyan-500 to-violet-500 text-white shadow-sm"
+                          : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                      )}
+                    >
+                      <Icon size={16} />
+                      {label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {planStatus?.voiceAIFeatureVisible && (
+            <div className="mt-4">
+              <p className="px-3 mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                AI
+              </p>
               <Link
-                key={href}
-                href={href}
+                href="/voice-ai"
                 className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                  active
-                    ? "bg-cyan-500 text-white"
+                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                  pathname === "/voice-ai"
+                    ? "bg-gradient-to-r from-cyan-500 to-violet-500 text-white shadow-sm"
                     : "text-slate-400 hover:bg-slate-800 hover:text-white"
                 )}
               >
-                <Icon size={16} />
-                {label}
+                <Phone size={16} />
+                Voice AI
+                {planStatus.voiceAIPlanStatus === "trial" && (
+                  <span className="ml-auto text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded-full">Trial</span>
+                )}
               </Link>
-            );
-          })}
-          {planStatus?.voiceAIFeatureVisible && (
-            <Link
-              href="/voice-ai"
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                pathname === "/voice-ai"
-                  ? "bg-cyan-500 text-white"
-                  : "text-slate-400 hover:bg-slate-800 hover:text-white"
-              )}
-            >
-              <Phone size={16} />
-              Voice AI
-              {planStatus.voiceAIPlanStatus === "trial" && (
-                <span className="ml-auto text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded-full">Trial</span>
-              )}
-            </Link>
+            </div>
           )}
         </nav>
 

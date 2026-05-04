@@ -32,6 +32,11 @@ import {
   TrendingDown,
   AlertTriangle,
   DollarSign,
+  Plus,
+  ShoppingCart,
+  Receipt,
+  Package,
+  Users,
 } from "lucide-react";
 
 function KpiCard({
@@ -42,6 +47,9 @@ function KpiCard({
   accent,
   onClick,
   active,
+  sparklineData,
+  sparklineColor = "#06b6d4",
+  featured = false,
 }: {
   title: string;
   value: string;
@@ -50,33 +58,56 @@ function KpiCard({
   accent?: string;
   onClick?: () => void;
   active?: boolean;
+  sparklineData?: { amount: number }[];
+  sparklineColor?: string;
+  featured?: boolean;
 }) {
   return (
     <Card
-      className={`${onClick ? "cursor-pointer hover:shadow-md transition-all" : ""} ${active ? "ring-2 ring-cyan-500" : ""}`}
+      className={`relative overflow-hidden ${onClick ? "cursor-pointer hover:shadow-md transition-all" : ""} ${active ? "ring-2 ring-cyan-500" : ""} ${featured ? "bg-gradient-to-br from-slate-900 via-slate-900 to-violet-950 text-white border-0" : ""}`}
       onClick={onClick}
     >
       <CardContent className="p-5">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+            <p className={`text-xs font-medium uppercase tracking-wide ${featured ? "text-cyan-300" : "text-slate-500"}`}>
               {title}
             </p>
-            <p className={`text-2xl font-bold mt-1 ${accent ?? "text-slate-900"}`}>
+            <p className={`${featured ? "text-3xl" : "text-2xl"} font-bold mt-1 ${featured ? "text-white" : accent ?? "text-slate-900"}`}>
               {value}
             </p>
-            {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+            {sub && <p className={`text-xs mt-0.5 ${featured ? "text-slate-300" : "text-slate-400"}`}>{sub}</p>}
           </div>
-          <div className="p-2 bg-slate-100 rounded-lg text-slate-600">{icon}</div>
+          <div className={`p-2 rounded-lg ${featured ? "bg-white/10 text-cyan-300" : "bg-slate-100 text-slate-600"}`}>{icon}</div>
         </div>
+        {sparklineData && sparklineData.length > 0 && (
+          <div className="mt-3 -mx-5 -mb-5 h-10">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={sparklineData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                <Area
+                  type="monotone"
+                  dataKey="amount"
+                  stroke={sparklineColor}
+                  strokeWidth={2}
+                  fill={sparklineColor}
+                  fillOpacity={featured ? 0.3 : 0.15}
+                  isAnimationActive={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
 }
 
+type Period = "today" | "week" | "month";
+
 export default function DashboardPage() {
   const router = useRouter();
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [period, setPeriod] = useState<Period>("today");
   const { data: planStatus } = usePlanStatus();
   const hasCharts = planStatus?.hasMonthlyCharts ?? true;
   const biz = useBusiness();
@@ -142,11 +173,62 @@ export default function DashboardPage() {
 
   const ov = overview!;
 
+  // Period-aware values
+  const weekSales = (ov.salesTrend ?? []).reduce((s, d) => s + d.amount, 0);
+  const weekExpenses = (ov.expenseTrend ?? []).reduce((s, d) => s + d.amount, 0);
+  const periodSales = period === "today" ? ov.todaySales : period === "week" ? weekSales : ov.monthlySales;
+  const periodExpenses = period === "today" ? ov.todayExpenses : period === "week" ? weekExpenses : ov.monthlyExpenses;
+  const periodNet = periodSales - periodExpenses;
+  const periodSaleCount = period === "today" ? ov.todaySaleCount : null;
+  const netLabel = period === "today" ? "Net Today" : period === "week" ? "Net This Week" : "Net This Month";
+  const salesLabel = period === "today" ? "Today's Sales" : period === "week" ? "Sales (7 days)" : "Monthly Sales";
+  const expensesLabel = period === "today" ? "Today's Expenses" : period === "week" ? "Expenses (7 days)" : "Monthly Expenses";
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900">Ojunai Inventory</h2>
-        <p className="text-slate-500 text-sm mt-0.5">Today&apos;s business snapshot</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900">Overview</h2>
+          <p className="text-slate-500 text-sm mt-0.5">
+            {period === "today" ? "Today's business snapshot" : period === "week" ? "Last 7 days" : "This month"}
+          </p>
+        </div>
+
+        {/* Period selector + Quick actions */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex items-center bg-slate-100 rounded-lg p-0.5">
+            {(["today", "week", "month"] as Period[]).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors capitalize ${
+                  period === p ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+          <div className="hidden sm:block w-px h-6 bg-slate-200 mx-1" />
+          <button
+            onClick={() => router.push("/sales?new=1")}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium transition-colors shadow-sm"
+          >
+            <Plus size={14} /> <ShoppingCart size={14} /> Sale
+          </button>
+          <button
+            onClick={() => router.push("/expenses?new=1")}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-sm font-medium transition-colors"
+          >
+            <Plus size={14} /> <Receipt size={14} /> Expense
+          </button>
+          <button
+            onClick={() => router.push("/inventory?new=1")}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-sm font-medium transition-colors"
+          >
+            <Plus size={14} /> <Package size={14} /> Product
+          </button>
+        </div>
       </div>
 
       {/* Payment failed banner */}
@@ -196,34 +278,41 @@ export default function DashboardPage() {
         );
       })()}
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* KPI Cards — Net Today is featured (col-span-2 on lg) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="lg:col-span-2 sm:col-span-2">
+          <KpiCard
+            title={netLabel}
+            value={formatNaira(periodNet)}
+            sub={periodNet >= 0 ? "Profit so far" : "Loss so far"}
+            icon={<DollarSign size={20} />}
+            featured
+            sparklineColor="#06b6d4"
+            sparklineData={(ov.salesTrend ?? []).map((s, i) => ({
+              amount: s.amount - (ov.expenseTrend?.[i]?.amount ?? 0),
+            }))}
+            onClick={() => toggleExpand("net")}
+            active={expanded === "net"}
+          />
+        </div>
         <KpiCard
-          title="Today's Sales"
-          value={formatNaira(ov.todaySales)}
-          sub={`${ov.todaySaleCount} transactions`}
+          title={salesLabel}
+          value={formatNaira(periodSales)}
+          sub={periodSaleCount !== null ? `${periodSaleCount} transactions` : undefined}
           icon={<TrendingUp size={18} />}
           accent="text-emerald-600"
+          sparklineColor="#10b981"
+          sparklineData={ov.salesTrend ?? []}
           onClick={() => router.push("/sales")}
         />
         <KpiCard
-          title="Today's Expenses"
-          value={formatNaira(ov.todayExpenses)}
+          title={expensesLabel}
+          value={formatNaira(periodExpenses)}
           icon={<TrendingDown size={18} />}
           accent="text-red-500"
+          sparklineColor="#ef4444"
+          sparklineData={ov.expenseTrend ?? []}
           onClick={() => router.push("/expenses")}
-        />
-        <KpiCard
-          title="Net Today"
-          value={formatNaira(ov.todaySales - ov.todayExpenses)}
-          icon={<DollarSign size={18} />}
-          accent={
-            ov.todaySales - ov.todayExpenses >= 0
-              ? "text-emerald-600"
-              : "text-red-500"
-          }
-          onClick={() => toggleExpand("net")}
-          active={expanded === "net"}
         />
         <KpiCard
           title="Receivables"
@@ -368,8 +457,8 @@ export default function DashboardPage() {
               <AreaChart data={ov.salesTrend}>
                 <defs>
                   <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -393,7 +482,7 @@ export default function DashboardPage() {
                 <Area
                   type="monotone"
                   dataKey="amount"
-                  stroke="#0ea5e9"
+                  stroke="#06b6d4"
                   strokeWidth={2}
                   fill="url(#salesGrad)"
                 />
@@ -516,7 +605,7 @@ export default function DashboardPage() {
                         tick={{ fontSize: 11, fill: "#475569" }}
                       />
                       <Tooltip formatter={(v) => formatNaira(Number(v))} />
-                      <Bar dataKey="revenue" fill="#0ea5e9" radius={[0, 4, 4, 0]} />
+                      <Bar dataKey="revenue" fill="#06b6d4" radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 )}
@@ -568,7 +657,7 @@ export default function DashboardPage() {
                 {insights.expenseCategories.length === 0 ? (
                   <p className="text-sm text-slate-400 text-center py-8">No expenses yet</p>
                 ) : (() => {
-                  const COLORS = ["#0ea5e9", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444", "#ec4899", "#6366f1", "#14b8a6", "#f97316", "#06b6d4", "#a855f7", "#84cc16"];
+                  const COLORS = ["#06b6d4", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444", "#ec4899", "#6366f1", "#14b8a6", "#f97316", "#06b6d4", "#a855f7", "#84cc16"];
                   const sorted = [...insights.expenseCategories].sort((a, b) => b.amount - a.amount);
                   const total = sorted.reduce((s, c) => s + c.amount, 0);
                   return (
