@@ -46,6 +46,10 @@ public class BusinessService : IBusinessService
         if (request.Address != null) business.Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim();
         if (request.VatEnabled.HasValue) business.VatEnabled = request.VatEnabled.Value;
         if (request.VatRate.HasValue && request.VatRate.Value >= 0 && request.VatRate.Value <= 100) business.VatRate = request.VatRate.Value;
+        if (request.TaxId != null) business.TaxId = string.IsNullOrWhiteSpace(request.TaxId) ? null : request.TaxId.Trim();
+        if (request.ReceiptHeaderText != null) business.ReceiptHeaderText = string.IsNullOrWhiteSpace(request.ReceiptHeaderText) ? null : request.ReceiptHeaderText.Trim();
+        if (request.ReceiptFooterText != null) business.ReceiptFooterText = string.IsNullOrWhiteSpace(request.ReceiptFooterText) ? null : request.ReceiptFooterText.Trim();
+        if (request.ReceiptAccentColor != null) business.ReceiptAccentColor = string.IsNullOrWhiteSpace(request.ReceiptAccentColor) ? null : request.ReceiptAccentColor.Trim();
 
         await _db.SaveChangesAsync();
         return ToDto(business);
@@ -84,6 +88,10 @@ public class BusinessService : IBusinessService
         AccountNumber = b.AccountNumber,
         Address = b.Address,
         VatEnabled = b.VatEnabled,
-        VatRate = b.VatRate
+        VatRate = b.VatRate,
+        TaxId = b.TaxId,
+        ReceiptHeaderText = b.ReceiptHeaderText,
+        ReceiptFooterText = b.ReceiptFooterText,
+        ReceiptAccentColor = b.ReceiptAccentColor
     };
 }

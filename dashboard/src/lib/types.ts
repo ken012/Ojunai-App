@@ -58,6 +58,10 @@ export interface BusinessDto {
   address?: string;
   vatEnabled?: boolean;
   vatRate?: number;
+  taxId?: string;
+  receiptHeaderText?: string;
+  receiptFooterText?: string;
+  receiptAccentColor?: string;
 }
 
 export interface ProductDto {

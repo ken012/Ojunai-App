@@ -36,7 +36,6 @@ import {
   ShoppingCart,
   Receipt,
   Package,
-  Users,
 } from "lucide-react";
 
 function KpiCard({

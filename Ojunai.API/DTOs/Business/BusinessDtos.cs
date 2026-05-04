@@ -21,4 +21,8 @@ public class UpdateBusinessRequest
     [MaxLength(300)] public string? Address { get; set; }
     public bool? VatEnabled { get; set; }
     [Range(0, 100)] public decimal? VatRate { get; set; }
+    [MaxLength(50)] public string? TaxId { get; set; }
+    [MaxLength(80)] public string? ReceiptHeaderText { get; set; }
+    [MaxLength(200)] public string? ReceiptFooterText { get; set; }
+    [MaxLength(7)] public string? ReceiptAccentColor { get; set; }
 }

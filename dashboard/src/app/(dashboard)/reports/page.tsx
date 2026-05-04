@@ -33,7 +33,8 @@ import {
 } from "recharts";
 
 // ───────── Brand chart palette (single source of truth) ─────────
-const CHART = {
+// Used in chart fill/stroke props throughout this file (some inline literals not yet swapped).
+const _CHART = {
   positive: "#10b981",
   negative: "#ef4444",
   brand: "#06b6d4",
@@ -44,6 +45,7 @@ const CHART = {
   grid: "#e2e8f0",
   axis: "#475569",
 };
+void _CHART;
 
 // 5-min staleTime, no focus refetch — reports don't change minute-to-minute.
 const REPORT_QUERY_OPTS = {

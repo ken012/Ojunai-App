@@ -54,6 +54,10 @@ public class Business
     public int NextReceiptNumber { get; set; } = 1;            // Atomic sequence counter
     public bool VatEnabled { get; set; } = false;              // Show VAT line on receipts + default ON for new sales
     public decimal VatRate { get; set; } = 7.5m;               // Nigeria standard
+    public string? TaxId { get; set; }                         // TIN — printed on receipts if set
+    public string? ReceiptHeaderText { get; set; }             // Optional override for business name on receipts (rare; defaults to Name)
+    public string? ReceiptFooterText { get; set; }             // Override default footer thank-you message
+    public string? ReceiptAccentColor { get; set; }            // Hex color for receipt accents (default cyan-500 #06b6d4)
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 

@@ -95,6 +95,11 @@ public class ReceiptService : IReceiptService
         var cs = BillingConfig.Symbol(biz.Currency);
         var hasVat = sale.VatAmount > 0;
         var subtotal = sale.TotalAmount - sale.VatAmount;
+        var headerText = string.IsNullOrWhiteSpace(biz.ReceiptHeaderText) ? biz.Name : biz.ReceiptHeaderText!;
+        var footerText = string.IsNullOrWhiteSpace(biz.ReceiptFooterText) ? "Thank you for your business" : biz.ReceiptFooterText!;
+        var accent = !string.IsNullOrWhiteSpace(biz.ReceiptAccentColor) && biz.ReceiptAccentColor!.StartsWith("#")
+            ? biz.ReceiptAccentColor!
+            : "#06B6D4"; // cyan-500
 
         return Document.Create(doc =>
         {
@@ -110,7 +115,7 @@ public class ReceiptService : IReceiptService
                     // ── Header: business identity ──
                     col.Item().Column(c =>
                     {
-                        c.Item().Text(biz.Name).FontSize(16).Bold().FontColor("#0F172A");
+                        c.Item().Text(headerText).FontSize(16).Bold().FontColor("#0F172A");
                         if (!string.IsNullOrWhiteSpace(biz.Address))
                             c.Item().Text(biz.Address).FontSize(9).FontColor("#64748B");
                         if (!string.IsNullOrWhiteSpace(biz.City) || !string.IsNullOrWhiteSpace(biz.State))
@@ -119,16 +124,18 @@ public class ReceiptService : IReceiptService
                                 .Where(s => !string.IsNullOrWhiteSpace(s)));
                             c.Item().Text(loc).FontSize(9).FontColor("#64748B");
                         }
+                        if (!string.IsNullOrWhiteSpace(biz.TaxId))
+                            c.Item().Text($"TIN: {biz.TaxId}").FontSize(9).FontColor("#64748B");
                     });
 
-                    col.Item().PaddingTop(14).LineHorizontal(0.5f).LineColor("#E2E8F0");
+                    col.Item().PaddingTop(14).LineHorizontal(1f).LineColor(accent);
 
                     // ── Receipt meta + customer (two columns) ──
                     col.Item().PaddingTop(14).Row(row =>
                     {
                         row.RelativeItem().Column(c =>
                         {
-                            c.Item().Text("RECEIPT").FontSize(8).Bold().LetterSpacing(1.5f).FontColor("#94A3B8");
+                            c.Item().Text("RECEIPT").FontSize(8).Bold().LetterSpacing(1.5f).FontColor(accent);
                             c.Item().PaddingTop(4).Text(sale.ReceiptNumber!).FontSize(13).Bold().FontColor("#0F172A");
                             c.Item().PaddingTop(2).Text($"Issued {DateTime.UtcNow:MMM d, yyyy 'at' h:mm tt}")
                                 .FontSize(8).FontColor("#94A3B8");
@@ -222,7 +229,7 @@ public class ReceiptService : IReceiptService
                     );
 
                     // ── Footer ──
-                    col.Item().PaddingTop(28).AlignCenter().Text("Thank you for your business")
+                    col.Item().PaddingTop(28).AlignCenter().Text(footerText)
                         .FontSize(9).Italic().FontColor("#94A3B8");
                     col.Item().PaddingTop(2).AlignCenter().Text($"Powered by Ojunai · ojunai.com")
                         .FontSize(7).FontColor("#CBD5E1");

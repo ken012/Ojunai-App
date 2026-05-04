@@ -46,4 +46,8 @@ public class BusinessDto
     public string? Address { get; set; }
     public bool VatEnabled { get; set; } = false;
     public decimal VatRate { get; set; } = 7.5m;
+    public string? TaxId { get; set; }
+    public string? ReceiptHeaderText { get; set; }
+    public string? ReceiptFooterText { get; set; }
+    public string? ReceiptAccentColor { get; set; }
 }
