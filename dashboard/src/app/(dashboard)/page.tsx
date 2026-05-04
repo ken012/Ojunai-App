@@ -64,24 +64,49 @@ function KpiCard({
 }) {
   return (
     <Card
-      className={`relative overflow-hidden ${onClick ? "cursor-pointer hover:shadow-md transition-all" : ""} ${active ? "ring-2 ring-cyan-500" : ""} ${featured ? "bg-gradient-to-br from-slate-900 via-slate-900 to-violet-950 text-white border-0" : ""}`}
+      className={`relative overflow-hidden ${
+        onClick ? "cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200" : ""
+      } ${active ? "ring-2 ring-cyan-500 shadow-md" : ""} ${
+        featured
+          ? "bg-gradient-to-br from-slate-900 via-slate-900 to-violet-950 text-white !ring-0 shadow-xl"
+          : ""
+      }`}
       onClick={onClick}
     >
-      <CardContent className="p-5">
+      {/* Subtle gradient top accent for non-featured cards */}
+      {!featured && (
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+      )}
+      {featured && (
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-400 via-violet-400 to-violet-600" />
+      )}
+      <CardContent className={`${featured ? "p-7" : "p-5"}`}>
         <div className="flex items-start justify-between">
-          <div>
-            <p className={`text-xs font-medium uppercase tracking-wide ${featured ? "text-cyan-300" : "text-slate-500"}`}>
+          <div className="flex-1 min-w-0">
+            <p className={`text-[11px] font-bold uppercase tracking-[0.12em] ${featured ? "text-cyan-300" : "text-slate-500"}`}>
               {title}
             </p>
-            <p className={`${featured ? "text-3xl" : "text-2xl"} font-bold mt-1 ${featured ? "text-white" : accent ?? "text-slate-900"}`}>
+            <p
+              className={`${featured ? "text-4xl sm:text-5xl" : "text-3xl"} font-bold mt-2 tabular-nums tracking-tight ${
+                featured ? "text-white" : accent ?? "text-slate-900"
+              }`}
+            >
               {value}
             </p>
-            {sub && <p className={`text-xs mt-0.5 ${featured ? "text-slate-300" : "text-slate-400"}`}>{sub}</p>}
+            {sub && (
+              <p className={`text-xs mt-1.5 ${featured ? "text-cyan-200/80" : "text-slate-400"}`}>{sub}</p>
+            )}
           </div>
-          <div className={`p-2 rounded-lg ${featured ? "bg-white/10 text-cyan-300" : "bg-slate-100 text-slate-600"}`}>{icon}</div>
+          <div
+            className={`p-2.5 rounded-xl flex-shrink-0 ml-3 ${
+              featured ? "bg-white/10 text-cyan-300 ring-1 ring-white/10" : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            {icon}
+          </div>
         </div>
         {sparklineData && sparklineData.length > 0 && (
-          <div className="mt-3 -mx-5 -mb-5 h-10">
+          <div className={`${featured ? "mt-5 -mx-7 -mb-7 h-16" : "mt-4 -mx-5 -mb-5 h-10"}`}>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={sparklineData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
                 <Area
@@ -90,7 +115,7 @@ function KpiCard({
                   stroke={sparklineColor}
                   strokeWidth={2}
                   fill={sparklineColor}
-                  fillOpacity={featured ? 0.3 : 0.15}
+                  fillOpacity={featured ? 0.35 : 0.15}
                   isAnimationActive={false}
                 />
               </AreaChart>
@@ -184,25 +209,34 @@ export default function DashboardPage() {
   const salesLabel = period === "today" ? "Today's Sales" : period === "week" ? "Sales (7 days)" : "Monthly Sales";
   const expensesLabel = period === "today" ? "Today's Expenses" : period === "week" ? "Expenses (7 days)" : "Monthly Expenses";
 
+  // Greeting (time-aware)
+  const hour = new Date().getHours();
+  const greet = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const businessName = biz?.name ?? "your business";
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="space-y-8">
+      {/* Hero greeting */}
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Overview</h2>
-          <p className="text-slate-500 text-sm mt-0.5">
-            {period === "today" ? "Today's business snapshot" : period === "week" ? "Last 7 days" : "This month"}
+          <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
+            {greet}.
+          </h1>
+          <p className="text-slate-500 mt-1.5">
+            Here&apos;s what&apos;s happening at <span className="font-semibold text-slate-700">{businessName}</span>
+            {" "}— {period === "today" ? "today" : period === "week" ? "this week" : "this month"}.
           </p>
         </div>
 
         {/* Period selector + Quick actions */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center bg-slate-100 rounded-lg p-0.5">
+          <div className="inline-flex items-center bg-white ring-1 ring-slate-200 shadow-sm rounded-lg p-0.5">
             {(["today", "week", "month"] as Period[]).map((p) => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors capitalize ${
-                  period === p ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                className={`px-3.5 py-1.5 text-xs font-semibold rounded-md transition-all capitalize ${
+                  period === p ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:text-slate-900"
                 }`}
               >
                 {p}
@@ -212,19 +246,19 @@ export default function DashboardPage() {
           <div className="hidden sm:block w-px h-6 bg-slate-200 mx-1" />
           <button
             onClick={() => router.push("/sales?new=1")}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium transition-colors shadow-sm"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-br from-violet-600 to-violet-700 hover:from-violet-500 hover:to-violet-700 text-white text-sm font-semibold transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5 active:translate-y-0"
           >
             <Plus size={14} /> <ShoppingCart size={14} /> Sale
           </button>
           <button
             onClick={() => router.push("/expenses?new=1")}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-sm font-medium transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold transition-all hover:shadow-sm"
           >
             <Plus size={14} /> <Receipt size={14} /> Expense
           </button>
           <button
             onClick={() => router.push("/inventory?new=1")}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-sm font-medium transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold transition-all hover:shadow-sm"
           >
             <Plus size={14} /> <Package size={14} /> Product
           </button>
