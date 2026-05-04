@@ -54,8 +54,8 @@ export function Sidebar() {
     <>
       {/* Mobile top bar with hamburger */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-30 flex items-center justify-between bg-slate-900 text-white px-4 py-3 border-b border-slate-700">
-        <h1 className="text-lg font-black">
-          Biz<span className="text-cyan-400">Pilot</span>
+        <h1 className="text-xl font-black bg-gradient-to-r from-cyan-400 to-violet-400 bg-clip-text text-transparent">
+          Ojunai
         </h1>
         <button
           onClick={() => setOpen(!open)}
@@ -87,8 +87,8 @@ export function Sidebar() {
       >
         {/* Logo */}
         <div className="p-5 border-b border-slate-700">
-          <h1 className="text-xl font-black">
-            Biz<span className="text-cyan-400">Pilot</span>
+          <h1 className="text-2xl font-black bg-gradient-to-r from-cyan-400 to-violet-400 bg-clip-text text-transparent">
+            Ojunai
           </h1>
           {business && (
             <p className="text-xs text-slate-400 mt-1 truncate">{business.name}</p>

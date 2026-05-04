@@ -23,7 +23,7 @@ ssh -t "$SERVER" "
 "
 
 echo "⬆️  Uploading source..."
-scp -r src tsconfig.json tailwind.config.ts postcss.config.mjs components.json package.json package-lock.json next.config.mjs .env.production "$SERVER:$REMOTE_DIR/"
+scp -r src public tsconfig.json tailwind.config.ts postcss.config.mjs components.json package.json package-lock.json next.config.mjs .env.production "$SERVER:$REMOTE_DIR/"
 
 echo "🔨 Building on server..."
 ssh -t "$SERVER" "
