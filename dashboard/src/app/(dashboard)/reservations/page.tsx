@@ -74,27 +74,63 @@ function SourceBadge({ source }: { source: string }) {
   );
 }
 
+// Status pill — quiet semantic palette with ring-inset (consistent with Sales, Contacts)
+const STATUS_STYLE: Record<string, { cls: string; label: string; dot: string }> = {
+  active: { cls: "bg-amber-50 text-amber-700 ring-amber-200", label: "Active", dot: "bg-amber-500" },
+  confirmed: { cls: "bg-cyan-50 text-cyan-700 ring-cyan-200", label: "Confirmed", dot: "bg-cyan-500" },
+  pickedUp: { cls: "bg-emerald-50 text-emerald-700 ring-emerald-200", label: "Picked up", dot: "bg-emerald-500" },
+  fulfilled: { cls: "bg-emerald-50 text-emerald-700 ring-emerald-200", label: "Fulfilled", dot: "bg-emerald-500" },
+  cancelledCustomer: { cls: "bg-amber-50 text-amber-700 ring-amber-200", label: "Cancelled by customer", dot: "bg-amber-500" },
+  cancelled: { cls: "bg-amber-50 text-amber-700 ring-amber-200", label: "Cancelled", dot: "bg-amber-500" },
+  noShow: { cls: "bg-orange-50 text-orange-700 ring-orange-200", label: "No show", dot: "bg-orange-500" },
+  expired: { cls: "bg-slate-50 text-slate-600 ring-slate-200", label: "Auto-expired", dot: "bg-slate-400" },
+  released: { cls: "bg-slate-50 text-slate-600 ring-slate-200", label: "Released", dot: "bg-slate-400" },
+  releasedNote: { cls: "bg-slate-50 text-slate-600 ring-slate-200", label: "Released — see note", dot: "bg-slate-400" },
+};
+
 function StatusBadge({ status, releaseReason, releaseNote }: { status: string; releaseReason?: string | null; releaseNote?: string | null }) {
-  if (status === "Active" || status === "pending") return <Badge className="bg-amber-100 text-amber-700 border-0">Active</Badge>;
-  if (status === "confirmed") return <Badge className="bg-cyan-100 text-cyan-700 border-0">Confirmed</Badge>;
-  if (status === "Converted" || (status === "fulfilled" && releaseReason === "picked_up")) return <Badge className="bg-emerald-100 text-emerald-700 border-0">Picked up</Badge>;
-  if (status === "fulfilled") return <Badge className="bg-emerald-100 text-emerald-700 border-0">Fulfilled</Badge>;
-  if (status === "cancelled" && releaseReason === "customer_request") return <Badge className="bg-amber-100 text-amber-700 border-0">Cancelled by customer</Badge>;
-  if (status === "cancelled" || status === "Released") return <Badge className="bg-amber-100 text-amber-700 border-0">Cancelled</Badge>;
-  if (status === "expired" && releaseReason === "no_show") return <Badge className="bg-orange-100 text-orange-700 border-0">No show</Badge>;
-  if (status === "expired" && releaseReason === "hold_timeout") return <Badge className="bg-slate-100 text-slate-500 border-0">Auto-expired</Badge>;
-  if (status === "expired" && releaseReason === "owner_release") return <Badge className="bg-slate-100 text-slate-500 border-0">Released</Badge>;
-  if (releaseReason === "other" && releaseNote) return <Badge className="bg-slate-100 text-slate-500 border-0" title={releaseNote}>Released — see note</Badge>;
-  if (status === "expired") return <Badge className="bg-slate-100 text-slate-500 border-0">Released</Badge>;
-  return <Badge variant="outline">{status}</Badge>;
+  let key: keyof typeof STATUS_STYLE;
+  if (status === "Active" || status === "pending") key = "active";
+  else if (status === "confirmed") key = "confirmed";
+  else if (status === "Converted" || (status === "fulfilled" && releaseReason === "picked_up")) key = "pickedUp";
+  else if (status === "fulfilled") key = "fulfilled";
+  else if (status === "cancelled" && releaseReason === "customer_request") key = "cancelledCustomer";
+  else if (status === "cancelled" || status === "Released") key = "cancelled";
+  else if (status === "expired" && releaseReason === "no_show") key = "noShow";
+  else if (releaseReason === "other" && releaseNote) key = "releasedNote";
+  else if (status === "expired" && releaseReason === "hold_timeout") key = "expired";
+  else if (status === "expired") key = "released";
+  else return <Badge variant="outline">{status}</Badge>;
+  const s = STATUS_STYLE[key];
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ring-1 ring-inset ${s.cls}`}
+      title={key === "releasedNote" ? releaseNote ?? undefined : undefined}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+      {s.label}
+    </span>
+  );
 }
 
 function HoldCountdown({ expiresAt }: { expiresAt: string }) {
   const diff = new Date(expiresAt).getTime() - Date.now();
-  if (diff <= 0) return <span className="text-red-500 text-[10px]">Expiring</span>;
+  if (diff <= 0)
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] text-red-600 font-semibold">
+        <Clock size={11} /> Expiring
+      </span>
+    );
   const hours = Math.floor(diff / 3600000);
   const mins = Math.floor((diff % 3600000) / 60000);
-  return <span className="text-xs text-slate-500">{hours}h {mins}m left</span>;
+  // <1h: red urgency, <4h: amber, else: slate
+  const tone = hours < 1 ? "text-red-600" : hours < 4 ? "text-amber-600" : "text-slate-500";
+  const label = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+  return (
+    <span className={`inline-flex items-center gap-1 text-[11px] tabular-nums ${tone}`}>
+      <Clock size={11} /> {label} left
+    </span>
+  );
 }
 
 function isActiveStatus(status: string) {

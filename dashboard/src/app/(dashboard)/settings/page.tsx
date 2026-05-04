@@ -138,11 +138,11 @@ function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6">
       <PageHeader title="Settings" subtitle="Account and business information" />
 
       {showSuccess && (
-        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 flex items-center justify-between">
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 flex items-center justify-between max-w-3xl">
           <p className="text-sm text-green-800 font-medium">Payment successful! Your plan is now active.</p>
           <button onClick={() => setShowSuccess(false)} className="text-green-600 hover:text-green-800">
             <X size={16} />
@@ -150,6 +150,36 @@ function SettingsPage() {
         </div>
       )}
 
+      <div className="grid grid-cols-1 lg:grid-cols-[200px_1fr] lg:gap-10">
+        {/* Section nav (left rail) */}
+        <aside className="hidden lg:block">
+          <nav className="sticky top-6 space-y-0.5 text-sm">
+            {[
+              { href: "#business", label: "Business" },
+              { href: "#plan", label: "Plan & Billing" },
+              { href: "#alerts", label: "Alerts" },
+              { href: "#whatsapp-confirm", label: "Sale Confirmations" },
+              { href: "#account", label: "Account" },
+              { href: "#voice-ai", label: "Voice AI" },
+              { href: "#whatsapp", label: "WhatsApp" },
+              { href: "#team", label: "Team" },
+              { href: "#categories", label: "Categories" },
+            ].map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                className="block px-3 py-1.5 rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+              >
+                {item.label}
+              </a>
+            ))}
+          </nav>
+        </aside>
+
+        {/* Settings sections */}
+        <div className="space-y-6 max-w-2xl">
+
+      <div id="business" className="scroll-mt-24" />
       {/* Business */}
       <Card>
         <CardHeader className="pb-2 flex flex-row items-center justify-between">
@@ -222,9 +252,11 @@ function SettingsPage() {
         </CardContent>
       </Card>
 
+      <div id="plan" className="scroll-mt-24" />
       {/* Plan */}
       <PlanCard business={business} />
 
+      <div id="alerts" className="scroll-mt-24" />
       {/* Alerts — Owner/Admin only */}
       {hasPermission(Permission.ManageSettings) && <Card>
         <CardHeader className="pb-2">
@@ -301,6 +333,7 @@ function SettingsPage() {
         </CardContent>
       </Card>}
 
+      <div id="whatsapp-confirm" className="scroll-mt-24" />
       {/* WhatsApp Sale Confirmation */}
       {hasPermission(Permission.ManageSettings) && <Card>
         <CardHeader className="pb-2">
@@ -352,9 +385,11 @@ function SettingsPage() {
         </CardContent>
       </Card>}
 
+      <div id="team" className="scroll-mt-24" />
       {/* Team Members — Owner/Admin only */}
       {hasPermission(Permission.ManageStaff) && <TeamMembersCard />}
 
+      <div id="categories" className="scroll-mt-24" />
       {/* Manage Categories — Owner/Admin only */}
       {hasPermission(Permission.ManageSettings) &&
       <ManageCategoriesCard business={business} onUpdate={(updated) => {
@@ -362,6 +397,7 @@ function SettingsPage() {
         if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
       }} />}
 
+      <div id="account" className="scroll-mt-24" />
       {/* User */}
       <Card>
         <CardHeader className="pb-2">
@@ -395,9 +431,11 @@ function SettingsPage() {
         </CardContent>
       </Card>
 
+      <div id="voice-ai" className="scroll-mt-24" />
       {/* Voice AI */}
       <VoiceAISettingsCard />
 
+      <div id="whatsapp" className="scroll-mt-24" />
       {/* WhatsApp */}
       <Card>
         <CardHeader className="pb-2">
@@ -455,6 +493,8 @@ function SettingsPage() {
           }
         }}
       />
+        </div>
+      </div>
     </div>
   );
 }
