@@ -3,7 +3,7 @@
 # Usage:  ./rollback-api.sh
 set -e
 
-SERVER="ojunai@46.225.108.35"
+SERVER="bizpilot@46.225.108.35"
 REMOTE_DIR="/var/www/ojunai-api"
 BACKUPS_DIR="/var/www/ojunai-api-backups"
 
