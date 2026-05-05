@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { hasPermission, Permission } from "@/lib/permissions";
 import { useBusiness } from "@/lib/data-sync";
 import { useToast } from "@/components/toast";
+import { Drawer, DrawerHeader, DrawerBody, DrawerFooter } from "@/components/ui/drawer";
 import { formatNaira, formatDateTime } from "@/lib/format";
 import type { PaginatedResult, SaleSummaryDto, SaleDto, ProductDto, ContactDto, ApiResponse } from "@/lib/types";
 import { Input } from "@/components/ui/input";
@@ -831,11 +832,13 @@ function SaleDetailDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Sale Details</DialogTitle>
-        </DialogHeader>
+    <Drawer open={open} onClose={onClose} width="md">
+      <DrawerHeader
+        title={detail?.customerName ?? "Sale details"}
+        subtitle={detail ? `${formatDateTime(detail.createdAtUtc)} \u00b7 ${detail.items.length} item${detail.items.length !== 1 ? "s" : ""}` : undefined}
+        onClose={onClose}
+      />
+      <DrawerBody>
         {isLoading || !detail ? (
           <div className="space-y-3">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -843,96 +846,118 @@ function SaleDetailDialog({
             ))}
           </div>
         ) : (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-y-2 text-sm">
-              <span className="text-slate-500">Customer</span>
-              <span className="font-medium">{detail.customerName ?? "Walk-in"}</span>
-              <span className="text-slate-500">Date</span>
-              <span className="font-medium">{formatDateTime(detail.createdAtUtc)}</span>
-              <span className="text-slate-500">Recorded by</span>
-              <span className="font-medium">{detail.recordedByName ?? "\u2014"}</span>
-              <span className="text-slate-500">Source</span>
-              <span className="font-medium capitalize">{detail.source ?? "Manual"}</span>
+          <div className="space-y-5">
+            {/* Total + status pill \u2014 hero treatment */}
+            <div className="rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total</p>
+                  <p className="text-3xl font-bold text-slate-900 tabular-nums mt-1">{formatNaira(detail.totalAmount)}</p>
+                  {detail.vatAmount != null && detail.vatAmount > 0 && (
+                    <p className="text-xs text-slate-500 mt-1 tabular-nums">incl. {formatNaira(detail.vatAmount)} VAT</p>
+                  )}
+                </div>
+                <Badge className={statusBadgeClass(detail.paymentStatus)}>
+                  {detail.paymentStatus}
+                </Badge>
+              </div>
             </div>
 
+            {/* Meta */}
             <div>
-              <h4 className="text-xs font-semibold text-slate-500 uppercase mb-2">Items ({detail.items.length})</h4>
-              <div className="space-y-1 max-h-60 overflow-y-auto pr-1">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-3">Details</p>
+              <div className="grid grid-cols-1 gap-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Customer</span>
+                  <span className="font-medium text-slate-900">{detail.customerName ?? "Walk-in"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Recorded by</span>
+                  <span className="text-slate-700">{detail.recordedByName ?? "\u2014"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Source</span>
+                  <span className="text-slate-700 capitalize">{detail.source ?? "Manual"}</span>
+                </div>
+                {detail.paymentMethod && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Payment Method</span>
+                    <span className="text-slate-700">{detail.paymentMethod}</span>
+                  </div>
+                )}
+                {detail.receiptNumber && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Receipt</span>
+                    <span className="text-slate-700 font-mono text-xs">{detail.receiptNumber}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Items */}
+            <div>
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                Items ({detail.items.length})
+              </p>
+              <div className="space-y-2 border border-slate-200 rounded-lg p-3">
                 {detail.items.map((item) => (
                   <div key={item.productId} className="flex justify-between text-sm">
-                    <span>
-                      {item.quantity} {item.unit} {item.productName} @ {formatNaira(item.unitPrice)}
+                    <span className="text-slate-700">
+                      {item.quantity} {item.unit} {item.productName}
+                      <span className="text-slate-400 ml-1">@ {formatNaira(item.unitPrice)}</span>
                     </span>
-                    <span className="font-medium">{formatNaira(item.totalPrice)}</span>
+                    <span className="font-semibold text-slate-900 tabular-nums ml-2">{formatNaira(item.totalPrice)}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="border-t pt-3 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="font-semibold">Total</span>
-                <span className="text-lg font-bold text-emerald-600">{formatNaira(detail.totalAmount)}</span>
-              </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-500">Payment Status</span>
-                <Badge className={statusBadgeClass(detail.paymentStatus)}>
-                  {detail.paymentStatus}
-                </Badge>
-              </div>
-              {detail.paymentMethod && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">Payment Method</span>
-                  <span>{detail.paymentMethod}</span>
-                </div>
-              )}
-            </div>
-
+            {/* Customer balance (if applicable) */}
             {detail.customerName && detail.contactBalance != null && detail.contactBalance > 0 && (
-              <div className="border-t pt-3">
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">Customer Outstanding</span>
-                  <span className="font-semibold text-amber-600">{formatNaira(detail.contactBalance)}</span>
+                  <span className="text-amber-700">Customer Outstanding</span>
+                  <span className="font-semibold text-amber-700 tabular-nums">{formatNaira(detail.contactBalance)}</span>
                 </div>
                 {detail.dueDate && (
-                  <div className="flex justify-between text-sm mt-1">
-                    <span className="text-slate-500">Earliest Due</span>
-                    <span>{formatDateTime(detail.dueDate)}</span>
+                  <div className="flex justify-between text-xs mt-1">
+                    <span className="text-amber-600">Earliest due</span>
+                    <span className="text-amber-700">{formatDateTime(detail.dueDate)}</span>
                   </div>
                 )}
               </div>
             )}
 
             {detail.notes && (
-              <div className="border-t pt-3">
-                <span className="text-xs text-slate-500">Notes</span>
-                <p className="text-sm mt-1">{detail.notes}</p>
+              <div>
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Notes</p>
+                <p className="text-sm text-slate-700">{detail.notes}</p>
               </div>
             )}
           </div>
         )}
-        <DialogFooter>
-          {sale && !sale.deletedAtUtc && onReturn && (
-            <Button
-              variant="outline"
-              onClick={() => onReturn(sale)}
-              className="text-amber-600 border-amber-200 hover:bg-amber-50"
-            >
-              <RotateCcw size={14} className="mr-1" /> Return
-            </Button>
-          )}
-          {sale && !sale.deletedAtUtc && onVoid && (
-            <Button
-              variant="outline"
-              onClick={() => onVoid(sale)}
-              className="text-red-600 border-red-200 hover:bg-red-50"
-            >
-              <Ban size={14} className="mr-1" /> Void
-            </Button>
-          )}
-          <Button variant="outline" onClick={onClose}>Close</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </DrawerBody>
+      <DrawerFooter>
+        {sale && !sale.deletedAtUtc && onReturn && (
+          <Button
+            variant="outline"
+            onClick={() => onReturn(sale)}
+            className="text-amber-600 border-amber-200 hover:bg-amber-50"
+          >
+            <RotateCcw size={14} className="mr-1" /> Return
+          </Button>
+        )}
+        {sale && !sale.deletedAtUtc && onVoid && (
+          <Button
+            variant="outline"
+            onClick={() => onVoid(sale)}
+            className="text-red-600 border-red-200 hover:bg-red-50"
+          >
+            <Ban size={14} className="mr-1" /> Void
+          </Button>
+        )}
+        <Button variant="outline" onClick={onClose}>Close</Button>
+      </DrawerFooter>
+    </Drawer>
   );
 }
