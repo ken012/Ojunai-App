@@ -21,7 +21,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { MessageSquare, Building2, User, Pencil, Bell, Tags, X, Plus, Users, Trash2, KeyRound, CreditCard, Phone } from "lucide-react";
+import { MessageSquare, Building2, User, Pencil, Bell, Tags, X, Plus, Users, Trash2, KeyRound, CreditCard, Phone, FileText, Save, CheckCircle2 } from "lucide-react";
 import { CATEGORY_NAMES } from "@/lib/categories";
 import { hasPermission, Permission } from "@/lib/permissions";
 import {
@@ -156,6 +156,7 @@ function SettingsPage() {
           <nav className="sticky top-6 space-y-0.5 text-sm">
             {[
               { href: "#business", label: "Business" },
+              { href: "#receipts", label: "Receipts" },
               { href: "#plan", label: "Plan & Billing" },
               { href: "#alerts", label: "Alerts" },
               { href: "#whatsapp-confirm", label: "Sale Confirmations" },
@@ -182,15 +183,18 @@ function SettingsPage() {
       <div id="business" className="scroll-mt-24" />
       {/* Business */}
       <Card>
-        <CardHeader className="pb-2 flex flex-row items-center justify-between">
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-            <Building2 size={15} />
-            Business
-          </CardTitle>
+        <CardHeader className="pb-3 flex flex-row items-start justify-between">
+          <div>
+            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+              <Building2 size={15} className="text-slate-500" />
+              Business
+            </CardTitle>
+            <p className="text-xs text-slate-500 mt-1">Your business details, currency, and address</p>
+          </div>
           {hasPermission(Permission.ManageSettings) && (
             <button
               onClick={() => setEditing(true)}
-              className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900"
+              className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors"
               title="Edit business"
             >
               <Pencil size={14} />
@@ -243,6 +247,11 @@ function SettingsPage() {
             <span className="text-sm">{business?.country ?? "—"}</span>
           </div>
           <Separator />
+          <div className="flex justify-between gap-4">
+            <span className="text-sm text-slate-500 flex-shrink-0">Address</span>
+            <span className="text-sm text-right">{business?.address ?? <span className="text-slate-300">—</span>}</span>
+          </div>
+          <Separator />
           <div className="flex justify-between">
             <span className="text-sm text-slate-500">Status</span>
             <Badge variant={business?.isActive ? "default" : "secondary"}>
@@ -251,6 +260,21 @@ function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <div id="receipts" className="scroll-mt-24" />
+      {/* Receipts — own section */}
+      {hasPermission(Permission.ManageSettings) && (
+        <ReceiptsCard
+          business={business}
+          onUpdate={(updated) => {
+            setBusiness(updated);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("bp_business", JSON.stringify(updated));
+              refreshSync();
+            }
+          }}
+        />
+      )}
 
       <div id="plan" className="scroll-mt-24" />
       {/* Plan */}
@@ -769,6 +793,7 @@ type BusinessShape = {
   state?: string;
   city?: string;
   country?: string;
+  address?: string;
   largeSaleThreshold?: number;
   customCategories?: string[];
   alertLowStock?: boolean;
@@ -776,10 +801,211 @@ type BusinessShape = {
   alertLargeSale?: boolean;
   confirmLargeSales?: boolean;
   confirmLargeSaleThreshold?: number;
+  vatEnabled?: boolean;
+  vatRate?: number;
+  taxId?: string;
+  receiptHeaderText?: string;
+  receiptFooterText?: string;
+  receiptAccentColor?: string;
   plan?: string;
   trialEndsAt?: string;
   isActive: boolean;
 };
+
+// ─── Receipts settings card (own section, inline editable) ──────────────────
+function ReceiptsCard({
+  business,
+  onUpdate,
+}: {
+  business: BusinessShape | null;
+  onUpdate: (b: BusinessShape) => void;
+}) {
+  const [form, setForm] = useState({
+    vatEnabled: false,
+    vatRate: 7.5,
+    taxId: "",
+    receiptHeaderText: "",
+    receiptFooterText: "",
+    receiptAccentColor: "#06b6d4",
+  });
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState(false);
+
+  // Track dirty state for the Save button enable
+  const initialRef = useState({ ref: form })[0];
+
+  if (business && !initialized) {
+    const f = {
+      vatEnabled: business.vatEnabled ?? false,
+      vatRate: business.vatRate ?? 7.5,
+      taxId: business.taxId ?? "",
+      receiptHeaderText: business.receiptHeaderText ?? "",
+      receiptFooterText: business.receiptFooterText ?? "",
+      receiptAccentColor: business.receiptAccentColor ?? "#06b6d4",
+    };
+    setForm(f);
+    initialRef.ref = f;
+    setInitialized(true);
+  }
+
+  const isDirty = initialized && JSON.stringify(form) !== JSON.stringify(initialRef.ref);
+
+  async function handleSave() {
+    if (!business || !isDirty) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const { data } = await api.put<{ data: BusinessShape }>("/business", {
+        vatEnabled: form.vatEnabled,
+        vatRate: form.vatRate,
+        taxId: form.taxId || null,
+        receiptHeaderText: form.receiptHeaderText || null,
+        receiptFooterText: form.receiptFooterText || null,
+        receiptAccentColor: form.receiptAccentColor || null,
+      });
+      onUpdate(data.data!);
+      initialRef.ref = { ...form };
+      setSavedAt(Date.now());
+      setTimeout(() => setSavedAt(null), 2500);
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      setError(ax.response?.data?.errors?.[0] ?? "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <FileText size={15} className="text-cyan-500" />
+          Receipts
+        </CardTitle>
+        <p className="text-xs text-slate-500 mt-1">
+          Configure VAT, tax info, and receipt PDF appearance
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {/* VAT */}
+        <div>
+          <label className="flex items-center justify-between cursor-pointer">
+            <div>
+              <p className="text-sm font-medium text-slate-700">Charge VAT on sales</p>
+              <p className="text-xs text-slate-500 mt-0.5">When on, new sales default to VAT-included; toggleable per sale</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={form.vatEnabled}
+              onChange={(e) => setForm({ ...form, vatEnabled: e.target.checked })}
+              className="rounded border-slate-300"
+            />
+          </label>
+          {form.vatEnabled && (
+            <div className="mt-3 ml-0 max-w-[180px]">
+              <Label className="text-xs text-slate-500">VAT Rate (%)</Label>
+              <Input
+                type="number"
+                step="0.1"
+                min={0}
+                max={100}
+                value={form.vatRate}
+                onChange={(e) => setForm({ ...form, vatRate: Number(e.target.value) })}
+              />
+              <p className="text-[11px] text-slate-400 mt-1">Nigeria standard: 7.5%</p>
+            </div>
+          )}
+        </div>
+
+        <Separator />
+
+        {/* Tax ID */}
+        <div>
+          <Label className="text-xs text-slate-500">Tax ID / TIN</Label>
+          <Input
+            value={form.taxId}
+            onChange={(e) => setForm({ ...form, taxId: e.target.value })}
+            placeholder="e.g. 12345678-0001"
+            className="max-w-md"
+          />
+          <p className="text-[11px] text-slate-400 mt-1">Printed on receipts under business address. Optional.</p>
+        </div>
+
+        {/* Header text override */}
+        <div>
+          <Label className="text-xs text-slate-500">Header text override</Label>
+          <Input
+            value={form.receiptHeaderText}
+            onChange={(e) => setForm({ ...form, receiptHeaderText: e.target.value })}
+            placeholder={business?.name ?? "Business name"}
+            maxLength={80}
+            className="max-w-md"
+          />
+          <p className="text-[11px] text-slate-400 mt-1">Defaults to your business name. Use only if you want a different name on receipts.</p>
+        </div>
+
+        {/* Footer */}
+        <div>
+          <Label className="text-xs text-slate-500">Footer message</Label>
+          <Input
+            value={form.receiptFooterText}
+            onChange={(e) => setForm({ ...form, receiptFooterText: e.target.value })}
+            placeholder="Thank you for your business"
+            maxLength={200}
+            className="max-w-md"
+          />
+        </div>
+
+        {/* Accent color */}
+        <div>
+          <Label className="text-xs text-slate-500">Accent color</Label>
+          <div className="flex items-center gap-2.5 mt-1">
+            <input
+              type="color"
+              value={form.receiptAccentColor}
+              onChange={(e) => setForm({ ...form, receiptAccentColor: e.target.value })}
+              className="h-9 w-12 rounded-md border border-slate-200 cursor-pointer"
+            />
+            <Input
+              value={form.receiptAccentColor}
+              onChange={(e) => setForm({ ...form, receiptAccentColor: e.target.value })}
+              placeholder="#06b6d4"
+              maxLength={7}
+              className="font-mono text-xs max-w-[140px]"
+            />
+            <div
+              className="h-9 flex-1 max-w-[180px] rounded-md flex items-center justify-center text-xs font-semibold tracking-wider text-white"
+              style={{ backgroundColor: form.receiptAccentColor }}
+            >
+              PREVIEW
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-1">Used for the divider line and RECEIPT label color.</p>
+        </div>
+
+        {/* Save bar */}
+        <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+          {error && <p className="text-xs text-red-500 mr-auto">{error}</p>}
+          {savedAt && (
+            <p className="text-xs text-emerald-600 inline-flex items-center gap-1 mr-auto">
+              <CheckCircle2 size={12} /> Saved
+            </p>
+          )}
+          <Button
+            onClick={handleSave}
+            disabled={saving || !isDirty}
+            className="gap-1.5"
+          >
+            <Save size={14} />
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function ManageCategoriesCard({
   business,
@@ -1574,12 +1800,6 @@ function EditBusinessDialog({
     state: "",
     country: "",
     address: "",
-    vatEnabled: false,
-    vatRate: 7.5,
-    taxId: "",
-    receiptHeaderText: "",
-    receiptFooterText: "",
-    receiptAccentColor: "#06b6d4",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1587,23 +1807,13 @@ function EditBusinessDialog({
 
   // Initialize form when business loads or dialog opens
   if (business && open && !initialized) {
-    const b = business as BusinessShape & {
-      address?: string; vatEnabled?: boolean; vatRate?: number;
-      taxId?: string; receiptHeaderText?: string; receiptFooterText?: string; receiptAccentColor?: string;
-    };
     setForm({
       businessType: business.businessType ?? "",
       currency: business.currency ?? "NGN",
       city: business.city ?? "",
       state: business.state ?? "",
       country: business.country ?? "",
-      address: b.address ?? "",
-      vatEnabled: b.vatEnabled ?? false,
-      vatRate: b.vatRate ?? 7.5,
-      taxId: b.taxId ?? "",
-      receiptHeaderText: b.receiptHeaderText ?? "",
-      receiptFooterText: b.receiptFooterText ?? "",
-      receiptAccentColor: b.receiptAccentColor ?? "#06b6d4",
+      address: business.address ?? "",
     });
     setInitialized(true);
   }
@@ -1620,12 +1830,6 @@ function EditBusinessDialog({
         state: form.state,
         country: form.country,
         address: form.address,
-        vatEnabled: form.vatEnabled,
-        vatRate: form.vatRate,
-        taxId: form.taxId,
-        receiptHeaderText: form.receiptHeaderText,
-        receiptFooterText: form.receiptFooterText,
-        receiptAccentColor: form.receiptAccentColor,
       });
       onSaved(data.data!);
       handleClose();
@@ -1638,7 +1842,7 @@ function EditBusinessDialog({
   }
 
   function handleClose() {
-    setForm({ businessType: "", currency: "NGN", city: "", state: "", country: "", address: "", vatEnabled: false, vatRate: 7.5, taxId: "", receiptHeaderText: "", receiptFooterText: "", receiptAccentColor: "#06b6d4" });
+    setForm({ businessType: "", currency: "NGN", city: "", state: "", country: "", address: "" });
     setError(null);
     setInitialized(false);
     onClose();
@@ -1704,86 +1908,6 @@ function EditBusinessDialog({
               placeholder="e.g. 12 Awolowo Way, Ikeja"
             />
             <p className="text-[11px] text-slate-400 mt-1">Shown on PDF receipts. Optional.</p>
-          </div>
-          <div className="rounded-lg border border-slate-200 p-3 space-y-2.5">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.vatEnabled}
-                onChange={(e) => setForm({ ...form, vatEnabled: e.target.checked })}
-                className="rounded border-slate-300"
-              />
-              <span className="text-sm font-medium text-slate-700">Charge VAT on sales</span>
-            </label>
-            {form.vatEnabled && (
-              <div>
-                <Label className="text-xs">VAT Rate (%)</Label>
-                <Input
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  max={100}
-                  value={form.vatRate}
-                  onChange={(e) => setForm({ ...form, vatRate: Number(e.target.value) })}
-                />
-                <p className="text-[11px] text-slate-400 mt-1">Nigeria standard is 7.5%. New sales default to including VAT; you can toggle per-sale.</p>
-              </div>
-            )}
-          </div>
-
-          {/* Receipt template — collapsible-ish section */}
-          <div className="rounded-lg border border-slate-200 p-3 space-y-3">
-            <div>
-              <p className="text-sm font-medium text-slate-700">Receipt template</p>
-              <p className="text-[11px] text-slate-400 mt-0.5">Customize what appears on PDF receipts</p>
-            </div>
-            <div>
-              <Label className="text-xs">Tax ID / TIN (optional)</Label>
-              <Input
-                value={form.taxId}
-                onChange={(e) => setForm({ ...form, taxId: e.target.value })}
-                placeholder="e.g. 12345678-0001"
-              />
-              <p className="text-[11px] text-slate-400 mt-1">Shown under business info if set.</p>
-            </div>
-            <div>
-              <Label className="text-xs">Header text (optional)</Label>
-              <Input
-                value={form.receiptHeaderText}
-                onChange={(e) => setForm({ ...form, receiptHeaderText: e.target.value })}
-                placeholder={business?.name ?? "Business name"}
-                maxLength={80}
-              />
-              <p className="text-[11px] text-slate-400 mt-1">Defaults to business name. Override if needed.</p>
-            </div>
-            <div>
-              <Label className="text-xs">Footer message</Label>
-              <Input
-                value={form.receiptFooterText}
-                onChange={(e) => setForm({ ...form, receiptFooterText: e.target.value })}
-                placeholder="Thank you for your business"
-                maxLength={200}
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Accent color</Label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={form.receiptAccentColor}
-                  onChange={(e) => setForm({ ...form, receiptAccentColor: e.target.value })}
-                  className="h-9 w-12 rounded-md border border-slate-200 cursor-pointer"
-                />
-                <Input
-                  value={form.receiptAccentColor}
-                  onChange={(e) => setForm({ ...form, receiptAccentColor: e.target.value })}
-                  placeholder="#06b6d4"
-                  maxLength={7}
-                  className="font-mono text-xs"
-                />
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">Used for the divider line and receipt label color.</p>
-            </div>
           </div>
           <div>
             <Label>Country</Label>
