@@ -22,10 +22,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { exportCsv } from "@/lib/csv";
 import {
   AlertTriangle, TrendingUp, TrendingDown, Clock, Target, DollarSign, Users,
   CalendarClock, PieChart, Activity, CreditCard, UserCheck, PackageX,
-  Repeat, PackageCheck, Link2, FileBarChart, Maximize2, X
+  Repeat, PackageCheck, Link2, FileBarChart, Maximize2, X, Download
 } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -143,16 +144,16 @@ export default function ReportsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Reports"
-        subtitle="Deep financial, customer, inventory, and operations insights"
+        subtitle="Financial, customer, inventory, and operations insights"
       />
 
-      <Tabs defaultValue="financial" className="space-y-4">
-        <TabsList className="flex-wrap self-start">
-          <TabsTrigger value="financial">Financial</TabsTrigger>
-          <TabsTrigger value="customers">Customers</TabsTrigger>
-          <TabsTrigger value="inventory">Inventory</TabsTrigger>
-          <TabsTrigger value="debts">Debts</TabsTrigger>
-          <TabsTrigger value="operations">Operations</TabsTrigger>
+      <Tabs defaultValue="financial" className="space-y-5">
+        <TabsList className="flex-wrap self-start bg-slate-100 p-1 rounded-lg">
+          <TabsTrigger value="financial" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md text-sm">Financial</TabsTrigger>
+          <TabsTrigger value="customers" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md text-sm">Customers</TabsTrigger>
+          <TabsTrigger value="inventory" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md text-sm">Inventory</TabsTrigger>
+          <TabsTrigger value="debts" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md text-sm">Debts</TabsTrigger>
+          <TabsTrigger value="operations" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md text-sm">Operations</TabsTrigger>
         </TabsList>
 
         <TabsContent value="operations"><OverviewTab hasAdvanced={hasAdvanced} /></TabsContent>
@@ -504,10 +505,33 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
         {/* Monthly P&L */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <FileBarChart size={15} className="text-emerald-500" />
-              Monthly P&amp;L
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                <FileBarChart size={15} className="text-emerald-500" />
+                Monthly P&amp;L
+              </CardTitle>
+              {pnl && (
+                <button
+                  onClick={() => exportCsv(
+                    `monthly-pnl-${new Date(pnl.month).toISOString().slice(0, 7)}`,
+                    ["Line", "Amount"],
+                    [
+                      ["Revenue", pnl.revenue],
+                      ["Cost of Goods Sold", -pnl.costOfGoodsSold],
+                      ["Gross Profit", pnl.grossProfit],
+                      ["Gross Margin %", `${pnl.grossMarginPercent}%`],
+                      ["Operating Expenses", -pnl.operatingExpenses],
+                      ["Net Profit", pnl.netProfit],
+                      ["Net Margin %", `${pnl.netMarginPercent}%`],
+                    ]
+                  )}
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100 transition-colors"
+                  title="Export CSV"
+                >
+                  <Download size={12} /> CSV
+                </button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {pnl ? (
@@ -586,10 +610,28 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
       {/* Monthly trend line chart */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-            <Activity size={15} className="text-cyan-500" />
-            12-Month Trend
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+              <Activity size={15} className="text-cyan-500" />
+              12-Month Trend
+            </CardTitle>
+            {trend && trend.points.length > 0 && (
+              <button
+                onClick={() => exportCsv(
+                  `12-month-trend-${new Date().toISOString().slice(0, 10)}`,
+                  ["Month", "Revenue", "Expenses", "Profit"],
+                  trend.points.map(p => [
+                    new Date(p.month).toLocaleString("en", { month: "short", year: "numeric" }),
+                    p.revenue, p.expenses, p.profit
+                  ])
+                )}
+                className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100 transition-colors"
+                title="Export CSV"
+              >
+                <Download size={12} /> CSV
+              </button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {trend && trend.points.length > 0 ? (

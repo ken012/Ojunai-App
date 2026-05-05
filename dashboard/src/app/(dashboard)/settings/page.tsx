@@ -283,14 +283,14 @@ function SettingsPage() {
       <div id="alerts" className="scroll-mt-24" />
       {/* Alerts — Owner/Admin only */}
       {hasPermission(Permission.ManageSettings) && <Card>
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-            <Bell size={15} />
+            <Bell size={15} className="text-amber-500" />
             WhatsApp Alerts
           </CardTitle>
+          <p className="text-xs text-slate-500 mt-1">Get notified on WhatsApp when key business events happen</p>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-xs text-slate-400">These alerts are sent to your WhatsApp automatically.</p>
           {[
             { key: "alertLowStock" as const, label: "Low Stock Alerts", desc: "When a product drops below its threshold after a sale" },
             { key: "alertDailySummary" as const, label: "Daily Summary", desc: "Sales, expenses, and net sent at 8 PM daily" },
@@ -424,11 +424,12 @@ function SettingsPage() {
       <div id="account" className="scroll-mt-24" />
       {/* User */}
       <Card>
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-            <User size={15} />
+            <User size={15} className="text-violet-500" />
             Your Account
           </CardTitle>
+          <p className="text-xs text-slate-500 mt-1">Personal profile and login details</p>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex justify-between">
@@ -462,11 +463,12 @@ function SettingsPage() {
       <div id="whatsapp" className="scroll-mt-24" />
       {/* WhatsApp */}
       <Card>
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
             <MessageSquare size={15} className="text-green-500" />
             WhatsApp Integration
           </CardTitle>
+          <p className="text-xs text-slate-500 mt-1">How you and your customers interact with the bot</p>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-slate-600">
@@ -683,11 +685,14 @@ function TeamMembersCard() {
 
   return (
     <Card>
-      <CardHeader className="pb-2 flex flex-row items-center justify-between">
-        <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-          <Users size={15} />
-          Team Members
-        </CardTitle>
+      <CardHeader className="pb-3 flex flex-row items-start justify-between">
+        <div>
+          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <Users size={15} className="text-cyan-500" />
+            Team Members
+          </CardTitle>
+          <p className="text-xs text-slate-500 mt-1">Staff who can access this business via WhatsApp or dashboard</p>
+        </div>
         {canAddStaff && (
           <Button size="sm" variant="outline" onClick={() => setAdding(!adding)}>
             <Plus size={14} className="mr-1" /> Add Staff
@@ -1047,11 +1052,12 @@ function ManageCategoriesCard({
 
   return (
     <Card>
-      <CardHeader className="pb-2">
+      <CardHeader className="pb-3">
         <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-          <Tags size={15} />
-          Manage Categories
+          <Tags size={15} className="text-rose-500" />
+          Product Categories
         </CardTitle>
+        <p className="text-xs text-slate-500 mt-1">Custom categories on top of presets — for inventory organization</p>
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-xs text-slate-400">
