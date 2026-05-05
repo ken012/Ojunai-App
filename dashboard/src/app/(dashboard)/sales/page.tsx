@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { hasPermission, Permission } from "@/lib/permissions";
 import { useBusiness } from "@/lib/data-sync";
+import { useToast } from "@/components/toast";
 import { formatNaira, formatDateTime } from "@/lib/format";
 import type { PaginatedResult, SaleSummaryDto, SaleDto, ProductDto, ContactDto, ApiResponse } from "@/lib/types";
 import { Input } from "@/components/ui/input";
@@ -69,6 +70,7 @@ export default function SalesPage() {
   }, []);
 
   // Download receipt PDF from API
+  const { toast } = useToast();
   async function downloadReceipt(saleId: string) {
     try {
       const res = await api.get(`/sales/${saleId}/receipt`, { responseType: "blob" });
@@ -88,9 +90,10 @@ export default function SalesPage() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      toast.success("Receipt downloaded", filename);
     } catch (err) {
       console.error("Receipt download failed", err);
-      alert("Failed to download receipt. Please try again.");
+      toast.error("Failed to download receipt", "Try again or check your connection.");
     }
   }
 
@@ -374,14 +377,13 @@ function EmailReceiptDialog({
   const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const { toast } = useToast();
 
   // Pre-fill (best-effort) on open from existing customer email if we had it.
   useEffect(() => {
     if (open) {
       setEmail("");
       setError(null);
-      setSuccess(null);
     }
   }, [open]);
 
@@ -392,14 +394,13 @@ function EmailReceiptDialog({
     }
     setSending(true);
     setError(null);
-    setSuccess(null);
     try {
-      const res = await api.post<{ message?: string; errors?: string[] }>(
+      await api.post<{ message?: string; errors?: string[] }>(
         `/sales/${sale.id}/receipt/email`,
         { to: email.trim() }
       );
-      setSuccess(res.data.message ?? "Receipt sent.");
-      setTimeout(() => onClose(), 1200);
+      toast.success("Receipt emailed", `Sent to ${email.trim()}`);
+      onClose();
     } catch (err: unknown) {
       const ax = err as { response?: { status?: number; data?: { errors?: string[] } } };
       if (ax.response?.status === 503) {
@@ -434,9 +435,6 @@ function EmailReceiptDialog({
           </div>
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-md px-3 py-2 text-xs text-red-700">{error}</div>
-          )}
-          {success && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 text-xs text-emerald-700">{success}</div>
           )}
         </div>
         <DialogFooter>
