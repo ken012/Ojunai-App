@@ -765,10 +765,28 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
         {/* Avg Transaction Value */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <TrendingUp size={15} className="text-emerald-500" />
-              Average Transaction Value
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                <TrendingUp size={15} className="text-emerald-500" />
+                Average Transaction Value
+              </CardTitle>
+              {avgTxn && avgTxn.points.length > 0 && (
+                <button
+                  onClick={() => exportCsv(
+                    `avg-transaction-${new Date().toISOString().slice(0, 10)}`,
+                    ["Month", "Average"],
+                    avgTxn.points.map(p => [
+                      new Date(p.month).toLocaleString("en", { month: "short", year: "numeric" }),
+                      p.averageValue,
+                    ])
+                  )}
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100 transition-colors"
+                  title="Export CSV"
+                >
+                  <Download size={12} /> CSV
+                </button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {avgTxn && avgTxn.points.length > 0 ? (
@@ -791,10 +809,28 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
         {/* Payment Methods */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <CreditCard size={15} className="text-cyan-500" />
-              Payment Methods (6 months)
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                <CreditCard size={15} className="text-cyan-500" />
+                Payment Methods (6 months)
+              </CardTitle>
+              {payments && payments.months.length > 0 && (
+                <button
+                  onClick={() => exportCsv(
+                    `payment-methods-${new Date().toISOString().slice(0, 10)}`,
+                    ["Month", "Cash", "Transfer", "POS", "Credit", "Other"],
+                    payments.months.map(m => [
+                      new Date(m.month).toLocaleString("en", { month: "short", year: "numeric" }),
+                      m.cash, m.transfer, m.pos, m.credit, m.other,
+                    ])
+                  )}
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100 transition-colors"
+                  title="Export CSV"
+                >
+                  <Download size={12} /> CSV
+                </button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {payments && payments.months.length > 0 ? (

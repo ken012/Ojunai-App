@@ -167,8 +167,12 @@ function EnabledView({ planStatus, business }: {
 
       {/* Read-only info */}
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700">Account Info</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <Phone size={15} className="text-violet-500" />
+            Account Info
+          </CardTitle>
+          <p className="text-xs text-slate-500 mt-1">Voice AI subscription status and account details</p>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
