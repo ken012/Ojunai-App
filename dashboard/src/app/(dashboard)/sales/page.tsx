@@ -452,6 +452,7 @@ function EmailReceiptDialog({
 function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const biz = useBusiness();
+  const { toast } = useToast();
   const [lines, setLines] = useState<SaleLine[]>([{ productId: "", quantity: "", unitPrice: "" }]);
   const [contactId, setContactId] = useState<string>("");
   const [paymentStatus, setPaymentStatus] = useState<"Paid" | "Unpaid" | "PartiallyPaid">("Paid");
@@ -536,6 +537,7 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
       qc.invalidateQueries({ queryKey: ["sales"] });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["low-stock"] });
+      toast.success("Sale recorded", `${formatNaira(total)} · ${validLines.length} item${validLines.length !== 1 ? "s" : ""}`);
       handleClose();
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { errors?: string[] } } };
