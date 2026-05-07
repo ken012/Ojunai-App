@@ -15,6 +15,7 @@ public class UserDto
     public string FullName { get; set; } = string.Empty;
     public string PhoneNumber { get; set; } = string.Empty;
     public string? Email { get; set; }
+    public bool EmailVerified { get; set; }
     public string Role { get; set; } = string.Empty;
     public DateOnly? DateOfBirth { get; set; }
 }
@@ -37,7 +38,17 @@ public class BusinessDto
     public bool AlertLowStock { get; set; } = true;
     public bool AlertDailySummary { get; set; } = true;
     public bool AlertLargeSale { get; set; } = true;
+    public bool AlertDashboardLowStock { get; set; } = true;
+    public bool AlertDashboardDailySummary { get; set; } = true;
+    public bool AlertDashboardLargeSale { get; set; } = true;
+    public bool AlertDashboardAgedReceivable { get; set; } = true;
+    public bool AlertDashboardStaffChanges { get; set; } = true;
+    public decimal? DailySalesGoal { get; set; }
     public bool ConfirmLargeSales { get; set; }
+
+    /// <summary>Public URL to the business's custom dashboard background image, or null. Pro/Business plans only.</summary>
+    public string? BackgroundImageUrl { get; set; }
+    public decimal BackgroundImageOpacity { get; set; } = 0.85m;
     public decimal ConfirmLargeSaleThreshold { get; set; }
     public bool IsActive { get; set; }
     public string AccountNumber { get; set; } = string.Empty;

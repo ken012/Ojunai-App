@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getStoredUser } from "@/lib/auth";
-import { api } from "@/lib/api";
+import { api, absoluteApiUrl } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
+import { useToast } from "@/components/toast";
 import { useBusiness, useUser, useDataSync } from "@/lib/data-sync";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +15,8 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordStrengthHint } from "@/components/password-strength-hint";
+import { validatePassword } from "@/lib/password-policy";
 import {
   Dialog,
   DialogContent,
@@ -21,9 +24,12 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { MessageSquare, Building2, User, Pencil, Bell, Tags, X, Plus, Users, Trash2, KeyRound, CreditCard, Phone, FileText, Save, CheckCircle2 } from "lucide-react";
+import { MessageSquare, Building2, User, Pencil, Bell, Tags, X, Plus, Users, Trash2, KeyRound, CreditCard, Phone, FileText, Save, CheckCircle2, ImageIcon, Upload, Lock } from "lucide-react";
 import { CATEGORY_NAMES } from "@/lib/categories";
 import { hasPermission, Permission } from "@/lib/permissions";
+import { InstallSettingsCard } from "@/components/install-settings-card";
+import { SettingsSection } from "@/components/settings-section";
+import { SettingsNav } from "@/components/settings-nav";
 import {
   type SupportedCurrency,
   SUPPORTED_CURRENCIES,
@@ -89,6 +95,7 @@ function SettingsPage() {
   const syncBusiness = useBusiness();
   const syncUser = useUser();
   const { refresh: refreshSync } = useDataSync();
+  const { toast } = useToast();
   const [user, setUser] = useState<ReturnType<typeof getStoredUser>>(null);
   const [business, setBusiness] = useState<ReturnType<typeof useBusiness>>(null);
   const [editing, setEditing] = useState(false);
@@ -151,50 +158,44 @@ function SettingsPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[200px_1fr] lg:gap-10">
-        {/* Section nav (left rail) */}
-        <aside className="hidden lg:block">
-          <nav className="sticky top-6 space-y-0.5 text-sm">
-            {[
-              { href: "#business", label: "Business" },
-              { href: "#receipts", label: "Receipts" },
-              { href: "#plan", label: "Plan & Billing" },
-              { href: "#alerts", label: "Alerts" },
-              { href: "#whatsapp-confirm", label: "Sale Confirmations" },
-              { href: "#account", label: "Account" },
-              { href: "#voice-ai", label: "Voice AI" },
-              { href: "#whatsapp", label: "WhatsApp" },
-              { href: "#team", label: "Team" },
-              { href: "#categories", label: "Categories" },
-            ].map((item) => (
-              <a
-                key={item.href}
-                href={item.href}
-                className="block px-3 py-1.5 rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors"
-              >
-                {item.label}
-              </a>
-            ))}
-          </nav>
-        </aside>
+        {/* Sticky section nav with active-state highlight (desktop only) */}
+        <SettingsNav
+          items={[
+            { href: "#install", label: "Install on phone" },
+            { href: "#business", label: "Business" },
+            { href: "#receipts", label: "Receipts" },
+            { href: "#plan", label: "Plan & Billing" },
+            { href: "#alerts", label: "Alerts" },
+            { href: "#account", label: "Account" },
+            { href: "#voice-ai", label: "Voice AI" },
+            { href: "#whatsapp", label: "WhatsApp" },
+            { href: "#team", label: "Team" },
+            { href: "#categories", label: "Categories" },
+          ]}
+        />
 
         {/* Settings sections */}
         <div className="space-y-6 max-w-2xl">
 
-      <div id="business" className="scroll-mt-24" />
+      <SettingsSection id="install" title="Install on phone" icon={<Phone size={14} />}>
+        <InstallSettingsCard />
+      </SettingsSection>
+
+      <SettingsSection id="business" title="Business" icon={<Building2 size={14} />}>
       {/* Business */}
       <Card>
         <CardHeader className="pb-3 flex flex-row items-start justify-between">
           <div>
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <Building2 size={15} className="text-slate-500" />
+            <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+              <Building2 size={15} className="text-slate-500 dark:text-slate-400" />
               Business
             </CardTitle>
-            <p className="text-xs text-slate-500 mt-1">Your business details, currency, and address</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Your business details, currency, and address</p>
           </div>
           {hasPermission(Permission.ManageSettings) && (
             <button
               onClick={() => setEditing(true)}
-              className="p-1.5 rounded-md hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors"
+              className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50 transition-colors"
               title="Edit business"
             >
               <Pencil size={14} />
@@ -203,17 +204,17 @@ function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex justify-between">
-            <span className="text-sm text-slate-500">Business Name</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">Business Name</span>
             <span className="text-sm font-medium">{business?.name ?? "—"}</span>
           </div>
           <Separator />
           {business?.accountNumber && (
             <>
               <div className="flex justify-between items-center">
-                <span className="text-sm text-slate-500">Account Number</span>
+                <span className="text-sm text-slate-500 dark:text-slate-400">Account Number</span>
                 <button
                   onClick={() => { navigator.clipboard.writeText(business.accountNumber!); }}
-                  className="text-sm font-mono font-medium bg-slate-100 px-2.5 py-0.5 rounded hover:bg-slate-200 transition-colors"
+                  className="text-sm font-mono font-medium bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
                   title="Click to copy"
                 >
                   {business.accountNumber}
@@ -223,37 +224,37 @@ function SettingsPage() {
             </>
           )}
           <div className="flex justify-between">
-            <span className="text-sm text-slate-500">Type</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">Type</span>
             <span className="text-sm">{business?.businessType ?? "—"}</span>
           </div>
           <Separator />
           <div className="flex justify-between">
-            <span className="text-sm text-slate-500">Currency</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">Currency</span>
             <span className="text-sm font-mono">{business?.currency ?? "NGN"}</span>
           </div>
           <Separator />
           <div className="flex justify-between">
-            <span className="text-sm text-slate-500">City</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">City</span>
             <span className="text-sm">{business?.city ?? "—"}</span>
           </div>
           <Separator />
           <div className="flex justify-between">
-            <span className="text-sm text-slate-500">Town / State</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">Town / State</span>
             <span className="text-sm">{business?.state ?? "—"}</span>
           </div>
           <Separator />
           <div className="flex justify-between">
-            <span className="text-sm text-slate-500">Country</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">Country</span>
             <span className="text-sm">{business?.country ?? "—"}</span>
           </div>
           <Separator />
           <div className="flex justify-between gap-4">
-            <span className="text-sm text-slate-500 flex-shrink-0">Address</span>
-            <span className="text-sm text-right">{business?.address ?? <span className="text-slate-300">—</span>}</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400 flex-shrink-0">Address</span>
+            <span className="text-sm text-right">{business?.address ?? <span className="text-slate-300 dark:text-slate-600">—</span>}</span>
           </div>
           <Separator />
           <div className="flex justify-between">
-            <span className="text-sm text-slate-500">Status</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">Status</span>
             <Badge variant={business?.isActive ? "default" : "secondary"}>
               {business?.isActive ? "Active" : "Inactive"}
             </Badge>
@@ -261,7 +262,16 @@ function SettingsPage() {
         </CardContent>
       </Card>
 
-      <div id="receipts" className="scroll-mt-24" />
+      {/* Custom dashboard branding — Pro/Business plans only */}
+      {hasPermission(Permission.ManageSettings) && (
+        <BrandingCard business={business} onUpdate={(updated) => {
+          setBusiness(updated);
+          if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+        }} />
+      )}
+      </SettingsSection>
+
+      <SettingsSection id="receipts" title="Receipts" icon={<FileText size={14} />}>
       {/* Receipts — own section */}
       {hasPermission(Permission.ManageSettings) && (
         <ReceiptsCard
@@ -275,203 +285,381 @@ function SettingsPage() {
           }}
         />
       )}
+      </SettingsSection>
 
-      <div id="plan" className="scroll-mt-24" />
+      <SettingsSection id="plan" title="Plan & Billing" icon={<CreditCard size={14} />}>
       {/* Plan */}
       <PlanCard business={business} />
+      </SettingsSection>
 
-      <div id="alerts" className="scroll-mt-24" />
-      {/* Alerts — Owner/Admin only */}
+      <SettingsSection id="alerts" title="Alerts" icon={<Bell size={14} />}>
       {hasPermission(Permission.ManageSettings) && <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
             <Bell size={15} className="text-amber-500" />
-            WhatsApp Alerts
+            Alerts
           </CardTitle>
-          <p className="text-xs text-slate-500 mt-1">Get notified on WhatsApp when key business events happen</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Stay on top of business events. Choose which channel they reach you on.</p>
         </CardHeader>
         <CardContent className="space-y-3">
-          {[
-            { key: "alertLowStock" as const, label: "Low Stock Alerts", desc: "When a product drops below its threshold after a sale" },
-            { key: "alertDailySummary" as const, label: "Daily Summary", desc: "Sales, expenses, and net sent at 8 PM daily" },
-          ].map(({ key, label, desc }) => (
-            <label key={key} className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                className="mt-1 h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
-                checked={business?.[key] ?? true}
-                onChange={async (e) => {
-                  try {
-                    const { data } = await api.put<{ data: typeof business }>("/business", { [key]: e.target.checked });
-                    const updated = data.data!;
-                    setBusiness(updated);
-                    if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
-                  } catch { /* silent */ }
-                }}
-              />
-              <div>
-                <p className="text-sm font-medium text-slate-700">{label}</p>
-                <p className="text-xs text-slate-400">{desc}</p>
+
+          {/* ── WhatsApp channel ────────────────────────────────────────── */}
+          <div className="rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50/40 dark:bg-emerald-950/20 p-3">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                <MessageSquare size={12} />
+                WhatsApp
+              </p>
+              <span className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-px rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900">
+                Owner only
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">
+              Sent as WhatsApp messages to the owner&apos;s registered number.
+            </p>
+            <div className="space-y-3">
+              {[
+                { key: "alertLowStock" as const, label: "Low Stock", desc: "When a product drops below its threshold after a sale" },
+                { key: "alertDailySummary" as const, label: "Daily Summary", desc: "Sales, expenses, and net sent at 8 PM daily" },
+              ].map(({ key, label, desc }) => (
+                <label key={key} className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
+                    checked={business?.[key] ?? true}
+                    onChange={async (e) => {
+                      try {
+                        const { data } = await api.put<{ data: typeof business }>("/business", { [key]: e.target.checked });
+                        const updated = data.data!;
+                        setBusiness(updated);
+                        if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                      } catch (err: unknown) {
+                        const ax = err as { response?: { data?: { errors?: string[] } } };
+                        toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+                      }
+                    }}
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{label}</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500">{desc}</p>
+                  </div>
+                </label>
+              ))}
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
+                  checked={business?.alertLargeSale ?? true}
+                  onChange={async (e) => {
+                    try {
+                      const { data } = await api.put<{ data: typeof business }>("/business", { alertLargeSale: e.target.checked });
+                      const updated = data.data!;
+                      setBusiness(updated);
+                      if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                    } catch (err: unknown) {
+                      const ax = err as { response?: { data?: { errors?: string[] } } };
+                      toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+                    }
+                  }}
+                />
+                <div>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Large Sale Alert</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">When a sale exceeds the threshold</p>
+                </div>
+              </label>
+              {business?.alertLargeSale && (
+                <div className="ml-7">
+                  <Label className="text-xs">Alert Threshold</Label>
+                  <Input
+                    type="number"
+                    value={business?.largeSaleThreshold?.toString() ?? "100000"}
+                    placeholder="e.g. 100000"
+                    onChange={async (e) => {
+                      const val = Number(e.target.value);
+                      try {
+                        const { data } = await api.put<{ data: typeof business }>("/business", { largeSaleThreshold: val || 100000 });
+                        const updated = data.data!;
+                        setBusiness(updated);
+                        if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                      } catch (err: unknown) {
+                        const ax = err as { response?: { data?: { errors?: string[] } } };
+                        toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Alert when a sale exceeds {cs}{(business?.largeSaleThreshold ?? 100000).toLocaleString()}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Dashboard channel ─────────────────────────────────────────
+              In-app bell. Internally split into Business (toggleable, Owner/Admin
+              only) and Personal (always-on security alerts for the user). */}
+          <div className="rounded-lg border border-cyan-200 dark:border-cyan-900 bg-cyan-50/40 dark:bg-cyan-950/20 p-3">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-cyan-700 dark:text-cyan-300 flex items-center gap-1.5">
+                <Bell size={12} />
+                Dashboard
+              </p>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">
+              Shown in the bell in the top corner of the dashboard.
+            </p>
+
+            {/* Business sub-block */}
+            <div className="rounded-lg border border-violet-200 dark:border-violet-900 bg-white dark:bg-slate-950/50 p-3">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-violet-700 dark:text-violet-300">
+                  Business
+                </p>
+                <span className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-px rounded-full bg-violet-100 text-violet-700 ring-1 ring-inset ring-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:ring-violet-900">
+                  Owner / Admin only
+                </span>
               </div>
-            </label>
-          ))}
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-1 h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
-              checked={business?.alertLargeSale ?? true}
-              onChange={async (e) => {
-                try {
-                  const { data } = await api.put<{ data: typeof business }>("/business", { alertLargeSale: e.target.checked });
-                  const updated = data.data!;
-                  setBusiness(updated);
-                  if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
-                } catch { /* silent */ }
-              }}
-            />
-            <div>
-              <p className="text-sm font-medium text-slate-700">Large Sale Alert</p>
-              <p className="text-xs text-slate-400">Get notified when a sale exceeds the threshold</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">
+                Operational alerts about the whole business. Sales, Bookkeeper, and Viewer roles never see these.
+              </p>
+              <div className="space-y-3">
+                {[
+                  { key: "alertDashboardLowStock" as const, label: "Low Stock", desc: "When a product drops below its threshold" },
+                  { key: "alertDashboardDailySummary" as const, label: "Daily Summary", desc: "Yesterday's revenue, expenses, and net at the start of each day" },
+                  { key: "alertDashboardLargeSale" as const, label: "Large Sale", desc: "When a sale exceeds the threshold above" },
+                  { key: "alertDashboardAgedReceivable" as const, label: "Aged Receivables", desc: "When a customer has owed you for 30+ days" },
+                  { key: "alertDashboardStaffChanges" as const, label: "Staff Added or Removed", desc: "When team membership changes" },
+                ].map(({ key, label, desc }) => (
+                  <label key={key} className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
+                      checked={(business as unknown as Record<string, boolean | undefined>)?.[key] ?? true}
+                      onChange={async (e) => {
+                        try {
+                          const { data } = await api.put<{ data: typeof business }>("/business", { [key]: e.target.checked });
+                          const updated = data.data!;
+                          setBusiness(updated);
+                          if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                        } catch (err: unknown) {
+                          const ax = err as { response?: { data?: { errors?: string[] } } };
+                          toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+                        }
+                      }}
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{label}</p>
+                      <p className="text-xs text-slate-400 dark:text-slate-500">{desc}</p>
+                    </div>
+                  </label>
+                ))}
+
+                {/* Daily sales goal — tick to enable, then enter the amount */}
+                {(() => {
+                  const goalRaw = (business as unknown as { dailySalesGoal?: number | null })?.dailySalesGoal;
+                  const goalEnabled = typeof goalRaw === "number" && goalRaw > 0;
+
+                  async function setGoal(val: number) {
+                    try {
+                      const { data } = await api.put<{ data: typeof business }>("/business", { dailySalesGoal: val });
+                      const updated = data.data!;
+                      setBusiness(updated);
+                      if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                    } catch (err: unknown) {
+                      const ax = err as { response?: { data?: { errors?: string[] } } };
+                      toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+                    }
+                  }
+
+                  return (
+                    <>
+                      <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
+                          checked={goalEnabled}
+                          onChange={(e) => setGoal(e.target.checked ? (goalRaw && goalRaw > 0 ? goalRaw : 100000) : 0)}
+                        />
+                        <div>
+                          <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Daily Sales Goal</p>
+                          <p className="text-xs text-slate-400 dark:text-slate-500">Get a celebratory bell notification the moment today&apos;s revenue crosses your goal.</p>
+                        </div>
+                      </label>
+                      {goalEnabled && (
+                        <div className="ml-7">
+                          <Label className="text-xs">Goal amount</Label>
+                          <Input
+                            type="number"
+                            value={goalRaw?.toString() ?? ""}
+                            placeholder="e.g. 100000"
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              if (!Number.isNaN(val) && val >= 0) setGoal(val);
+                            }}
+                          />
+                          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                            Notification fires once a day when sales cross {cs}{(goalRaw ?? 0).toLocaleString()}.
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
             </div>
-          </label>
-          {business?.alertLargeSale && (
-            <div className="ml-7">
-              <Label className="text-xs">Alert Threshold</Label>
-              <Input
-                type="number"
-                value={business?.largeSaleThreshold?.toString() ?? "100000"}
-                placeholder="e.g. 100000"
-                onChange={async (e) => {
-                  const val = Number(e.target.value);
-                  try {
-                    const { data } = await api.put<{ data: typeof business }>("/business", { largeSaleThreshold: val || 100000 });
-                    const updated = data.data!;
-                    setBusiness(updated);
-                    if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
-                  } catch { /* silent */ }
-                }}
-              />
-              <p className="text-xs text-slate-400 mt-1">Alert when a sale exceeds {cs}{(business?.largeSaleThreshold ?? 100000).toLocaleString()}</p>
+
+            {/* Personal sub-block */}
+            <div className="mt-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950/50 p-3">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+                  Personal
+                </p>
+                <span className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-px rounded-full bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
+                  Always on
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
+                Security alerts about your own account. These can&apos;t be disabled — they&apos;re your safety net if someone tries to take over the account.
+              </p>
+              <ul className="text-xs text-slate-600 dark:text-slate-400 space-y-1 ml-1">
+                <li>• Password changed</li>
+                <li>• Email verified</li>
+                <li>• Account recovery used</li>
+                <li>• Multiple failed login attempts</li>
+                <li>• Trial ending (if you&apos;re Owner)</li>
+              </ul>
             </div>
-          )}
+          </div>
+
         </CardContent>
       </Card>}
+      </SettingsSection>
 
-      <div id="whatsapp-confirm" className="scroll-mt-24" />
-      {/* WhatsApp Sale Confirmation */}
-      {hasPermission(Permission.ManageSettings) && <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-            WhatsApp Sale Confirmation
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-xs text-slate-400">When enabled, the WhatsApp bot will ask for confirmation before recording sales above the threshold.</p>
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-1 h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
-              checked={business?.confirmLargeSales ?? false}
-              onChange={async (e) => {
-                try {
-                  const { data } = await api.put<{ data: typeof business }>("/business", { confirmLargeSales: e.target.checked });
-                  const updated = data.data!;
-                  setBusiness(updated);
-                  if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
-                } catch { /* silent */ }
-              }}
-            />
-            <div>
-              <p className="text-sm font-medium text-slate-700">Confirm large sales via WhatsApp</p>
-              <p className="text-xs text-slate-400">Bot will ask &quot;Confirm?&quot; before recording sales above the threshold</p>
-            </div>
-          </label>
-          {business?.confirmLargeSales && (
-            <div>
-              <Label className="text-xs">Confirmation Threshold</Label>
-              <Input
-                type="number"
-                value={business?.confirmLargeSaleThreshold?.toString() ?? ""}
-                placeholder="e.g. 500000"
-                onChange={async (e) => {
-                  const val = Number(e.target.value);
-                  try {
-                    const { data } = await api.put<{ data: typeof business }>("/business", { confirmLargeSaleThreshold: val || 0 });
-                    const updated = data.data!;
-                    setBusiness(updated);
-                    if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
-                  } catch { /* silent */ }
-                }}
-              />
-              <p className="text-xs text-slate-400 mt-1">Sales above {cs}{(business?.confirmLargeSaleThreshold ?? 0).toLocaleString()} will require WhatsApp confirmation</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>}
-
-      <div id="team" className="scroll-mt-24" />
+      <SettingsSection id="team" title="Team" icon={<Users size={14} />}>
       {/* Team Members — Owner/Admin only */}
       {hasPermission(Permission.ManageStaff) && <TeamMembersCard />}
+      </SettingsSection>
 
-      <div id="categories" className="scroll-mt-24" />
+      <SettingsSection id="categories" title="Categories" icon={<Tags size={14} />}>
       {/* Manage Categories — Owner/Admin only */}
       {hasPermission(Permission.ManageSettings) &&
       <ManageCategoriesCard business={business} onUpdate={(updated) => {
         setBusiness(updated);
         if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
       }} />}
+      </SettingsSection>
 
-      <div id="account" className="scroll-mt-24" />
+      <SettingsSection id="account" title="Your Account" icon={<User size={14} />}>
       {/* User */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
             <User size={15} className="text-violet-500" />
             Your Account
           </CardTitle>
-          <p className="text-xs text-slate-500 mt-1">Personal profile and login details</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Personal profile and login details</p>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex justify-between">
-            <span className="text-sm text-slate-500">Name</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">Name</span>
             <span className="text-sm font-medium">{user?.fullName ?? "—"}</span>
           </div>
           <Separator />
           <div className="flex justify-between">
-            <span className="text-sm text-slate-500">Phone</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">Phone</span>
             <span className="text-sm font-mono">{user?.phoneNumber ?? "—"}</span>
           </div>
           <Separator />
-          <div className="flex justify-between">
-            <span className="text-sm text-slate-500">Email</span>
-            <span className="text-sm">{user?.email ?? "—"}</span>
-          </div>
+          <EmailField />
           <Separator />
           <div className="flex justify-between">
-            <span className="text-sm text-slate-500">Role</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">Role</span>
             <Badge variant="outline">{user?.role ?? "—"}</Badge>
           </div>
           <Separator />
           <DobField />
         </CardContent>
       </Card>
+      </SettingsSection>
 
-      <div id="voice-ai" className="scroll-mt-24" />
+      <SettingsSection id="voice-ai" title="Voice AI" icon={<Phone size={14} />}>
       {/* Voice AI */}
       <VoiceAISettingsCard />
+      </SettingsSection>
 
-      <div id="whatsapp" className="scroll-mt-24" />
+      <SettingsSection id="whatsapp" title="WhatsApp" icon={<MessageSquare size={14} />}>
       {/* WhatsApp */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
             <MessageSquare size={15} className="text-green-500" />
             WhatsApp Integration
           </CardTitle>
-          <p className="text-xs text-slate-500 mt-1">How you and your customers interact with the bot</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">How you and your customers interact with the bot</p>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-sm text-slate-600">
+          {/* Sale Confirmations sub-block — first because it's a behavior toggle the user
+              actively manages, vs. the integration info below which is more reference. */}
+          {hasPermission(Permission.ManageSettings) && (
+            <div className="rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50/40 dark:bg-emerald-950/20 p-3">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                  <CheckCircle2 size={12} />
+                  Sale Confirmations
+                </p>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">
+                When enabled, the bot asks for confirmation before recording sales above the threshold — useful for protecting against fat-fingered orders or staff mistakes.
+              </p>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
+                  checked={business?.confirmLargeSales ?? false}
+                  onChange={async (e) => {
+                    try {
+                      const { data } = await api.put<{ data: typeof business }>("/business", { confirmLargeSales: e.target.checked });
+                      const updated = data.data!;
+                      setBusiness(updated);
+                      if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                    } catch (err: unknown) {
+                      const ax = err as { response?: { data?: { errors?: string[] } } };
+                      toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+                    }
+                  }}
+                />
+                <div>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Confirm large sales via WhatsApp</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">Bot will ask &quot;Confirm?&quot; before recording sales above the threshold below.</p>
+                </div>
+              </label>
+              {business?.confirmLargeSales && (
+                <div className="ml-7 mt-3">
+                  <Label className="text-xs">Confirmation Threshold</Label>
+                  <Input
+                    type="number"
+                    value={business?.confirmLargeSaleThreshold?.toString() ?? ""}
+                    placeholder="e.g. 500000"
+                    onChange={async (e) => {
+                      const val = Number(e.target.value);
+                      try {
+                        const { data } = await api.put<{ data: typeof business }>("/business", { confirmLargeSaleThreshold: val || 0 });
+                        const updated = data.data!;
+                        setBusiness(updated);
+                        if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                      } catch (err: unknown) {
+                        const ax = err as { response?: { data?: { errors?: string[] } } };
+                        toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Sales above {cs}{(business?.confirmLargeSaleThreshold ?? 0).toLocaleString()} will require WhatsApp confirmation.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <Separator className="my-2" />
+
+          <p className="text-sm text-slate-600 dark:text-slate-400">
             Ojunai understands natural language. Here are some example commands you can send via WhatsApp:
           </p>
           <div className="grid grid-cols-1 gap-2 mt-2">
@@ -484,28 +672,27 @@ function SettingsPage() {
               "which products are running low?",
               "how much does Kola owe me?",
             ].map((example) => (
-              <div key={example} className="bg-slate-50 border rounded-lg px-3 py-2 text-sm text-slate-700 font-mono">
+              <div key={example} className="bg-slate-50 dark:bg-slate-950 border rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 font-mono">
                 &ldquo;{example}&rdquo;
               </div>
             ))}
           </div>
-          <p className="text-xs text-slate-400 mt-2">
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
             Messages are processed by AI and executed automatically when confidence is high.
           </p>
-
-          <Separator className="my-3" />
 
           <a
             href={TWILIO_WA_LINK}
             target="_blank"
             rel="noreferrer"
-            className="flex items-center justify-center gap-2 w-full px-4 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors"
+            className="flex items-center justify-center gap-2 w-full px-4 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors mt-2"
           >
             <MessageSquare size={16} />
             Chat with Ojunai on WhatsApp
           </a>
         </CardContent>
       </Card>
+      </SettingsSection>
 
       <EditBusinessDialog
         business={business}
@@ -538,9 +725,120 @@ type StaffMember = {
   createdAtUtc: string;
 };
 
+function EmailField() {
+  const user = useUser();
+  const { refresh } = useDataSync();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setError(user?.email
+        ? "To remove your email, please contact support — it's your account recovery channel."
+        : "Please enter an email address, or click Cancel.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      await api.put("/auth/email", { email: trimmed });
+      await refresh();
+      setEditing(false);
+      setValue("");
+      setSent(false); // reset banner state since email may have changed
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      setError(ax.response?.data?.errors?.[0] ?? "Couldn't update email.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleResend() {
+    setSending(true);
+    setError(null);
+    try {
+      await api.post("/auth/request-email-verification");
+      setSent(true);
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      setError(ax.response?.data?.errors?.[0] ?? "Couldn't send the verification email.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm text-slate-500 dark:text-slate-400 flex-shrink-0">Email</span>
+          <div className="flex items-center gap-2 flex-1 max-w-sm">
+            <Input
+              type="email"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="email@example.com"
+              autoFocus
+              className="h-8 text-sm"
+              onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
+            />
+            <Button size="sm" onClick={handleSave} disabled={saving}>{saving ? "..." : "Save"}</Button>
+            <Button size="sm" variant="outline" onClick={() => { setEditing(false); setValue(""); setError(null); }} disabled={saving}>Cancel</Button>
+          </div>
+        </div>
+        <p className="text-[11px] text-slate-400 dark:text-slate-500">
+          Changing your email will require re-verification. Used for account recovery if you lose your phone.
+        </p>
+        {error && <p className="text-[11px] text-red-500">{error}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-slate-500 dark:text-slate-400">Email</span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm">{user?.email ?? "—"}</span>
+          {user?.email && (user.emailVerified
+            ? <Badge className="bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 text-[10px]">Verified</Badge>
+            : <Badge className="bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200 text-[10px]">Unverified</Badge>
+          )}
+          <button
+            onClick={() => { setValue(user?.email ?? ""); setEditing(true); setError(null); }}
+            className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+            title={user?.email ? "Edit email" : "Add email"}
+            type="button"
+          >
+            <Pencil size={12} />
+          </button>
+        </div>
+      </div>
+      {user?.email && !user.emailVerified && (
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+            Verify so you can recover your account if you lose your phone.
+          </p>
+          <Button size="sm" variant="outline" onClick={handleResend} disabled={sending || sent}>
+            {sending ? "Sending…" : sent ? "Email sent ✓" : "Send verification email"}
+          </Button>
+        </div>
+      )}
+      {error && <p className="text-[11px] text-red-500">{error}</p>}
+    </div>
+  );
+}
+
 function DobField() {
   const user = useUser();
   const { refresh } = useDataSync();
+  const { toast } = useToast();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
@@ -555,7 +853,10 @@ function DobField() {
       await refresh();
       setEditing(false);
       setValue("");
-    } catch { /* silent */ } finally {
+    } catch (err: unknown) {
+                    const ax = err as { response?: { data?: { errors?: string[] } } };
+                    toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+                  } finally {
       setSaving(false);
     }
   }
@@ -563,11 +864,11 @@ function DobField() {
   if (editing) {
     return (
       <div className="flex items-center justify-between">
-        <span className="text-sm text-slate-500">Birth Year</span>
+        <span className="text-sm text-slate-500 dark:text-slate-400">Birth Year</span>
         <div className="flex items-center gap-2">
           <input type="number" min="1920" max={new Date().getFullYear() - 13} placeholder="e.g. 1990"
             value={value} onChange={(e) => setValue(e.target.value)}
-            className="h-8 w-24 px-2 rounded-md border border-slate-200 text-sm text-center" />
+            className="h-8 w-24 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm text-center" />
           <Button size="sm" onClick={handleSave} disabled={saving || !value}>{saving ? "..." : "Save"}</Button>
           <Button size="sm" variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
         </div>
@@ -577,9 +878,9 @@ function DobField() {
 
   return (
     <div className="flex items-center justify-between">
-      <span className="text-sm text-slate-500">Birth Year</span>
+      <span className="text-sm text-slate-500 dark:text-slate-400">Birth Year</span>
       <div className="flex items-center gap-2">
-        <span className="text-sm text-slate-500">{hasDob ? "Saved" : "Not set"}</span>
+        <span className="text-sm text-slate-500 dark:text-slate-400">{hasDob ? "Saved" : "Not set"}</span>
         <button onClick={() => setEditing(true)} className="text-xs text-cyan-600 hover:underline">
           {hasDob ? "Change" : "Set"}
         </button>
@@ -600,7 +901,7 @@ function VoiceAISettingsCard() {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+        <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
           <Phone size={15} className="text-violet-500" />
           Voice AI Receptionist
           {isActive && (
@@ -616,17 +917,17 @@ function VoiceAISettingsCard() {
       <CardContent>
         {isActive ? (
           <div className="space-y-2">
-            <p className="text-sm text-slate-600">Your AI receptionist is active.</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400">Your AI receptionist is active.</p>
             <a href="/voice-ai" className="text-sm text-cyan-600 hover:underline">Manage Voice AI settings</a>
           </div>
         ) : isSuspended ? (
           <div className="space-y-2">
-            <p className="text-sm text-red-600">Voice AI is inactive due to billing.</p>
+            <p className="text-sm text-rose-600 dark:text-rose-400">Voice AI is inactive due to billing.</p>
             <a href="/voice-ai" className="text-sm text-cyan-600 hover:underline">Resubscribe</a>
           </div>
         ) : (
           <div className="space-y-2">
-            <p className="text-sm text-slate-500">Add an AI phone receptionist that handles customer calls 24/7.</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Add an AI phone receptionist that handles customer calls 24/7.</p>
             <a href="/voice-ai" className="text-sm text-cyan-600 hover:underline font-medium">Learn more and enable</a>
           </div>
         )}
@@ -637,10 +938,34 @@ function VoiceAISettingsCard() {
 
 function TeamMembersCard() {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ fullName: "", phoneNumber: "", password: "", email: "", role: "Sales" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resetting, setResetting] = useState<StaffMember | null>(null);
+  const [resetPassword, setResetPasswordValue] = useState("");
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSaving, setResetSaving] = useState(false);
+
+  async function handleResetPassword() {
+    if (!resetting) return;
+    const v = validatePassword(resetPassword);
+    if (!v.ok) { setResetError(v.reason ?? "Invalid password."); return; }
+    setResetSaving(true);
+    setResetError(null);
+    try {
+      await api.post(`/staff/${resetting.id}/reset-password`, { newPassword: resetPassword });
+      toast.success(`Password reset for ${resetting.fullName}`, "They'll be required to change it on next login.");
+      setResetting(null);
+      setResetPasswordValue("");
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      setResetError(ax.response?.data?.errors?.[0] ?? "Failed to reset password. Try again.");
+    } finally {
+      setResetSaving(false);
+    }
+  }
 
   const { data: planStatus } = usePlanStatus();
   const maxStaff = planStatus?.maxStaff ?? 1;
@@ -680,18 +1005,21 @@ function TeamMembersCard() {
     try {
       await api.delete(`/staff/${id}`);
       qc.invalidateQueries({ queryKey: ["staff"] });
-    } catch { /* silent */ }
+    } catch (err: unknown) {
+                    const ax = err as { response?: { data?: { errors?: string[] } } };
+                    toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+                  }
   }
 
   return (
     <Card>
       <CardHeader className="pb-3 flex flex-row items-start justify-between">
         <div>
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
             <Users size={15} className="text-cyan-500" />
             Team Members
           </CardTitle>
-          <p className="text-xs text-slate-500 mt-1">Staff who can access this business via WhatsApp or dashboard</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Staff who can access this business via WhatsApp or dashboard</p>
         </div>
         {canAddStaff && (
           <Button size="sm" variant="outline" onClick={() => setAdding(!adding)}>
@@ -706,7 +1034,7 @@ function TeamMembersCard() {
           </div>
         )}
         {adding && canAddStaff && (
-          <div className="border rounded-lg p-3 space-y-2 bg-slate-50">
+          <div className="border rounded-lg p-3 space-y-2 bg-slate-50 dark:bg-slate-950">
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label className="text-xs">Full Name</Label>
@@ -725,7 +1053,7 @@ function TeamMembersCard() {
               <div>
                 <Label className="text-xs">Role</Label>
                 <select
-                  className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
+                  className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
                   value={form.role}
                   onChange={(e) => setForm({ ...form, role: e.target.value })}
                 >
@@ -733,7 +1061,7 @@ function TeamMembersCard() {
                 </select>
               </div>
             </div>
-            {error && <p className="text-xs text-red-500">{error}</p>}
+            {error && <p className="text-xs text-rose-500 dark:text-rose-400">{error}</p>}
             <div className="flex gap-2 justify-end">
               <Button size="sm" variant="outline" onClick={() => { setAdding(false); setError(null); }}>Cancel</Button>
               <Button size="sm" onClick={handleAdd} disabled={saving || !form.fullName || !form.phoneNumber || !form.password}>
@@ -749,30 +1077,23 @@ function TeamMembersCard() {
               <div key={s.id} className="flex items-center justify-between border rounded-lg px-3 py-2">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-slate-900 truncate">{s.fullName}</p>
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">{s.fullName}</p>
                     <Badge variant={s.role === "Owner" ? "default" : "secondary"} className="text-xs">{s.role}</Badge>
                   </div>
-                  <p className="text-xs text-slate-400 font-mono">{s.phoneNumber}</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 font-mono">{s.phoneNumber}</p>
                 </div>
                 {s.role !== "Owner" && (
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={async () => {
-                        const pw = prompt(`Set temporary password for ${s.fullName}:`);
-                        if (!pw || pw.length < 8) { if (pw) alert("Password must be at least 8 characters."); return; }
-                        try {
-                          await api.post(`/staff/${s.id}/reset-password`, { newPassword: pw });
-                          alert(`Password reset for ${s.fullName}. They must change it on next login.`);
-                        } catch { alert("Failed to reset password."); }
-                      }}
-                      className="p-1 rounded hover:bg-cyan-50 text-slate-400 hover:text-cyan-600"
+                      onClick={() => { setResetting(s); setResetPasswordValue(""); setResetError(null); }}
+                      className="p-1 rounded hover:bg-cyan-50 dark:hover:bg-cyan-950/30 text-slate-400 dark:text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400"
                       title="Reset password"
                     >
                       <KeyRound size={14} />
                     </button>
                     <button
                       onClick={() => handleRemove(s.id)}
-                      className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500"
+                      className="p-1 rounded hover:bg-rose-50 dark:bg-rose-950/30 text-slate-400 dark:text-slate-500 hover:text-rose-500 dark:text-rose-400"
                       title="Remove staff"
                     >
                       <Trash2 size={14} />
@@ -783,9 +1104,42 @@ function TeamMembersCard() {
             ))}
           </div>
         ) : (
-          <p className="text-xs text-slate-400 italic">No team members yet. Add staff to let them record sales via WhatsApp or the dashboard.</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 italic">No team members yet. Add staff to let them record sales via WhatsApp or the dashboard.</p>
         )}
       </CardContent>
+
+      {/* Reset password dialog — replaces the legacy prompt() */}
+      <Dialog open={resetting !== null} onOpenChange={(o) => !o && setResetting(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset password{resetting ? ` for ${resetting.fullName}` : ""}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              Set a temporary password. They&rsquo;ll be required to change it on next login.
+            </p>
+            <div>
+              <Label className="text-xs text-slate-500 dark:text-slate-400">Temporary password</Label>
+              <Input
+                type="password"
+                value={resetPassword}
+                onChange={(e) => { setResetPasswordValue(e.target.value); setResetError(null); }}
+                placeholder="Min 10 characters"
+                autoFocus
+                onKeyDown={(e) => { if (e.key === "Enter" && validatePassword(resetPassword).ok) handleResetPassword(); }}
+              />
+              <PasswordStrengthHint password={resetPassword} />
+            </div>
+            {resetError && <p className="text-xs text-rose-500 dark:text-rose-400">{resetError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetting(null)} disabled={resetSaving}>Cancel</Button>
+            <Button onClick={handleResetPassword} disabled={resetSaving || !validatePassword(resetPassword).ok}>
+              {resetSaving ? "Resetting…" : "Reset password"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
@@ -815,9 +1169,200 @@ type BusinessShape = {
   plan?: string;
   trialEndsAt?: string;
   isActive: boolean;
+  backgroundImageUrl?: string | null;
+  backgroundImageOpacity?: number;
 };
 
 // ─── Receipts settings card (own section, inline editable) ──────────────────
+/**
+ * Custom dashboard background image — Pro and Business plans only.
+ * - Free/Shop plans: shows a locked upgrade prompt; file picker disabled.
+ * - Plans with the feature: file picker, preview of currently-saved image,
+ *   opacity slider (overlay legibility), and remove button.
+ *
+ * Client-side validation rejects too-large files and non-image MIME types BEFORE
+ * upload, but the server re-validates everything (BackgroundImageService has the
+ * full security pipeline: magic-byte sniff, dimension preflight, decode-and-re-encode).
+ */
+function BrandingCard({
+  business,
+  onUpdate,
+}: {
+  business: BusinessShape | null;
+  onUpdate: (b: BusinessShape) => void;
+}) {
+  const { toast } = useToast();
+  const { data: planStatus } = usePlanStatus();
+  const hasFeature = planStatus?.hasCustomBranding ?? false;
+  const [uploading, setUploading] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const currentUrl = absoluteApiUrl(business?.backgroundImageUrl ?? null);
+  const opacity = business?.backgroundImageOpacity ?? 0.85;
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+
+    // Client-side validation. Server re-validates with magic-byte sniff + decode.
+    const allowed = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    if (!allowed.includes(file.type)) {
+      toast.error("Unsupported file type", "Use JPEG, PNG, or WebP.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("File too large", "Maximum size is 5MB.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+    setUploading(true);
+    try {
+      const { data } = await api.post<{ data: BusinessShape }>("/business/background-image", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      onUpdate(data.data!);
+      toast.success("Background updated", "Your dashboard now uses your custom image.");
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error("Couldn't upload image", ax.response?.data?.errors?.[0] ?? "Please try a different file.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleRemove() {
+    if (!confirm("Remove the custom background?")) return;
+    setRemoving(true);
+    try {
+      const { data } = await api.delete<{ data: BusinessShape }>("/business/background-image");
+      onUpdate(data.data!);
+      toast.success("Background removed", "Reverted to the default dashboard.");
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error("Couldn't remove image", ax.response?.data?.errors?.[0] ?? "Please try again.");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  async function handleOpacityChange(val: number) {
+    try {
+      const { data } = await api.put<{ data: BusinessShape }>("/business", { backgroundImageOpacity: val });
+      onUpdate(data.data!);
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+          <ImageIcon size={15} className="text-pink-500" />
+          Branding
+        </CardTitle>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Custom dashboard background image</p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {!hasFeature ? (
+          <div className="flex items-start gap-3 rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50/40 dark:bg-amber-950/20 p-3">
+            <Lock size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
+            <div className="text-sm">
+              <p className="font-medium text-slate-700 dark:text-slate-300">Upgrade to use custom branding</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Custom dashboard backgrounds are part of the Pro and Business plans. Visit Plan &amp; Billing to upgrade.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Live preview */}
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
+              <div
+                className="h-32 bg-cover bg-center relative"
+                style={{
+                  backgroundImage: currentUrl ? `url(${currentUrl})` : undefined,
+                  backgroundColor: !currentUrl ? "#F1F5F9" : undefined,
+                }}
+              >
+                {currentUrl && (
+                  <div
+                    className="absolute inset-0 bg-white dark:bg-slate-950 transition-opacity"
+                    style={{ opacity }}
+                  />
+                )}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <p className="text-xs text-slate-400 dark:text-slate-500 px-3 py-1 rounded bg-white/80 dark:bg-slate-900/80">
+                    {currentUrl ? "Preview" : "No image — upload to set a custom background"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading || removing}
+              >
+                <Upload size={14} className="mr-1.5" />
+                {uploading ? "Uploading…" : currentUrl ? "Replace image" : "Upload image"}
+              </Button>
+              {currentUrl && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRemove}
+                  disabled={uploading || removing}
+                >
+                  <Trash2 size={14} className="mr-1.5" />
+                  {removing ? "Removing…" : "Remove"}
+                </Button>
+              )}
+            </div>
+
+            {currentUrl && (
+              <div>
+                <Label className="text-xs">Overlay opacity ({Math.round(opacity * 100)}%)</Label>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={opacity}
+                  onChange={(e) => handleOpacityChange(Number(e.target.value))}
+                  className="w-full"
+                />
+                <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                  Higher = content stays legible. Lower = image more visible. Default is 85%.
+                </p>
+              </div>
+            )}
+
+            <p className="text-[11px] text-slate-400 dark:text-slate-500">
+              JPEG, PNG, or WebP — up to 5MB. Resized server-side to 1920×1080 and stripped of metadata.
+            </p>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ReceiptsCard({
   business,
   onUpdate,
@@ -885,11 +1430,11 @@ function ReceiptsCard({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+        <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
           <FileText size={15} className="text-cyan-500" />
           Receipts
         </CardTitle>
-        <p className="text-xs text-slate-500 mt-1">
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
           Configure VAT, tax info, and receipt PDF appearance
         </p>
       </CardHeader>
@@ -898,19 +1443,19 @@ function ReceiptsCard({
         <div>
           <label className="flex items-center justify-between cursor-pointer">
             <div>
-              <p className="text-sm font-medium text-slate-700">Charge VAT on sales</p>
-              <p className="text-xs text-slate-500 mt-0.5">When on, new sales default to VAT-included; toggleable per sale</p>
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Charge VAT on sales</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">When on, new sales default to VAT-included; toggleable per sale</p>
             </div>
             <input
               type="checkbox"
               checked={form.vatEnabled}
               onChange={(e) => setForm({ ...form, vatEnabled: e.target.checked })}
-              className="rounded border-slate-300"
+              className="rounded border-slate-300 dark:border-slate-700"
             />
           </label>
           {form.vatEnabled && (
             <div className="mt-3 ml-0 max-w-[180px]">
-              <Label className="text-xs text-slate-500">VAT Rate (%)</Label>
+              <Label className="text-xs text-slate-500 dark:text-slate-400">VAT Rate (%)</Label>
               <Input
                 type="number"
                 step="0.1"
@@ -919,7 +1464,7 @@ function ReceiptsCard({
                 value={form.vatRate}
                 onChange={(e) => setForm({ ...form, vatRate: Number(e.target.value) })}
               />
-              <p className="text-[11px] text-slate-400 mt-1">Nigeria standard: 7.5%</p>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Nigeria standard: 7.5%</p>
             </div>
           )}
         </div>
@@ -928,19 +1473,19 @@ function ReceiptsCard({
 
         {/* Tax ID */}
         <div>
-          <Label className="text-xs text-slate-500">Tax ID / TIN</Label>
+          <Label className="text-xs text-slate-500 dark:text-slate-400">Tax ID / TIN</Label>
           <Input
             value={form.taxId}
             onChange={(e) => setForm({ ...form, taxId: e.target.value })}
             placeholder="e.g. 12345678-0001"
             className="max-w-md"
           />
-          <p className="text-[11px] text-slate-400 mt-1">Printed on receipts under business address. Optional.</p>
+          <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Printed on receipts under business address. Optional.</p>
         </div>
 
         {/* Header text override */}
         <div>
-          <Label className="text-xs text-slate-500">Header text override</Label>
+          <Label className="text-xs text-slate-500 dark:text-slate-400">Header text override</Label>
           <Input
             value={form.receiptHeaderText}
             onChange={(e) => setForm({ ...form, receiptHeaderText: e.target.value })}
@@ -948,12 +1493,12 @@ function ReceiptsCard({
             maxLength={80}
             className="max-w-md"
           />
-          <p className="text-[11px] text-slate-400 mt-1">Defaults to your business name. Use only if you want a different name on receipts.</p>
+          <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Defaults to your business name. Use only if you want a different name on receipts.</p>
         </div>
 
         {/* Footer */}
         <div>
-          <Label className="text-xs text-slate-500">Footer message</Label>
+          <Label className="text-xs text-slate-500 dark:text-slate-400">Footer message</Label>
           <Input
             value={form.receiptFooterText}
             onChange={(e) => setForm({ ...form, receiptFooterText: e.target.value })}
@@ -965,13 +1510,13 @@ function ReceiptsCard({
 
         {/* Accent color */}
         <div>
-          <Label className="text-xs text-slate-500">Accent color</Label>
+          <Label className="text-xs text-slate-500 dark:text-slate-400">Accent color</Label>
           <div className="flex items-center gap-2.5 mt-1">
             <input
               type="color"
               value={form.receiptAccentColor}
               onChange={(e) => setForm({ ...form, receiptAccentColor: e.target.value })}
-              className="h-9 w-12 rounded-md border border-slate-200 cursor-pointer"
+              className="h-9 w-12 rounded-md border border-slate-200 dark:border-slate-800 cursor-pointer"
             />
             <Input
               value={form.receiptAccentColor}
@@ -987,12 +1532,12 @@ function ReceiptsCard({
               PREVIEW
             </div>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Used for the divider line and RECEIPT label color.</p>
+          <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Used for the header divider, RECEIPT label, item table border, and TOTAL row on the printed receipt.</p>
         </div>
 
         {/* Save bar */}
-        <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
-          {error && <p className="text-xs text-red-500 mr-auto">{error}</p>}
+        <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+          {error && <p className="text-xs text-rose-500 dark:text-rose-400 mr-auto">{error}</p>}
           {savedAt && (
             <p className="text-xs text-emerald-600 inline-flex items-center gap-1 mr-auto">
               <CheckCircle2 size={12} /> Saved
@@ -1019,6 +1564,7 @@ function ManageCategoriesCard({
   business: BusinessShape | null;
   onUpdate: (b: BusinessShape) => void;
 }) {
+  const { toast } = useToast();
   const [newCat, setNewCat] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -1037,7 +1583,10 @@ function ManageCategoriesCard({
       const { data } = await api.put<{ data: BusinessShape }>("/business", { customCategories: updated });
       onUpdate(data.data!);
       setNewCat("");
-    } catch { /* silent */ } finally { setSaving(false); }
+    } catch (err: unknown) {
+                    const ax = err as { response?: { data?: { errors?: string[] } } };
+                    toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+                  } finally { setSaving(false); }
   }
 
   async function removeCategory(cat: string) {
@@ -1047,29 +1596,32 @@ function ManageCategoriesCard({
       const updated = customCats.filter((c) => c !== cat);
       const { data } = await api.put<{ data: BusinessShape }>("/business", { customCategories: updated });
       onUpdate(data.data!);
-    } catch { /* silent */ } finally { setSaving(false); }
+    } catch (err: unknown) {
+                    const ax = err as { response?: { data?: { errors?: string[] } } };
+                    toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+                  } finally { setSaving(false); }
   }
 
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+        <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
           <Tags size={15} className="text-rose-500" />
           Product Categories
         </CardTitle>
-        <p className="text-xs text-slate-500 mt-1">Custom categories on top of presets — for inventory organization</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Custom categories on top of presets — for inventory organization</p>
       </CardHeader>
       <CardContent className="space-y-3">
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-400 dark:text-slate-500">
           12 preset categories are always available. Add your own custom categories below.
         </p>
 
         {/* Preset categories (read-only) */}
         <div>
-          <Label className="text-xs text-slate-500">Preset categories</Label>
+          <Label className="text-xs text-slate-500 dark:text-slate-400">Preset categories</Label>
           <div className="flex flex-wrap gap-1.5 mt-1">
             {CATEGORY_NAMES.map((c) => (
-              <span key={c} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600">
+              <span key={c} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
                 {c}
               </span>
             ))}
@@ -1080,9 +1632,9 @@ function ManageCategoriesCard({
 
         {/* Custom categories (editable) */}
         <div>
-          <Label className="text-xs text-slate-500">Your custom categories</Label>
+          <Label className="text-xs text-slate-500 dark:text-slate-400">Your custom categories</Label>
           {customCats.length === 0 ? (
-            <p className="text-xs text-slate-300 mt-1 italic">No custom categories yet</p>
+            <p className="text-xs text-slate-300 dark:text-slate-600 mt-1 italic">No custom categories yet</p>
           ) : (
             <div className="flex flex-wrap gap-1.5 mt-1">
               {customCats.map((c) => (
@@ -1090,7 +1642,7 @@ function ManageCategoriesCard({
                   {c}
                   <button
                     onClick={() => removeCategory(c)}
-                    className="hover:text-red-500"
+                    className="hover:text-rose-500 dark:text-rose-400"
                     disabled={saving}
                   >
                     <X size={12} />
@@ -1141,7 +1693,7 @@ const PLAN_DETAILS: Record<string, { label: string; tagline: string; color: stri
   starter: {
     label: "Starter",
     tagline: "Best for solo traders just starting out",
-    color: "bg-slate-100 text-slate-700",
+    color: "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300",
     features: [
       { text: "1-month free trial", included: true },
       { text: "WhatsApp bot access", included: true },
@@ -1214,6 +1766,7 @@ type PlanStatus = {
 
 function PlanCard({ business }: { business: BusinessShape | null }) {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const { data: planStatus } = useQuery({
     queryKey: ["plan-status"],
     queryFn: async () => {
@@ -1229,6 +1782,9 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
   const [failedVerify, setFailedVerify] = useState<{transactionId?: string; txRef?: string} | null>(null);
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
   const [selectedCurrency, setSelectedCurrency] = useState<SupportedCurrency>(getDefaultCurrency());
+  // Confirm-price modal state — opened before any plan-change checkout so the user
+  // sees exactly what we're about to charge (especially the mid-cycle delta).
+  const [confirmTarget, setConfirmTarget] = useState<string | null>(null);
 
   useEffect(() => {
     if (business?.currency) setSelectedCurrency(toBillingCurrency(business.currency));
@@ -1422,7 +1978,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+        <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
           <CreditCard size={15} />
           Your Plan
         </CardTitle>
@@ -1444,23 +2000,23 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
             </span>
           )}
           {trialStatus === "GracePeriod" && (
-            <span className="text-xs text-red-600 font-medium">
+            <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">
               Trial ended — grace period active
             </span>
           )}
           {trialStatus === "Expired" && (
-            <span className="text-xs text-red-600 font-medium">
+            <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">
               Trial expired — subscribe to keep access
             </span>
           )}
         </div>
 
         {/* Billing cycle toggle */}
-        <div className="flex items-center bg-slate-100 rounded-lg p-1">
+        <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
           <button
             onClick={() => setBillingCycle("monthly")}
             className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              billingCycle === "monthly" ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700"
+              billingCycle === "monthly" ? "bg-white dark:bg-slate-900 shadow-sm text-slate-900 dark:text-slate-50" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
             }`}
           >
             Monthly
@@ -1468,7 +2024,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
           <button
             onClick={() => setBillingCycle("annual")}
             className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              billingCycle === "annual" ? "bg-white shadow-sm text-slate-900" : "text-slate-500 hover:text-slate-700"
+              billingCycle === "annual" ? "bg-white dark:bg-slate-900 shadow-sm text-slate-900 dark:text-slate-50" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
             }`}
           >
             Annual
@@ -1485,7 +2041,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
               className={`px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
                 selectedCurrency === c
                   ? "bg-cyan-100 text-cyan-700 border border-cyan-200"
-                  : "bg-slate-50 text-slate-500 border border-slate-200 hover:bg-slate-100"
+                  : "bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
               }`}
             >
               {CURRENCY_META[c].symbol} {c}
@@ -1495,19 +2051,19 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
 
         <div className="flex items-baseline gap-1">
           {billingCycle === "annual" && (
-            <span className="text-sm text-slate-400 line-through mr-1">
+            <span className="text-sm text-slate-400 dark:text-slate-500 line-through mr-1">
               {formatPrice(monthlyPrice, selectedCurrency)}
             </span>
           )}
-          <span className="text-2xl font-bold text-slate-900">{displayPrice}</span>
-          <span className="text-sm text-slate-400">/month</span>
+          <span className="text-2xl font-bold text-slate-900 dark:text-slate-50">{displayPrice}</span>
+          <span className="text-sm text-slate-400 dark:text-slate-500">/month</span>
         </div>
         {billingCycle === "annual" && (
           <p className="text-xs text-green-600 font-medium">
             {annualTotal}/year — save {discount}%
           </p>
         )}
-        <p className="text-xs text-slate-500">{details.tagline}</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400">{details.tagline}</p>
 
         {trialStatus === "GracePeriod" && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
@@ -1518,7 +2074,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
         )}
 
         {trialStatus === "Expired" && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+          <div className="rounded-lg border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/30 p-3">
             <p className="text-sm text-red-800">
               Your {details.label} free trial has expired. Subscribe at {displayPrice}/month to keep your {details.label} features.
             </p>
@@ -1527,8 +2083,8 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
 
         <ul className="space-y-1.5">
           {details.features.map((f) => (
-            <li key={f.text} className={`text-sm flex items-center gap-2 ${f.included ? "text-slate-600" : "text-slate-400 line-through"}`}>
-              <span className={`text-xs ${f.included ? "text-green-500" : "text-slate-300"}`}>
+            <li key={f.text} className={`text-sm flex items-center gap-2 ${f.included ? "text-slate-600 dark:text-slate-400" : "text-slate-400 dark:text-slate-500 line-through"}`}>
+              <span className={`text-xs ${f.included ? "text-green-500" : "text-slate-300 dark:text-slate-600"}`}>
                 {f.included ? "\u2713" : "\u2717"}
               </span>
               {f.text}
@@ -1536,7 +2092,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
           ))}
         </ul>
 
-        {subError && <p className="text-xs text-red-500">{subError}</p>}
+        {subError && <p className="text-xs text-rose-500 dark:text-rose-400">{subError}</p>}
 
         {pendingPayment && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
@@ -1550,30 +2106,30 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
         {/* Payment method picker for Flutterwave */}
         {payMethodPick && (
           <div className="rounded-lg border border-cyan-200 bg-cyan-50 p-4 space-y-3">
-            <p className="text-sm font-medium text-slate-700">How would you like to pay?</p>
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">How would you like to pay?</p>
             <div className="grid grid-cols-1 gap-2">
               <button
                 onClick={() => openFlutterwaveCheckout(true)}
-                className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-200 bg-white hover:border-cyan-300 hover:bg-cyan-50 transition-colors text-left"
+                className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-cyan-300 hover:bg-cyan-50 transition-colors text-left"
               >
                 <div>
-                  <p className="text-sm font-medium text-slate-900">Card payment</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-50">Card payment</p>
                   <p className="text-xs text-green-600">Auto-renews — no action needed at renewal</p>
                 </div>
-                <span className="text-xs text-slate-400">Visa, Mastercard</span>
+                <span className="text-xs text-slate-400 dark:text-slate-500">Visa, Mastercard</span>
               </button>
               <button
                 onClick={() => openFlutterwaveCheckout(false)}
-                className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-200 bg-white hover:border-cyan-300 hover:bg-cyan-50 transition-colors text-left"
+                className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-cyan-300 hover:bg-cyan-50 transition-colors text-left"
               >
                 <div>
-                  <p className="text-sm font-medium text-slate-900">Mobile money / Bank transfer</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-50">Mobile money / Bank transfer</p>
                   <p className="text-xs text-amber-600">Manual renewal — you renew before expiry</p>
                 </div>
-                <span className="text-xs text-slate-400">M-Pesa, MoMo, USSD</span>
+                <span className="text-xs text-slate-400 dark:text-slate-500">M-Pesa, MoMo, USSD</span>
               </button>
             </div>
-            <button onClick={() => setPayMethodPick(null)} className="text-xs text-slate-400 hover:text-slate-600">
+            <button onClick={() => setPayMethodPick(null)} className="text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600">
               Cancel
             </button>
           </div>
@@ -1610,7 +2166,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
             </Button>
             {plan !== "business" && (
               <div className="space-y-2">
-                <p className="text-xs text-slate-400">Or choose a different plan:</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">Or choose a different plan:</p>
                 {PLAN_ORDER
                   .filter((key) => key !== plan && key !== "business")
                   .map((key) => {
@@ -1638,7 +2194,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
                 </a>
               </div>
             )}
-            <p className="text-xs text-slate-400 text-center mt-2">
+            <p className="text-xs text-slate-400 dark:text-slate-500 text-center mt-2">
               Card payments auto-renew. Mobile money requires manual renewal.{" "}
               <a href="/terms" className="underline hover:text-slate-600">Terms</a> &{" "}
               <a href="/privacy" className="underline hover:text-slate-600">Privacy</a>.
@@ -1651,7 +2207,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
             {/* Upgrade buttons — plans above current */}
             {PLAN_ORDER.filter((key) => PLAN_ORDER.indexOf(key) > PLAN_ORDER.indexOf(plan) && key !== "business").length > 0 && (
               <>
-                <p className="text-xs text-slate-500">Upgrade:</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Upgrade:</p>
                 {PLAN_ORDER
                   .filter((key) => PLAN_ORDER.indexOf(key) > PLAN_ORDER.indexOf(plan) && key !== "business")
                   .map((key) => {
@@ -1661,7 +2217,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
                       <Button
                         key={key}
                         className="w-full h-11 text-base font-semibold bg-cyan-600 hover:bg-cyan-700 text-white shadow-sm"
-                        onClick={() => handleSubscribe(key)}
+                        onClick={() => setConfirmTarget(key)}
                         disabled={subscribing !== null}
                       >
                         {subscribing === key ? "Redirecting..." : `Upgrade to ${d.label} — ${btnPrice(key)}`}
@@ -1686,8 +2242,8 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
             {/* Downgrade buttons — plans below current (not shown on Starter since there's nothing below) */}
             {PLAN_ORDER.indexOf(plan) > 0 && (
               <>
-                <div className="border-t border-slate-100 pt-3">
-                  <p className="text-xs text-slate-400 mb-2">Downgrade:</p>
+                <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">Downgrade:</p>
                   <div className="flex flex-wrap gap-2">
                     {PLAN_ORDER
                       .filter((key) => PLAN_ORDER.indexOf(key) < PLAN_ORDER.indexOf(plan))
@@ -1699,7 +2255,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
                             key={key}
                             onClick={() => handleDowngrade(key)}
                             disabled={subscribing !== null}
-                            className="text-xs px-3 py-1.5 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 hover:border-slate-300 transition-colors disabled:opacity-50"
+                            className="text-xs px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 transition-colors disabled:opacity-50"
                           >
                             {subscribing === key ? "..." : `Downgrade to ${d.label} — ${btnPrice(key)}`}
                           </button>
@@ -1709,7 +2265,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
                 </div>
               </>
             )}
-            <p className="text-xs text-slate-400 text-center mt-2">
+            <p className="text-xs text-slate-400 dark:text-slate-500 text-center mt-2">
               Card payments auto-renew. Mobile money requires manual renewal.{" "}
               <a href="/terms" className="underline hover:text-slate-600">Terms</a> &{" "}
               <a href="/privacy" className="underline hover:text-slate-600">Privacy</a>.
@@ -1732,7 +2288,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
               {subscribing === plan ? "Redirecting..." : `Renew ${details.label} — ${btnPrice(plan)}`}
             </Button>
             {billingCycle === "monthly" && (
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                 Switch to annual and save {discount}% — renew once a year instead of every month.
               </p>
             )}
@@ -1749,7 +2305,10 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
                 try {
                   await api.post("/subscription/cancel-pending-change");
                   qc.invalidateQueries({ queryKey: ["plan-status"] });
-                } catch { /* silent */ }
+                } catch (err: unknown) {
+                    const ax = err as { response?: { data?: { errors?: string[] } } };
+                    toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+                  }
               }}
               className="text-xs font-medium text-blue-700 hover:text-blue-900 whitespace-nowrap ml-3 underline"
             >
@@ -1763,12 +2322,12 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
             <button
               onClick={handleCancel}
               disabled={cancelling}
-              className="text-xs text-red-500 hover:underline"
+              className="text-xs text-rose-500 dark:text-rose-400 hover:underline"
             >
               {cancelling ? "Cancelling..." : "Cancel renewal"}
             </button>
             {planStatus?.subscriptionEndsAt && (
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                 {isAutoRenew
                   ? `Auto-renews ${new Date(planStatus.subscriptionEndsAt).toLocaleDateString()}. Your card will be charged automatically.`
                   : `Expires ${new Date(planStatus.subscriptionEndsAt).toLocaleDateString()}.`}
@@ -1783,7 +2342,96 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
         {!isBillable && (
           <p className="text-xs text-green-600 pt-1">Complimentary account — no billing required.</p>
         )}
+
+        {/* Auto-renew informational banner — shows when user is within 7 days of renewal AND auto-renew is on.
+            Different from the action-required "expiring soon" warning above, which shows only when auto-renew is off. */}
+        {isBillable && hasActiveSub && isAutoRenew && isExpiringSoon && (
+          <div className="rounded-lg border border-cyan-200 dark:border-cyan-900 bg-cyan-50 dark:bg-cyan-950/30 p-3 mt-2">
+            <p className="text-sm text-cyan-800 dark:text-cyan-300">
+              Your <span className="font-semibold">{details.label}</span> plan auto-renews in {daysUntilExpiry === 0 ? "less than 24 hours" : `${daysUntilExpiry} day${daysUntilExpiry !== 1 ? "s" : ""}`} for <span className="font-semibold">{btnPrice(plan)}</span>.
+            </p>
+            <p className="text-xs text-cyan-700/80 dark:text-cyan-400/70 mt-1">
+              You don&rsquo;t need to do anything — your card will be charged automatically. To cancel, use the link above.
+            </p>
+          </div>
+        )}
       </CardContent>
+
+      {/* Confirm-price modal — shown before any plan-change checkout so the user sees the actual charge.
+          Computes mid-cycle delta client-side using the same rule the backend enforces (≥10 days remaining,
+          new plan price > current). Display only — backend recomputes & enforces independently. */}
+      {confirmTarget && (() => {
+        const targetDetails = PLAN_DETAILS[confirmTarget];
+        if (!targetDetails) return null;
+        const targetPrice = getPrice(confirmTarget, billingCycle, selectedCurrency);
+        const currentPrice = isSubscriber ? getPrice(plan, billingCycle, selectedCurrency) : 0;
+
+        // Mid-cycle delta eligibility (mirrors PaystackService.InitializeSubscriptionAsync)
+        const daysRemaining = subEndsAt ? (subEndsAt.getTime() - Date.now()) / 86400000 : 0;
+        const isMidCycleUpgrade =
+          billingCycle === "monthly" &&
+          hasActiveSub &&
+          subEndsAt && subEndsAt > new Date() &&
+          targetPrice > currentPrice &&
+          daysRemaining >= 10;
+
+        const deltaAmount = Math.max(0, targetPrice - currentPrice);
+        const chargedNow = isMidCycleUpgrade ? deltaAmount : targetPrice;
+
+        return (
+          <Dialog open onOpenChange={(o) => !o && setConfirmTarget(null)}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Upgrade to {targetDetails.label}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3 text-sm">
+                <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 p-3 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-600 dark:text-slate-400">You pay today</span>
+                    <span className="text-2xl font-bold text-slate-900 dark:text-slate-50 tabular-nums">
+                      {formatPrice(chargedNow, selectedCurrency)}
+                    </span>
+                  </div>
+                  {isMidCycleUpgrade && (
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Mid-cycle upgrade — you&rsquo;re only charged the difference between your current {details.label} ({formatPrice(currentPrice, selectedCurrency)}) and {targetDetails.label} ({formatPrice(targetPrice, selectedCurrency)}).
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-3 space-y-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">What happens next</p>
+                  <ul className="text-xs text-slate-600 dark:text-slate-400 space-y-1 mt-1.5">
+                    <li>• Your plan switches to <span className="font-semibold text-slate-900 dark:text-slate-50">{targetDetails.label}</span> immediately after payment</li>
+                    {isMidCycleUpgrade && subEndsAt ? (
+                      <>
+                        <li>• Your current cycle continues until <span className="font-semibold text-slate-900 dark:text-slate-50">{subEndsAt.toLocaleDateString()}</span></li>
+                        <li>• On that date, auto-renew kicks in at <span className="font-semibold text-slate-900 dark:text-slate-50">{formatPrice(targetPrice, selectedCurrency)}/mo</span></li>
+                      </>
+                    ) : (
+                      <>
+                        <li>• A new {billingCycle} cycle begins today, ending <span className="font-semibold text-slate-900 dark:text-slate-50">{new Date(Date.now() + (billingCycle === "annual" ? 365 : 30) * 86400000).toLocaleDateString()}</span></li>
+                        <li>• Auto-renews at <span className="font-semibold text-slate-900 dark:text-slate-50">{formatPrice(targetPrice, selectedCurrency)}/{billingCycle === "annual" ? "yr" : "mo"}</span> unless you cancel</li>
+                      </>
+                    )}
+                    <li>• You can cancel anytime — you keep access until the end of the current cycle</li>
+                  </ul>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setConfirmTarget(null)} disabled={subscribing !== null}>Cancel</Button>
+                <Button
+                  onClick={() => { const t = confirmTarget; setConfirmTarget(null); handleSubscribe(t); }}
+                  disabled={subscribing !== null}
+                  className="bg-cyan-600 hover:bg-cyan-700 text-white"
+                >
+                  {subscribing === confirmTarget ? "Redirecting..." : `Pay ${formatPrice(chargedNow, selectedCurrency)} & upgrade`}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
     </Card>
   );
 }
@@ -1863,8 +2511,8 @@ function EditBusinessDialog({
         <div className="space-y-3">
           <div>
             <Label>Business Name</Label>
-            <Input value={business?.name ?? ""} disabled className="bg-slate-50 text-slate-500" />
-            <p className="text-xs text-slate-400 mt-1">Business name cannot be changed.</p>
+            <Input value={business?.name ?? ""} disabled className="bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400" />
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Business name cannot be changed.</p>
           </div>
           <div>
             <Label>Type</Label>
@@ -1877,7 +2525,7 @@ function EditBusinessDialog({
           <div>
             <Label>Currency</Label>
             <select
-              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm"
+              className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm"
               value={form.currency}
               onChange={(e) => setForm({ ...form, currency: e.target.value })}
             >
@@ -1913,12 +2561,12 @@ function EditBusinessDialog({
               onChange={(e) => setForm({ ...form, address: e.target.value })}
               placeholder="e.g. 12 Awolowo Way, Ikeja"
             />
-            <p className="text-[11px] text-slate-400 mt-1">Shown on PDF receipts. Optional.</p>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Shown on PDF receipts. Optional.</p>
           </div>
           <div>
             <Label>Country</Label>
             <select
-              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
+              className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
               value={form.country}
               onChange={(e) => {
                 const country = e.target.value;
@@ -1936,7 +2584,7 @@ function EditBusinessDialog({
               ))}
             </select>
           </div>
-          {error && <p className="text-xs text-red-500">{error}</p>}
+          {error && <p className="text-xs text-rose-500 dark:text-rose-400">{error}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={handleClose} disabled={saving}>Cancel</Button>

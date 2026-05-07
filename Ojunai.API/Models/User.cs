@@ -17,6 +17,8 @@ public class User
     public int FailedLoginAttempts { get; set; } = 0;
     public DateTime? LockoutEndsAtUtc { get; set; }
     public DateOnly? DateOfBirth { get; set; }
+    public bool EmailVerified { get; set; } = false;
+    public DateTime? EmailVerifiedAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     public Business Business { get; set; } = null!;

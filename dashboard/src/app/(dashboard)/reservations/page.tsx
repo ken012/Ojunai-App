@@ -10,6 +10,7 @@ import { usePlanStatus } from "@/lib/use-plan-status";
 import type { StockHoldDto } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/toast";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -61,11 +62,11 @@ const SOURCE_STYLES: Record<string, { bg: string; text: string; label: string; i
   Manual: { bg: "bg-cyan-100", text: "text-cyan-700", label: "Dashboard" },
   WhatsApp: { bg: "bg-green-100", text: "text-green-700", label: "WhatsApp" },
   VoiceAI: { bg: "bg-violet-100", text: "text-violet-700", label: "Voice AI", icon: Phone },
-  Import: { bg: "bg-slate-100", text: "text-slate-600", label: "Import" },
+  Import: { bg: "bg-slate-100 dark:bg-slate-800", text: "text-slate-600 dark:text-slate-400", label: "Import" },
 };
 
 function SourceBadge({ source }: { source: string }) {
-  const s = SOURCE_STYLES[source] ?? { bg: "bg-slate-100", text: "text-slate-600", label: source };
+  const s = SOURCE_STYLES[source] ?? { bg: "bg-slate-100 dark:bg-slate-800", text: "text-slate-600 dark:text-slate-400", label: source };
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${s.bg} ${s.text}`}>
       {s.icon && <Phone size={10} />}
@@ -83,9 +84,9 @@ const STATUS_STYLE: Record<string, { cls: string; label: string; dot: string }> 
   cancelledCustomer: { cls: "bg-amber-50 text-amber-700 ring-amber-200", label: "Cancelled by customer", dot: "bg-amber-500" },
   cancelled: { cls: "bg-amber-50 text-amber-700 ring-amber-200", label: "Cancelled", dot: "bg-amber-500" },
   noShow: { cls: "bg-orange-50 text-orange-700 ring-orange-200", label: "No show", dot: "bg-orange-500" },
-  expired: { cls: "bg-slate-50 text-slate-600 ring-slate-200", label: "Auto-expired", dot: "bg-slate-400" },
-  released: { cls: "bg-slate-50 text-slate-600 ring-slate-200", label: "Released", dot: "bg-slate-400" },
-  releasedNote: { cls: "bg-slate-50 text-slate-600 ring-slate-200", label: "Released — see note", dot: "bg-slate-400" },
+  expired: { cls: "bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 ring-slate-200", label: "Auto-expired", dot: "bg-slate-400" },
+  released: { cls: "bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 ring-slate-200", label: "Released", dot: "bg-slate-400" },
+  releasedNote: { cls: "bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 ring-slate-200", label: "Released — see note", dot: "bg-slate-400" },
 };
 
 function StatusBadge({ status, releaseReason, releaseNote }: { status: string; releaseReason?: string | null; releaseNote?: string | null }) {
@@ -124,7 +125,7 @@ function HoldCountdown({ expiresAt }: { expiresAt: string }) {
   const hours = Math.floor(diff / 3600000);
   const mins = Math.floor((diff % 3600000) / 60000);
   // <1h: red urgency, <4h: amber, else: slate
-  const tone = hours < 1 ? "text-red-600" : hours < 4 ? "text-amber-600" : "text-slate-500";
+  const tone = hours < 1 ? "text-red-600" : hours < 4 ? "text-amber-600" : "text-slate-500 dark:text-slate-400";
   const label = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
   return (
     <span className={`inline-flex items-center gap-1 text-[11px] tabular-nums ${tone}`}>
@@ -141,6 +142,7 @@ function isActiveStatus(status: string) {
 
 export default function ReservationsPage() {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const { data: planStatus } = usePlanStatus();
   const [tab, setTab] = useState<"active" | "completed" | "all">("active");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -222,7 +224,10 @@ export default function ReservationsPage() {
       qc.invalidateQueries({ queryKey: ["reservations-holds"] });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["sales"] });
-    } catch { /* silent */ } finally {
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error(`Couldn't ${action === "release" ? "release" : "convert"} hold`, ax.response?.data?.errors?.[0] ?? "Please try again.");
+    } finally {
       setActionLoading(null);
     }
   }
@@ -244,7 +249,10 @@ export default function ReservationsPage() {
       qc.invalidateQueries({ queryKey: ["reservations-voice"] });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["sales"] });
-    } catch { /* silent */ } finally {
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error("Couldn't record sale", ax.response?.data?.errors?.[0] ?? "Please try again.");
+    } finally {
       setActionLoading(null);
     }
   }
@@ -262,7 +270,10 @@ export default function ReservationsPage() {
       setReasonModal(null);
       setReasonChoice("");
       setReasonNote("");
-    } catch { /* silent */ } finally {
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error("Couldn't update reservation", ax.response?.data?.errors?.[0] ?? "Please try again.");
+    } finally {
       setActionLoading(null);
     }
   }
@@ -302,21 +313,21 @@ export default function ReservationsPage() {
           <CardContent className="p-4 text-center">
             <Clock size={20} className="mx-auto text-amber-400 mb-1" />
             <p className="text-xl font-bold text-amber-600">{activeItems.length}</p>
-            <p className="text-xs text-slate-500">Active Holds</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Active Holds</p>
           </CardContent>
         </Card>
         <Card className={`cursor-pointer transition-all ${tab === "completed" ? "ring-2 ring-emerald-500" : "hover:shadow-md"}`} onClick={() => setTab("completed")}>
           <CardContent className="p-4 text-center">
             <CheckCircle size={20} className="mx-auto text-emerald-400 mb-1" />
             <p className="text-xl font-bold text-emerald-600">{completedItems.length}</p>
-            <p className="text-xs text-slate-500">Completed</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Completed</p>
           </CardContent>
         </Card>
         <Card className={`cursor-pointer transition-all ${tab === "all" ? "ring-2 ring-cyan-500" : "hover:shadow-md"}`} onClick={() => setTab("all")}>
           <CardContent className="p-4 text-center">
-            <Package size={20} className="mx-auto text-slate-400 mb-1" />
-            <p className="text-xl font-bold text-slate-900">{unified.length}</p>
-            <p className="text-xs text-slate-500">Total</p>
+            <Package size={20} className="mx-auto text-slate-400 dark:text-slate-500 mb-1" />
+            <p className="text-xl font-bold text-slate-900 dark:text-slate-50">{unified.length}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Total</p>
           </CardContent>
         </Card>
       </div>
@@ -347,22 +358,22 @@ export default function ReservationsPage() {
                 {displayed.map((h) => (
                   <TableRow key={h.id}>
                     <TableCell>
-                      <p className={`text-sm font-medium ${h.productName === "(deleted)" ? "text-slate-400 italic" : "text-slate-900"}`}>
+                      <p className={`text-sm font-medium ${h.productName === "(deleted)" ? "text-slate-400 dark:text-slate-500 italic" : "text-slate-900 dark:text-slate-50"}`}>
                         {h.productName}
                       </p>
-                      {!h.isVoice && <p className="text-[10px] text-slate-400">{h.unit}</p>}
+                      {!h.isVoice && <p className="text-[10px] text-slate-400 dark:text-slate-500">{h.unit}</p>}
                     </TableCell>
-                    <TableCell className="text-sm text-slate-700">{h.contactName}</TableCell>
-                    <TableCell className="text-center font-semibold text-slate-900">{h.quantity}</TableCell>
+                    <TableCell className="text-sm text-slate-700 dark:text-slate-300">{h.contactName}</TableCell>
+                    <TableCell className="text-center font-semibold text-slate-900 dark:text-slate-50">{h.quantity}</TableCell>
                     <TableCell><SourceBadge source={h.source} /></TableCell>
                     <TableCell><StatusBadge status={h.status} releaseReason={h.releaseReason} releaseNote={h.releaseNote} /></TableCell>
                     {tab !== "completed" && (
                       <TableCell>
-                        {h.holdExpiresAt ? <HoldCountdown expiresAt={h.holdExpiresAt} /> : <span className="text-xs text-slate-300">—</span>}
+                        {h.holdExpiresAt ? <HoldCountdown expiresAt={h.holdExpiresAt} /> : <span className="text-xs text-slate-300 dark:text-slate-600">—</span>}
                       </TableCell>
                     )}
-                    <TableCell className="text-xs text-slate-500">{formatDateTime(h.createdAt)}</TableCell>
-                    <TableCell className="text-xs text-slate-500 max-w-xs truncate">{h.notes ?? "—"}</TableCell>
+                    <TableCell className="text-xs text-slate-500 dark:text-slate-400">{formatDateTime(h.createdAt)}</TableCell>
+                    <TableCell className="text-xs text-slate-500 dark:text-slate-400 max-w-xs truncate">{h.notes ?? "—"}</TableCell>
                     {tab !== "completed" && (
                       <TableCell className="text-right">
                         {!h.isVoice ? (
@@ -375,7 +386,7 @@ export default function ReservationsPage() {
                             )}
                             {hasPermission(Permission.ManageStock) && (
                               <button onClick={() => handleAction(h.id, "release")} disabled={actionLoading === h.id}
-                                className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
+                                className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
                                 <Unlock size={12} /> Release
                               </button>
                             )}
@@ -387,7 +398,7 @@ export default function ReservationsPage() {
                               <ShoppingCart size={12} /> Sold &amp; Picked Up
                             </button>
                             <button onClick={() => { setReasonModal({ id: h.id, type: "release" }); setReasonChoice(""); setReasonNote(""); }}
-                              className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
+                              className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
                               <Unlock size={12} /> Released
                             </button>
                             <button onClick={() => { setReasonModal({ id: h.id, type: "cancel" }); setReasonChoice(""); setReasonNote(""); }}
@@ -403,7 +414,7 @@ export default function ReservationsPage() {
               </TableBody>
             </Table>
           ) : (
-            <div className="text-center py-12 text-slate-400">
+            <div className="text-center py-12 text-slate-400 dark:text-slate-500">
               <Package size={32} className="mx-auto mb-2 opacity-30" />
               <p>{tab === "active" ? "No active reservations." : "No completed reservations yet."}</p>
             </div>
@@ -414,8 +425,8 @@ export default function ReservationsPage() {
       {/* Reason modal */}
       {reasonModal && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setReasonModal(null)}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-slate-900 mb-3">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-50 mb-3">
               {reasonModal.type === "cancel" ? "Why are you cancelling?" : "Why are you releasing this hold?"}
             </h3>
             <div className="space-y-2 mb-4">
@@ -428,9 +439,9 @@ export default function ReservationsPage() {
                 { value: "owner_release", label: "Customer rescheduled / asked us to" },
                 { value: "other", label: "Other" },
               ]).map((opt) => (
-                <label key={opt.value} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm ${reasonChoice === opt.value ? "border-cyan-300 bg-cyan-50" : "border-slate-200 hover:bg-slate-50"}`}>
+                <label key={opt.value} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm ${reasonChoice === opt.value ? "border-cyan-300 bg-cyan-50" : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
                   <input type="radio" name="reason" value={opt.value} checked={reasonChoice === opt.value} onChange={() => setReasonChoice(opt.value)} className="sr-only" />
-                  <span className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${reasonChoice === opt.value ? "border-cyan-500 bg-cyan-500" : "border-slate-300"}`} />
+                  <span className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${reasonChoice === opt.value ? "border-cyan-500 bg-cyan-500" : "border-slate-300 dark:border-slate-700"}`} />
                   {opt.label}
                 </label>
               ))}
@@ -441,7 +452,7 @@ export default function ReservationsPage() {
                 onChange={(e) => setReasonNote(e.target.value)}
                 placeholder="Add a note..."
                 maxLength={500}
-                className="w-full h-20 p-2 rounded-md border border-slate-200 text-sm resize-none mb-3"
+                className="w-full h-20 p-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm resize-none mb-3"
               />
             )}
             <div className="flex justify-end gap-2">

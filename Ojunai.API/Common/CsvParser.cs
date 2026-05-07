@@ -12,32 +12,40 @@ public static class CsvParser
         // Strip BOM
         if (content.Length > 0 && content[0] == '\uFEFF') content = content.Substring(1);
 
-        // Normalize line endings
+        // Normalize line endings inside the doc (the row tokenizer below handles bare \n;
+        // \r\n collapses to \n, lone \r becomes \n).
         content = content.Replace("\r\n", "\n").Replace("\r", "\n");
+        if (string.IsNullOrEmpty(content)) return new List<Dictionary<string, string>>();
 
-        var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length < 2) return new List<Dictionary<string, string>>();
+        // Auto-detect delimiter (comma vs semicolon) from the first physical line, ignoring
+        // anything inside quotes \u2014 a header rarely contains quoted newlines but we still
+        // want to count delimiters in the header context only.
+        var firstLineEnd = FindUnquotedNewline(content, 0);
+        var headerSpan = firstLineEnd < 0 ? content : content[..firstLineEnd];
+        var delimiter = CountUnquoted(headerSpan, ';') > CountUnquoted(headerSpan, ',') ? ';' : ',';
 
-        // Auto-detect delimiter (comma vs semicolon)
-        var headerLine = lines[0];
-        var delimiter = headerLine.Count(c => c == ';') > headerLine.Count(c => c == ',') ? ';' : ',';
+        // RFC 4180-ish row tokenizer: walk the entire string with quote-state, emit fields
+        // on unquoted commas/semicolons, emit rows on unquoted newlines. Quoted fields can
+        // contain commas, semicolons, AND newlines. Doubled quotes ("") inside a quoted
+        // field collapse to a single quote.
+        var rowsRaw = TokenizeRows(content, delimiter);
+        if (rowsRaw.Count < 2) return new List<Dictionary<string, string>>();
 
-        // Parse headers (case-insensitive, trimmed, aliased to canonical names)
-        var headers = ParseRow(headerLine, delimiter)
+        var headers = rowsRaw[0]
             .Select(h => NormalizeHeader(h.Trim()))
             .ToArray();
 
         if (headers.Length > 50) return new List<Dictionary<string, string>>();
 
         var results = new List<Dictionary<string, string>>();
-        for (int i = 1; i < lines.Length; i++)
+        for (int i = 1; i < rowsRaw.Count; i++)
         {
-            var line = lines[i].Trim();
-            if (string.IsNullOrEmpty(line)) continue;
+            var values = rowsRaw[i];
+            // Skip blank rows (a row whose every cell is whitespace).
+            if (values.All(v => string.IsNullOrWhiteSpace(v))) continue;
 
-            var values = ParseRow(line, delimiter);
             var row = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            for (int j = 0; j < headers.Length && j < values.Length; j++)
+            for (int j = 0; j < headers.Length && j < values.Count; j++)
             {
                 var val = values[j].Trim();
                 if (!string.IsNullOrEmpty(val)) row[headers[j]] = val;
@@ -48,39 +56,98 @@ public static class CsvParser
         return results;
     }
 
-    private static string[] ParseRow(string line, char delimiter)
+    /// <summary>
+    /// Streaming tokenizer that splits an entire CSV document into rows of fields, honouring
+    /// RFC 4180 quoting (including newlines inside quoted fields and doubled-quote escapes).
+    /// </summary>
+    private static List<List<string>> TokenizeRows(string content, char delimiter)
     {
-        var fields = new List<string>();
-        var current = new StringBuilder();
+        var rows = new List<List<string>>();
+        var currentRow = new List<string>();
+        var currentField = new StringBuilder();
         bool inQuotes = false;
 
-        for (int i = 0; i < line.Length; i++)
+        for (int i = 0; i < content.Length; i++)
         {
-            var c = line[i];
-            if (c == '"')
+            var c = content[i];
+
+            if (inQuotes)
             {
-                if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
+                if (c == '"')
                 {
-                    current.Append('"');
-                    i++; // Skip escaped quote
+                    if (i + 1 < content.Length && content[i + 1] == '"')
+                    {
+                        // Escaped quote inside a quoted field.
+                        currentField.Append('"');
+                        i++;
+                    }
+                    else
+                    {
+                        inQuotes = false;
+                    }
                 }
                 else
                 {
-                    inQuotes = !inQuotes;
+                    currentField.Append(c);
                 }
+                continue;
             }
-            else if (c == delimiter && !inQuotes)
+
+            // Outside quotes:
+            if (c == '"')
             {
-                fields.Add(current.ToString());
-                current.Clear();
+                inQuotes = true;
+            }
+            else if (c == delimiter)
+            {
+                currentRow.Add(currentField.ToString());
+                currentField.Clear();
+            }
+            else if (c == '\n')
+            {
+                currentRow.Add(currentField.ToString());
+                currentField.Clear();
+                rows.Add(currentRow);
+                currentRow = new List<string>();
             }
             else
             {
-                current.Append(c);
+                currentField.Append(c);
             }
         }
-        fields.Add(current.ToString());
-        return fields.ToArray();
+
+        // Flush trailing field/row if the file doesn't end with a newline.
+        if (currentField.Length > 0 || currentRow.Count > 0)
+        {
+            currentRow.Add(currentField.ToString());
+            rows.Add(currentRow);
+        }
+
+        return rows;
+    }
+
+    private static int FindUnquotedNewline(string s, int start)
+    {
+        bool inQuotes = false;
+        for (int i = start; i < s.Length; i++)
+        {
+            var c = s[i];
+            if (c == '"') inQuotes = !inQuotes;
+            else if (c == '\n' && !inQuotes) return i;
+        }
+        return -1;
+    }
+
+    private static int CountUnquoted(string s, char target)
+    {
+        bool inQuotes = false;
+        var n = 0;
+        foreach (var c in s)
+        {
+            if (c == '"') inQuotes = !inQuotes;
+            else if (c == target && !inQuotes) n++;
+        }
+        return n;
     }
 
     private static readonly Dictionary<string, string> HeaderAliases = new(StringComparer.OrdinalIgnoreCase)

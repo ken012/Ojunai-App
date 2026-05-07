@@ -19,6 +19,7 @@ export type PlanStatus = {
   hasAdvancedReports: boolean;
   hasMonthlyCharts: boolean;
   hasStockHolds: boolean;
+  hasCustomBranding: boolean;
   isBillable: boolean;
   hasActiveSubscription: boolean;
   subscriptionEndsAt: string | null;

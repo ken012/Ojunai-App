@@ -28,7 +28,7 @@ function Tabs({
 const tabsListVariants = cva(
   // Base: a rounded pill container that reads as a clickable button group.
   // Matches the dashboard's sidebar aesthetic (slate surfaces with cyan-500 accents on active state).
-  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg border border-slate-200 bg-slate-100 p-1 gap-1 text-slate-600",
+  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 p-1 gap-1 text-slate-600 dark:text-slate-400",
   {
     variants: {
       variant: {
@@ -66,7 +66,7 @@ function TabsTrigger({ className, ...props }: TabsPrimitive.Tab.Props) {
         // Base: button-like with cursor pointer. Uses aria-selected for active state because
         // base-ui's Tab sets aria-selected="true" on the active tab — more reliable than data-active.
         "relative cursor-pointer select-none rounded-md px-4 py-2 text-sm font-medium whitespace-nowrap transition-all outline-none",
-        "text-slate-600 hover:bg-white hover:text-slate-900",
+        "text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-50",
         "focus-visible:ring-2 focus-visible:ring-cyan-400/50 focus-visible:ring-offset-1",
         "disabled:pointer-events-none disabled:opacity-50",
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",

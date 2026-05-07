@@ -85,6 +85,11 @@ public static class BillingConfig
         }
     };
 
+    /// <summary>Returns true if billing in this currency is supported (we have prices and a provider for it).</summary>
+    public static bool IsCurrencySupported(string? currency)
+        => !string.IsNullOrWhiteSpace(currency)
+           && Array.Exists(SupportedCurrencies, c => c.Equals(currency, StringComparison.OrdinalIgnoreCase));
+
     /// <summary>Get the fixed price for a plan + cycle + currency. Returns null if the combination is invalid.</summary>
     public static decimal? GetPrice(string plan, BillingCycle cycle, string currency)
     {
@@ -93,6 +98,20 @@ public static class BillingConfig
             && currencies.TryGetValue(currency.ToUpper(), out var price))
             return price;
         return null;
+    }
+
+    /// <summary>
+    /// Get the price, throwing a clear error when the currency isn't supported. Use this in checkout/billing
+    /// paths where silently falling back to a default would be wrong (charging the wrong amount in the wrong
+    /// currency). Display paths (UI symbols, formatting) can still use the nullable GetPrice.
+    /// </summary>
+    public static decimal GetPriceOrThrow(string plan, BillingCycle cycle, string currency)
+    {
+        var price = GetPrice(plan, cycle, currency);
+        if (price.HasValue) return price.Value;
+        throw new InvalidOperationException(
+            $"No price configured for plan '{plan}' / cycle '{cycle}' / currency '{currency}'. " +
+            $"Supported currencies: {string.Join(", ", SupportedCurrencies)}.");
     }
 
     /// <summary>Get the monthly equivalent of an annual price (for "≈ $X/mo billed yearly" display).</summary>

@@ -3,8 +3,9 @@
 export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
+import { useStickyState } from "@/lib/sticky-state";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, fetchAllPaged } from "@/lib/api";
 import { hasPermission, Permission } from "@/lib/permissions";
 import { useBusiness } from "@/lib/data-sync";
 import { useToast } from "@/components/toast";
@@ -52,9 +53,10 @@ export default function SalesPage() {
   const [returning, setReturning] = useState<SaleSummaryDto | null>(null);
   const [emailingSale, setEmailingSale] = useState<SaleSummaryDto | null>(null);
   const [tab, setTab] = useState<"active" | "voided" | "returned">("active");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [methodFilter, setMethodFilter] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("");
+  // Filters persist across visits so users don't reset on every page-load.
+  const [statusFilter, setStatusFilter] = useStickyState<string>("sales-status-filter", "");
+  const [methodFilter, setMethodFilter] = useStickyState<string>("sales-method-filter", "");
+  const [sourceFilter, setSourceFilter] = useStickyState<string>("sales-source-filter", "");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
@@ -134,36 +136,36 @@ export default function SalesPage() {
 
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative w-full sm:max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" />
           <input
             type="search"
             placeholder="Search by product or customer..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            className="h-8 w-full pl-8 pr-8 rounded-md border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            className="h-8 w-full pl-8 pr-8 rounded-md border border-slate-200 dark:border-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-cyan-500"
           />
           {search && (
-            <button onClick={() => { setSearch(""); setPage(1); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-0.5 rounded" type="button">
+            <button onClick={() => { setSearch(""); setPage(1); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 p-0.5 rounded" type="button">
               <X size={12} />
             </button>
           )}
         </div>
         <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-          className="h-8 px-2 rounded-md border border-slate-200 text-xs">
+          className="h-8 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-xs">
           <option value="">All Statuses</option>
           <option value="Paid">Paid</option>
           <option value="Unpaid">Unpaid</option>
           <option value="PartiallyPaid">Partially Paid</option>
         </select>
         <select value={methodFilter} onChange={(e) => { setMethodFilter(e.target.value); setPage(1); }}
-          className="h-8 px-2 rounded-md border border-slate-200 text-xs">
+          className="h-8 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-xs">
           <option value="">All Methods</option>
           <option value="Cash">Cash</option>
           <option value="Card">Card</option>
           <option value="Bank Transfer">Bank Transfer</option>
         </select>
         <select value={sourceFilter} onChange={(e) => { setSourceFilter(e.target.value); setPage(1); }}
-          className="h-8 px-2 rounded-md border border-slate-200 text-xs">
+          className="h-8 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-xs">
           <option value="">All Sources</option>
           <option value="WhatsApp">WhatsApp</option>
           <option value="Manual">Dashboard</option>
@@ -173,7 +175,7 @@ export default function SalesPage() {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+          <CardTitle className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             {data ? `${data.totalCount} ${tab} transaction${data.totalCount !== 1 ? "s" : ""}` : "Loading…"}
           </CardTitle>
         </CardHeader>
@@ -204,10 +206,10 @@ export default function SalesPage() {
                   {data?.items.map((sale) => (
                     <TableRow
                       key={sale.id}
-                      className={`cursor-pointer hover:bg-slate-50 ${tab !== "active" ? "opacity-60" : ""}`}
+                      className={`cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 ${tab !== "active" ? "opacity-60" : ""}`}
                       onClick={() => setViewing(sale)}
                     >
-                      <TableCell className="text-xs text-slate-500">
+                      <TableCell className="text-xs text-slate-500 dark:text-slate-400">
                         {tab === "voided" && sale.deletedAtUtc
                           ? `Voided ${formatDateTime(sale.deletedAtUtc)}`
                           : tab === "returned" && sale.deletedAtUtc
@@ -215,9 +217,27 @@ export default function SalesPage() {
                           : formatDateTime(sale.createdAtUtc)}
                       </TableCell>
                       <TableCell className="text-sm">
-                        {sale.customerName ?? <span className="text-slate-400">—</span>}
+                        {sale.customerName ? (
+                          sale.paymentStatus !== "Paid" && sale.contactId ? (
+                            <a
+                              href={`/contacts?id=${sale.contactId}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-cyan-600 dark:text-cyan-400 hover:underline inline-flex items-center gap-1"
+                              title="View ledger"
+                            >
+                              {sale.customerName}
+                              <span className="text-[10px] font-semibold uppercase tracking-wider px-1 rounded bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400">
+                                Outstanding
+                              </span>
+                            </a>
+                          ) : (
+                            sale.customerName
+                          )
+                        ) : (
+                          <span className="text-slate-400 dark:text-slate-500">—</span>
+                        )}
                       </TableCell>
-                      <TableCell className="text-sm text-slate-500 max-w-[200px]">
+                      <TableCell className="text-sm text-slate-500 dark:text-slate-400 max-w-[200px]">
                         <span className="truncate block" title={sale.itemSummary ?? undefined}>
                           {sale.itemSummary || `${sale.itemCount} item${sale.itemCount !== 1 ? "s" : ""}`}
                         </span>
@@ -227,30 +247,30 @@ export default function SalesPage() {
                           {sale.paymentStatus}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-xs text-slate-500">
-                        {sale.paymentMethod ?? <span className="text-slate-300">—</span>}
+                      <TableCell className="text-xs text-slate-500 dark:text-slate-400">
+                        {sale.paymentMethod ?? <span className="text-slate-300 dark:text-slate-600">—</span>}
                       </TableCell>
                       <TableCell>
                         <SourceBadge source={sale.source} />
                       </TableCell>
-                      <TableCell className="text-xs text-slate-500">
-                        {sale.recordedByName ?? <span className="text-slate-300">—</span>}
+                      <TableCell className="text-xs text-slate-500 dark:text-slate-400">
+                        {sale.recordedByName ?? <span className="text-slate-300 dark:text-slate-600">—</span>}
                       </TableCell>
-                      <TableCell className={`text-right font-semibold tabular-nums ${tab !== "active" ? "text-slate-400 line-through" : "text-slate-900"}`}>
+                      <TableCell className={`text-right font-semibold tabular-nums ${tab !== "active" ? "text-slate-400 dark:text-slate-500 line-through" : "text-slate-900 dark:text-slate-50"}`}>
                         {formatNaira(sale.totalAmount)}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={(e) => { e.stopPropagation(); downloadReceipt(sale.id); }}
-                            className="p-1 rounded hover:bg-cyan-50 text-slate-500 hover:text-cyan-600"
+                            className="p-1 rounded hover:bg-cyan-50 text-slate-500 dark:text-slate-400 hover:text-cyan-600"
                             title="Download receipt PDF"
                           >
                             <FileDown size={14} />
                           </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); setEmailingSale(sale); }}
-                            className="p-1 rounded hover:bg-violet-50 text-slate-500 hover:text-violet-600"
+                            className="p-1 rounded hover:bg-violet-50 text-slate-500 dark:text-slate-400 hover:text-violet-600"
                             title="Email receipt"
                           >
                             <Mail size={14} />
@@ -259,14 +279,14 @@ export default function SalesPage() {
                             <>
                               <button
                                 onClick={(e) => { e.stopPropagation(); setReturning(sale); }}
-                                className="p-1 rounded hover:bg-amber-50 text-slate-500 hover:text-amber-600"
+                                className="p-1 rounded hover:bg-amber-50 text-slate-500 dark:text-slate-400 hover:text-amber-600"
                                 title="Return sale (customer returned product)"
                               >
                                 <RotateCcw size={14} />
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); setVoiding(sale); }}
-                                className="p-1 rounded hover:bg-red-50 text-slate-500 hover:text-red-600"
+                                className="p-1 rounded hover:bg-red-50 text-slate-500 dark:text-slate-400 hover:text-red-600"
                                 title="Void sale (fix a mistake)"
                               >
                                 <Ban size={14} />
@@ -308,7 +328,7 @@ export default function SalesPage() {
 
               {data && data.totalPages > 1 && (
                 <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     Page {data.page} of {data.totalPages}
                   </p>
                   <div className="flex gap-2">
@@ -421,7 +441,7 @@ function EmailReceiptDialog({
           <DialogTitle>Email receipt</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             Send the PDF receipt for {sale?.customerName ?? "this sale"} to an email address.
           </p>
           <div>
@@ -449,6 +469,21 @@ function EmailReceiptDialog({
   );
 }
 
+// Smart-defaults storage. Persists last-used values across visits so high-frequency
+// sale recording skips the most-repeated keystrokes (customer, payment method, status).
+type SaleDefaults = { contactId?: string; paymentStatus?: "Paid" | "Unpaid" | "PartiallyPaid"; paymentMethod?: string };
+const SALE_DEFAULTS_KEY = "ojunai-last-sale-defaults";
+function readSaleDefaults(): SaleDefaults {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(SALE_DEFAULTS_KEY);
+    return raw ? (JSON.parse(raw) as SaleDefaults) : {};
+  } catch { return {}; }
+}
+function writeSaleDefaults(d: SaleDefaults) {
+  try { window.localStorage.setItem(SALE_DEFAULTS_KEY, JSON.stringify(d)); } catch { /* quota or disabled */ }
+}
+
 function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const biz = useBusiness();
@@ -461,26 +496,28 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Default VAT-include based on business setting when dialog opens
+  // On open: VAT pulls from business setting; smart defaults pull last-used values.
+  // We also reset line items so the form starts clean each time.
   useEffect(() => {
-    if (open) setIncludeVat(biz?.vatEnabled ?? false);
+    if (open) {
+      setIncludeVat(biz?.vatEnabled ?? false);
+      const d = readSaleDefaults();
+      // Always reset payment status to "Paid" — recording credit again by default would be a footgun.
+      // But payment method and customer are safe to remember.
+      if (d.paymentMethod) setPaymentMethod(d.paymentMethod);
+      if (d.contactId) setContactId(d.contactId);
+    }
   }, [open, biz?.vatEnabled]);
 
   const { data: products } = useQuery({
     queryKey: ["products-for-sale"],
-    queryFn: async () => {
-      const { data } = await api.get<{ data: PaginatedResult<ProductDto> }>("/products?page=1&pageSize=200");
-      return data.data!.items;
-    },
+    queryFn: () => fetchAllPaged<ProductDto>((p, ps) => `/products?page=${p}&pageSize=${ps}`),
     enabled: open,
   });
 
   const { data: contacts } = useQuery({
     queryKey: ["contacts-for-sale"],
-    queryFn: async () => {
-      const { data } = await api.get<{ data: PaginatedResult<ContactDto> }>("/contacts?page=1&pageSize=200");
-      return data.data!.items;
-    },
+    queryFn: () => fetchAllPaged<ContactDto>((p, ps) => `/contacts?page=${p}&pageSize=${ps}`),
     enabled: open,
   });
 
@@ -537,6 +574,8 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
       qc.invalidateQueries({ queryKey: ["sales"] });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["low-stock"] });
+      // Remember last-used values for smart defaults on next sale
+      writeSaleDefaults({ contactId, paymentMethod });
       toast.success("Sale recorded", `${formatNaira(total)} · ${validLines.length} item${validLines.length !== 1 ? "s" : ""}`);
       handleClose();
     } catch (err: unknown) {
@@ -548,10 +587,9 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
   }
 
   function handleClose() {
+    // Reset only the line items + status; contact + method persist via defaults next open.
     setLines([{ productId: "", quantity: "", unitPrice: "" }]);
-    setContactId("");
     setPaymentStatus("Paid");
-    setPaymentMethod("Cash");
     setError(null);
     onClose();
   }
@@ -569,7 +607,7 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
               <div key={idx} className="grid grid-cols-12 gap-2 items-end">
                 <div className="col-span-5">
                   <select
-                    className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm"
+                    className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm"
                     value={line.productId}
                     onChange={(e) => updateLine(idx, "productId", e.target.value)}
                   >
@@ -601,7 +639,7 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
                   {lines.length > 1 && (
                     <button
                       onClick={() => removeLine(idx)}
-                      className="p-1 text-slate-400 hover:text-red-500"
+                      className="p-1 text-slate-400 dark:text-slate-500 hover:text-red-500"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -617,7 +655,7 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
           <div>
             <Label>Customer (optional)</Label>
             <select
-              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm"
+              className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm"
               value={contactId}
               onChange={(e) => setContactId(e.target.value)}
             >
@@ -633,7 +671,7 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
           <div>
             <Label>Payment Status</Label>
             <select
-              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm"
+              className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm"
               value={paymentStatus}
               onChange={(e) => setPaymentStatus(e.target.value as "Paid" | "Unpaid" | "PartiallyPaid")}
             >
@@ -646,7 +684,7 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
           <div>
             <Label>Payment Method</Label>
             <select
-              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm"
+              className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm"
               value={paymentMethod}
               onChange={(e) => setPaymentMethod(e.target.value)}
             >
@@ -662,9 +700,9 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
               type="checkbox"
               checked={includeVat}
               onChange={(e) => setIncludeVat(e.target.checked)}
-              className="rounded border-slate-300"
+              className="rounded border-slate-300 dark:border-slate-700"
             />
-            <span className="text-slate-700">
+            <span className="text-slate-700 dark:text-slate-300">
               Add VAT ({vatRate.toFixed(1)}%)
             </span>
           </label>
@@ -673,18 +711,18 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
             {includeVat && (
               <>
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">Subtotal</span>
-                  <span className="text-slate-700 tabular-nums">{formatNaira(subtotal)}</span>
+                  <span className="text-slate-500 dark:text-slate-400">Subtotal</span>
+                  <span className="text-slate-700 dark:text-slate-300 tabular-nums">{formatNaira(subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">VAT ({vatRate.toFixed(1)}%)</span>
-                  <span className="text-slate-700 tabular-nums">{formatNaira(vatAmount)}</span>
+                  <span className="text-slate-500 dark:text-slate-400">VAT ({vatRate.toFixed(1)}%)</span>
+                  <span className="text-slate-700 dark:text-slate-300 tabular-nums">{formatNaira(vatAmount)}</span>
                 </div>
               </>
             )}
             <div className="flex justify-between">
-              <span className="text-sm font-semibold text-slate-700">Total</span>
-              <span className="text-lg font-bold text-slate-900 tabular-nums">{formatNaira(total)}</span>
+              <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Total</span>
+              <span className="text-lg font-bold text-slate-900 dark:text-slate-50 tabular-nums">{formatNaira(total)}</span>
             </div>
           </div>
 
@@ -736,11 +774,11 @@ function VoidSaleDialog({
         <DialogHeader>
           <DialogTitle>Void Sale?</DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-slate-600 dark:text-slate-400">
           This will void the sale of <strong>{formatNaira(sale?.totalAmount ?? 0)}</strong>
           {sale?.customerName ? ` to ${sale.customerName}` : ""} and <strong>restore the stock</strong> for each item.
         </p>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-slate-500 dark:text-slate-400">
           The sale will not appear in reports. This is the recommended way to fix mistakes.
         </p>
         {error && <p className="text-xs text-red-500">{error}</p>}
@@ -792,11 +830,11 @@ function ReturnSaleDialog({
         <DialogHeader>
           <DialogTitle>Return Sale?</DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-slate-600 dark:text-slate-400">
           This will mark the sale of <strong>{formatNaira(sale?.totalAmount ?? 0)}</strong>
           {sale?.customerName ? ` to ${sale.customerName}` : ""} as returned and <strong>restore the stock</strong> for each item.
         </p>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-slate-500 dark:text-slate-400">
           Use this when a customer brings back a product. The sale will appear under the Returned tab.
         </p>
         {error && <p className="text-xs text-red-500">{error}</p>}
@@ -850,13 +888,13 @@ function SaleDetailDialog({
         ) : (
           <div className="space-y-5">
             {/* Total + status pill \u2014 hero treatment */}
-            <div className="rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 p-5">
+            <div className="rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 dark:border-slate-800 p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total</p>
-                  <p className="text-3xl font-bold text-slate-900 tabular-nums mt-1">{formatNaira(detail.totalAmount)}</p>
+                  <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total</p>
+                  <p className="text-3xl font-bold text-slate-900 dark:text-slate-50 tabular-nums mt-1">{formatNaira(detail.totalAmount)}</p>
                   {detail.vatAmount != null && detail.vatAmount > 0 && (
-                    <p className="text-xs text-slate-500 mt-1 tabular-nums">incl. {formatNaira(detail.vatAmount)} VAT</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 tabular-nums">incl. {formatNaira(detail.vatAmount)} VAT</p>
                   )}
                 </div>
                 <Badge className={statusBadgeClass(detail.paymentStatus)}>
@@ -867,30 +905,30 @@ function SaleDetailDialog({
 
             {/* Meta */}
             <div>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-3">Details</p>
+              <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">Details</p>
               <div className="grid grid-cols-1 gap-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Customer</span>
-                  <span className="font-medium text-slate-900">{detail.customerName ?? "Walk-in"}</span>
+                  <span className="text-slate-500 dark:text-slate-400">Customer</span>
+                  <span className="font-medium text-slate-900 dark:text-slate-50">{detail.customerName ?? "Walk-in"}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Recorded by</span>
-                  <span className="text-slate-700">{detail.recordedByName ?? "\u2014"}</span>
+                  <span className="text-slate-500 dark:text-slate-400">Recorded by</span>
+                  <span className="text-slate-700 dark:text-slate-300">{detail.recordedByName ?? "\u2014"}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Source</span>
-                  <span className="text-slate-700 capitalize">{detail.source ?? "Manual"}</span>
+                  <span className="text-slate-500 dark:text-slate-400">Source</span>
+                  <span className="text-slate-700 dark:text-slate-300 capitalize">{detail.source ?? "Manual"}</span>
                 </div>
                 {detail.paymentMethod && (
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Payment Method</span>
-                    <span className="text-slate-700">{detail.paymentMethod}</span>
+                    <span className="text-slate-500 dark:text-slate-400">Payment Method</span>
+                    <span className="text-slate-700 dark:text-slate-300">{detail.paymentMethod}</span>
                   </div>
                 )}
                 {detail.receiptNumber && (
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Receipt</span>
-                    <span className="text-slate-700 font-mono text-xs">{detail.receiptNumber}</span>
+                    <span className="text-slate-500 dark:text-slate-400">Receipt</span>
+                    <span className="text-slate-700 dark:text-slate-300 font-mono text-xs">{detail.receiptNumber}</span>
                   </div>
                 )}
               </div>
@@ -898,17 +936,17 @@ function SaleDetailDialog({
 
             {/* Items */}
             <div>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-3">
+              <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">
                 Items ({detail.items.length})
               </p>
-              <div className="space-y-2 border border-slate-200 rounded-lg p-3">
+              <div className="space-y-2 border border-slate-200 dark:border-slate-800 rounded-lg p-3">
                 {detail.items.map((item) => (
                   <div key={item.productId} className="flex justify-between text-sm">
-                    <span className="text-slate-700">
+                    <span className="text-slate-700 dark:text-slate-300">
                       {item.quantity} {item.unit} {item.productName}
-                      <span className="text-slate-400 ml-1">@ {formatNaira(item.unitPrice)}</span>
+                      <span className="text-slate-400 dark:text-slate-500 ml-1">@ {formatNaira(item.unitPrice)}</span>
                     </span>
-                    <span className="font-semibold text-slate-900 tabular-nums ml-2">{formatNaira(item.totalPrice)}</span>
+                    <span className="font-semibold text-slate-900 dark:text-slate-50 tabular-nums ml-2">{formatNaira(item.totalPrice)}</span>
                   </div>
                 ))}
               </div>
@@ -932,8 +970,8 @@ function SaleDetailDialog({
 
             {detail.notes && (
               <div>
-                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Notes</p>
-                <p className="text-sm text-slate-700">{detail.notes}</p>
+                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Notes</p>
+                <p className="text-sm text-slate-700 dark:text-slate-300">{detail.notes}</p>
               </div>
             )}
           </div>

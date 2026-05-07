@@ -22,10 +22,19 @@ public class AuthRateLimitAttribute : Attribute, IAsyncActionFilter
 
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
-        // Extract client IP, falling back to X-Forwarded-For (for requests behind Nginx)
-        var ip = context.HttpContext.Connection.RemoteIpAddress?.ToString()
-            ?? context.HttpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault()
-            ?? "unknown";
+        // RemoteIpAddress reflects the real client IP because Program.cs registers
+        // ForwardedHeaders middleware before this filter runs (it rewrites RemoteIpAddress
+        // from X-Forwarded-For when the request comes from a trusted proxy). If we still
+        // can't read an IP, ALL unknown requests would otherwise share one bucket — that
+        // creates a self-DoS where one bot exhausts the limit for everyone. Instead we
+        // fail open per-request: log the anomaly and don't rate-limit. Worst case for
+        // misconfig is no per-IP throttling; better than blocking everyone.
+        var ip = context.HttpContext.Connection.RemoteIpAddress?.ToString();
+        if (string.IsNullOrEmpty(ip))
+        {
+            await next();
+            return;
+        }
 
         var now = DateTime.UtcNow;
 

@@ -47,6 +47,7 @@ public class PlanGuard
         ["multi_branch"] = "Multi-Branch",
         ["api_access"] = "API Access",
         ["custom_exports"] = "Custom Exports",
+        ["custom_branding"] = "Custom Branding",
     };
 
     private static readonly Dictionary<string, string> PlanLabels = new(StringComparer.OrdinalIgnoreCase)
@@ -113,6 +114,7 @@ public class PlanGuard
                 "multi_branch" => config.HasMultiBranch,
                 "api_access" => config.HasApiAccess,
                 "custom_exports" => config.HasCustomExports,
+                "custom_branding" => config.HasCustomBranding,
                 _ => false
             };
             if (has) return planName;

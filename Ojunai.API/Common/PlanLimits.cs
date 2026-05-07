@@ -15,6 +15,8 @@ public class PlanConfig
     public bool HasMultiBranch { get; init; } = false;
     public bool HasApiAccess { get; init; } = false;
     public bool HasCustomExports { get; init; } = false;
+    /// <summary>Custom dashboard background image. Pro + Business plans only.</summary>
+    public bool HasCustomBranding { get; init; } = false;
 }
 
 public static class PlanLimits
@@ -59,6 +61,7 @@ public static class PlanLimits
             HasAdvancedReports = true,
             HasMonthlyCharts = true,
             HasStockHolds = true,
+            HasCustomBranding = true,
         },
         ["business"] = new PlanConfig
         {
@@ -74,6 +77,7 @@ public static class PlanLimits
             HasMultiBranch = true,
             HasApiAccess = true,
             HasCustomExports = true,
+            HasCustomBranding = true,
         },
     };
 

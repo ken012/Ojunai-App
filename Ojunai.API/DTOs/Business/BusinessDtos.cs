@@ -17,6 +17,16 @@ public class UpdateBusinessRequest
     public bool? ConfirmLargeSales { get; set; }
     public decimal? ConfirmLargeSaleThreshold { get; set; }
 
+    // ── Dashboard alert toggles ──────────────────────
+    public bool? AlertDashboardLowStock { get; set; }
+    public bool? AlertDashboardDailySummary { get; set; }
+    public bool? AlertDashboardLargeSale { get; set; }
+    public bool? AlertDashboardAgedReceivable { get; set; }
+    public bool? AlertDashboardStaffChanges { get; set; }
+    [Range(0, 999999999)] public decimal? DailySalesGoal { get; set; }
+
+    [Range(0, 1)] public decimal? BackgroundImageOpacity { get; set; }
+
     // ── Receipts ─────────────────────────────────────
     [MaxLength(300)] public string? Address { get; set; }
     public bool? VatEnabled { get; set; }

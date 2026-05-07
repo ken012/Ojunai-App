@@ -3,8 +3,9 @@
 export const dynamic = "force-dynamic";
 
 import { useState, useMemo, useEffect } from "react";
+import { useStickyState } from "@/lib/sticky-state";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, fetchAllPaged } from "@/lib/api";
 import { formatNaira } from "@/lib/format";
 import type { PaginatedResult, ProductDto, StockHoldDto } from "@/lib/types";
 import { CATEGORIES, CATEGORY_NAMES } from "@/lib/categories";
@@ -23,7 +24,9 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { AlertTriangle, Package, Pencil, Trash2, Lock, Unlock, ShoppingCart, Ban, Minus, Plus, Search, X } from "lucide-react";
+import { Drawer, DrawerHeader, DrawerBody, DrawerFooter } from "@/components/ui/drawer";
+import { useToast } from "@/components/toast";
+import { AlertTriangle, Package, Pencil, Trash2, Minus, Plus, Lock, Unlock, ShoppingCart, Ban, Search, X, LayoutList, LayoutGrid } from "lucide-react";
 import { formatDateTime } from "@/lib/format";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { UpgradeInline } from "@/components/upgrade-prompt";
@@ -53,7 +56,7 @@ function CategoryPicker({
       <div>
         <Label>Category</Label>
         <select
-          className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
+          className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
           value={allCategoryNames.includes(category) ? category : ""}
           onChange={(e) => {
             onCategoryChange(e.target.value);
@@ -66,14 +69,14 @@ function CategoryPicker({
           ))}
         </select>
         {category && !allCategoryNames.includes(category) && (
-          <p className="text-xs text-slate-400 mt-1">Current: {category}</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Current: {category}</p>
         )}
       </div>
       <div>
         <Label>Subcategory</Label>
         {subcategories.length > 0 ? (
           <select
-            className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
+            className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
             value={subcategories.includes(subcategory) ? subcategory : ""}
             onChange={(e) => onSubcategoryChange(e.target.value)}
           >
@@ -95,6 +98,7 @@ function CategoryPicker({
 }
 
 // ─── Product card ────────────────────────────────────────────────────────────
+// ─── Legacy product card (used when the user toggles to grid view) ──────────
 function ProductCard({
   product,
   onEdit,
@@ -111,21 +115,21 @@ function ProductCard({
   onRestock: (p: ProductDto) => void;
 }) {
   return (
-    <Card className={product.isLowStock ? "border-amber-300 bg-amber-50" : ""}>
+    <Card className={product.isLowStock ? "border-amber-300 dark:border-amber-700 bg-amber-50/40 dark:bg-amber-950/20" : ""}>
       <CardContent className="p-4">
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-slate-900 truncate" title={product.name}>{product.name}</p>
+            <p className="font-semibold text-slate-900 dark:text-slate-50 truncate" title={product.name}>{product.name}</p>
             {product.category && (
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
                 {product.category}{product.subcategory ? ` / ${product.subcategory}` : ""}
               </p>
             )}
             {!product.category && (
-              <p className="text-xs text-slate-300 mt-0.5 italic">Uncategorized</p>
+              <p className="text-xs text-slate-300 dark:text-slate-600 mt-0.5 italic">Uncategorized</p>
             )}
             {product.sku && (
-              <p className="text-xs text-slate-400 font-mono mt-0.5">SKU: {product.sku}</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 font-mono mt-0.5">SKU: {product.sku}</p>
             )}
           </div>
           <div className="flex items-center gap-1 flex-shrink-0 ml-2">
@@ -136,14 +140,14 @@ function ProductCard({
               <>
                 <button
                   onClick={() => onRestock(product)}
-                  className="p-1 rounded hover:bg-emerald-50 text-slate-500 hover:text-emerald-600"
+                  className="p-1 rounded hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400"
                   title="Restock"
                 >
                   <Plus size={14} />
                 </button>
                 <button
                   onClick={() => onEdit(product)}
-                  className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900"
+                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50"
                   title="Edit"
                 >
                   <Pencil size={14} />
@@ -152,14 +156,14 @@ function ProductCard({
                   <>
                     <button
                       onClick={() => onStockOut(product)}
-                      className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700"
+                      className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
                       title="Remove stock"
                     >
                       <Minus size={14} />
                     </button>
                     <button
                       onClick={() => onDamaged(product)}
-                      className="p-1 rounded hover:bg-amber-50 text-slate-500 hover:text-amber-600"
+                      className="p-1 rounded hover:bg-amber-50 dark:hover:bg-amber-950/30 text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400"
                       title="Mark damaged"
                     >
                       <Ban size={14} />
@@ -168,7 +172,7 @@ function ProductCard({
                 )}
                 <button
                   onClick={() => onDelete(product)}
-                  className="p-1 rounded hover:bg-red-50 text-slate-500 hover:text-red-600"
+                  className="p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/30 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400"
                   title="Delete"
                 >
                   <Trash2 size={14} />
@@ -180,34 +184,33 @@ function ProductCard({
 
         <div className="mt-3 flex items-end justify-between">
           <div>
-            <p className="text-2xl font-bold text-slate-900 tabular-nums">
+            <p className="text-2xl font-bold text-slate-900 dark:text-slate-50 tabular-nums">
               {product.currentStock}
-              <span className="text-sm font-normal text-slate-500 ml-1">{product.unit}</span>
+              <span className="text-sm font-normal text-slate-500 dark:text-slate-400 ml-1">{product.unit}</span>
             </p>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-400 dark:text-slate-500">
               Threshold: {product.lowStockThreshold} {product.unit}
             </p>
           </div>
           <div className="text-right">
             {product.sellingPrice && (
-              <p className="text-sm font-semibold text-slate-900 tabular-nums">
+              <p className="text-sm font-semibold text-slate-900 dark:text-slate-50 tabular-nums">
                 {formatNaira(product.sellingPrice)}
               </p>
             )}
             {product.costPrice && (
-              <p className="text-xs text-slate-400 tabular-nums">Cost: {formatNaira(product.costPrice)}</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 tabular-nums">Cost: {formatNaira(product.costPrice)}</p>
             )}
           </div>
         </div>
 
-        {/* Stock-level visual indicator */}
         {product.lowStockThreshold > 0 && (() => {
           const ratio = Math.max(0, Math.min(2, product.currentStock / Math.max(1, product.lowStockThreshold)));
           const pct = Math.min(100, (ratio / 2) * 100);
-          const tone = ratio < 0.5 ? "bg-red-500" : ratio < 1 ? "bg-amber-500" : "bg-emerald-500";
+          const tone = ratio < 0.5 ? "bg-rose-500" : ratio < 1 ? "bg-amber-500" : "bg-emerald-500";
           return (
             <div className="mt-2.5">
-              <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+              <div className="h-1 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                 <div className={`h-full rounded-full transition-all ${tone}`} style={{ width: `${pct}%` }} />
               </div>
             </div>
@@ -216,12 +219,12 @@ function ProductCard({
 
         <div className="mt-2 flex items-center gap-2 flex-wrap">
           {product.isLowStock && (
-            <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
+            <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-700">
               Low Stock
             </Badge>
           )}
           {product.recordedByName && (
-            <span className="text-xs text-slate-400">by {product.recordedByName}</span>
+            <span className="text-xs text-slate-400 dark:text-slate-500">by {product.recordedByName}</span>
           )}
         </div>
       </CardContent>
@@ -339,6 +342,7 @@ function EditProductDialog({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [form, setForm] = useState({
     name: "",
     unit: "",
@@ -383,6 +387,7 @@ function EditProductDialog({
       });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["low-stock"] });
+      toast.success("Product updated", form.name);
       handleClose();
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { errors?: string[] } } };
@@ -400,78 +405,96 @@ function EditProductDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Edit Product</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <Label>Name</Label>
-            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          </div>
-          <div>
-            <Label>Unit</Label>
-            <Input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Category</Label>
-              <select
-                className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
-                value={form.category}
-                onChange={(e) => setForm(f => ({ ...f, category: e.target.value, subcategory: "" }))}
-              >
-                <option value="">Select category</option>
-                {CATEGORY_NAMES.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
+    <Drawer open={open} onClose={handleClose} width="md">
+      {product && (
+        <>
+          <DrawerHeader
+            title="Edit product"
+            subtitle={product.name}
+            onClose={handleClose}
+          />
+          <DrawerBody>
+            <div className="space-y-4">
+              <div>
+                <Label className="text-xs text-slate-500 dark:text-slate-400">Name</Label>
+                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              </div>
+              <div>
+                <Label className="text-xs text-slate-500 dark:text-slate-400">Unit</Label>
+                <Input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs text-slate-500 dark:text-slate-400">Category</Label>
+                  <select
+                    className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
+                    value={form.category}
+                    onChange={(e) => setForm(f => ({ ...f, category: e.target.value, subcategory: "" }))}
+                  >
+                    <option value="">Select category</option>
+                    {CATEGORY_NAMES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <Label className="text-xs text-slate-500 dark:text-slate-400">Subcategory</Label>
+                  {(CATEGORIES[form.category] ?? []).length > 0 ? (
+                    <select
+                      className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
+                      value={form.subcategory}
+                      onChange={(e) => setForm(f => ({ ...f, subcategory: e.target.value }))}
+                    >
+                      <option value="">Select subcategory</option>
+                      {(CATEGORIES[form.category] ?? []).map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input
+                      value={form.subcategory}
+                      onChange={(e) => setForm(f => ({ ...f, subcategory: e.target.value }))}
+                      placeholder="Subcategory (optional)"
+                    />
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs text-slate-500 dark:text-slate-400">Selling Price</Label>
+                  <Input type="number" value={form.sellingPrice} onChange={(e) => setForm(f => ({ ...f, sellingPrice: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs text-slate-500 dark:text-slate-400">Cost Price</Label>
+                  <Input type="number" value={form.costPrice} onChange={(e) => setForm(f => ({ ...f, costPrice: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs text-slate-500 dark:text-slate-400">Low Stock Threshold</Label>
+                <Input type="number" value={form.lowStockThreshold} onChange={(e) => setForm({ ...form, lowStockThreshold: e.target.value })} />
+              </div>
+              {error && <p className="text-xs text-rose-500">{error}</p>}
+
+              {/* Current stock (read-only, since stock is changed via inline edit / Restock / Stock-out) */}
+              <div className="border-t border-slate-200 dark:border-slate-800 pt-4 mt-2">
+                <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Current stock</p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-slate-50 tabular-nums">
+                  {product.currentStock}
+                  <span className="text-sm font-normal text-slate-500 dark:text-slate-400 ml-1.5">{product.unit}</span>
+                </p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                  Use the inline cell, Restock, or Stock-out actions to change stock — keeps the audit trail clean.
+                </p>
+              </div>
             </div>
-            <div>
-              <Label>Subcategory</Label>
-              {(CATEGORIES[form.category] ?? []).length > 0 ? (
-                <select
-                  className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
-                  value={form.subcategory}
-                  onChange={(e) => setForm(f => ({ ...f, subcategory: e.target.value }))}
-                >
-                  <option value="">Select subcategory</option>
-                  {(CATEGORIES[form.category] ?? []).map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              ) : (
-                <Input
-                  value={form.subcategory}
-                  onChange={(e) => setForm(f => ({ ...f, subcategory: e.target.value }))}
-                  placeholder="Subcategory (optional)"
-                />
-              )}
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Selling Price</Label>
-              <Input type="number" value={form.sellingPrice} onChange={(e) => setForm(f => ({ ...f, sellingPrice: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Cost Price</Label>
-              <Input type="number" value={form.costPrice} onChange={(e) => setForm(f => ({ ...f, costPrice: e.target.value }))} />
-            </div>
-          </div>
-          <div>
-            <Label>Low Stock Threshold</Label>
-            <Input type="number" value={form.lowStockThreshold} onChange={(e) => setForm({ ...form, lowStockThreshold: e.target.value })} />
-          </div>
-          {error && <p className="text-xs text-red-500">{error}</p>}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={saving}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save Changes"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </DrawerBody>
+          <DrawerFooter>
+            <Button variant="outline" onClick={handleClose} disabled={saving}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save Changes"}</Button>
+          </DrawerFooter>
+        </>
+      )}
+    </Drawer>
   );
 }
 
@@ -529,7 +552,7 @@ function AddHoldDialog({
           <div>
             <Label>Product</Label>
             <select
-              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm"
+              className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm"
               value={form.productId}
               onChange={(e) => setForm({ ...form, productId: e.target.value })}
             >
@@ -619,7 +642,7 @@ function DeleteProductDialog({
         <DialogHeader>
           <DialogTitle>Delete Product?</DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-slate-600 dark:text-slate-400">
           This will mark <strong>{product?.name}</strong> as inactive. Past sales involving this
           product will still appear in reports.
         </p>
@@ -772,9 +795,9 @@ function StockOutDialog({ product, open, onClose }: { product: ProductDto | null
         </DialogHeader>
         {product && (
           <div className="space-y-3">
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
-              <p className="text-sm font-medium text-slate-900">{product.name}</p>
-              <p className="text-xs text-slate-500 mt-0.5">
+            <div className="rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3">
+              <p className="text-sm font-medium text-slate-900 dark:text-slate-50">{product.name}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Current stock: {product.currentStock} {product.unit}
               </p>
             </div>
@@ -859,9 +882,9 @@ function RestockDialog({ product, open, onClose }: { product: ProductDto | null;
         </DialogHeader>
         {product && (
           <div className="space-y-3">
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
-              <p className="text-sm font-medium text-slate-900">{product.name}</p>
-              <p className="text-xs text-slate-500 mt-0.5">
+            <div className="rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3">
+              <p className="text-sm font-medium text-slate-900 dark:text-slate-50">{product.name}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Current stock: {product.currentStock} {product.unit}
               </p>
             </div>
@@ -884,7 +907,7 @@ function RestockDialog({ product, open, onClose }: { product: ProductDto | null;
                 placeholder={product.costPrice ? String(product.costPrice) : "Cost per unit"}
                 min={0}
               />
-              <p className="text-[10px] text-slate-400 mt-1">Updates the product cost price if provided</p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Updates the product cost price if provided</p>
             </div>
             {error && <p className="text-xs text-red-500">{error}</p>}
           </div>
@@ -956,7 +979,7 @@ function WastageDialog({ open, onClose, products }: { open: boolean; onClose: ()
           <div>
             <Label>Product</Label>
             <select
-              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
+              className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
               value={productId}
               onChange={(e) => setProductId(e.target.value)}
             >
@@ -999,9 +1022,202 @@ function WastageDialog({ open, onClose, products }: { open: boolean; onClose: ()
 }
 
 // ─── Main page ───────────────────────────────────────────────────────────────
-type StockFilter = "all" | "low" | "sufficient" | "wastage";
+type StockFilter = "all" | "low" | "out" | "sufficient" | "wastage";
+
+// ─── Status-first table row with bulk select + inline edit ──────────────────
+type ProductStatus = "out" | "low" | "ok";
+function statusOf(p: ProductDto): ProductStatus {
+  if (p.currentStock <= 0) return "out";
+  if (p.isLowStock) return "low";
+  return "ok";
+}
+function StatusPill({ s }: { s: ProductStatus }) {
+  if (s === "out") return <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded ring-1 ring-rose-200 dark:ring-rose-900">Out</span>;
+  if (s === "low") return <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded ring-1 ring-amber-200 dark:ring-amber-900">Low</span>;
+  return <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded ring-1 ring-emerald-200 dark:ring-emerald-900">OK</span>;
+}
+
+/**
+ * Inline-editable numeric cell. Click to edit, Enter / blur saves, Escape cancels.
+ * Uses optimistic update via the mutate fn passed in by the parent.
+ */
+function InlineNumericCell({
+  value,
+  format,
+  prefix,
+  suffix,
+  step = 1,
+  min = 0,
+  onSave,
+  align = "right",
+  disabled,
+  className = "",
+}: {
+  value: number;
+  format?: (n: number) => string;
+  prefix?: string;
+  suffix?: string;
+  step?: number;
+  min?: number;
+  onSave: (n: number) => Promise<void>;
+  align?: "left" | "right";
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(value));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!editing) setDraft(String(value));
+  }, [value, editing]);
+
+  const display = format ? format(value) : `${prefix ?? ""}${value}${suffix ?? ""}`;
+
+  if (disabled || !editing) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); if (!disabled) setEditing(true); }}
+        className={`px-2 py-1 -mx-2 rounded transition-colors text-${align} tabular-nums ${
+          disabled
+            ? "cursor-default"
+            : "cursor-text hover:bg-cyan-50 dark:hover:bg-cyan-950/30 hover:ring-1 hover:ring-cyan-200 dark:hover:ring-cyan-900"
+        } ${className}`}
+        title={disabled ? undefined : "Click to edit"}
+      >
+        {display}
+      </button>
+    );
+  }
+
+  const commit = async () => {
+    const n = Number(draft);
+    if (!Number.isFinite(n) || n < min || n === value) {
+      setEditing(false);
+      setDraft(String(value));
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(n);
+    } finally {
+      setSaving(false);
+      setEditing(false);
+    }
+  };
+
+  return (
+    <input
+      type="number"
+      autoFocus
+      step={step}
+      min={min}
+      value={draft}
+      disabled={saving}
+      onChange={(e) => setDraft(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
+        if (e.key === "Escape") { setEditing(false); setDraft(String(value)); }
+      }}
+      className={`w-20 px-2 py-1 -mx-2 rounded text-${align} tabular-nums bg-white dark:bg-slate-900 ring-1 ring-cyan-400 outline-none ${className}`}
+    />
+  );
+}
+
+function ProductRow({
+  product,
+  selected,
+  onToggleSelect,
+  onClickRow,
+  onSavePrice,
+  onSaveStock,
+  onSaveThreshold,
+  canEdit,
+}: {
+  product: ProductDto;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onClickRow: () => void;
+  onSavePrice: (n: number) => Promise<void>;
+  onSaveStock: (n: number) => Promise<void>;
+  onSaveThreshold: (n: number) => Promise<void>;
+  canEdit: boolean;
+}) {
+  const status = statusOf(product);
+  return (
+    <div
+      onClick={onClickRow}
+      className={`group grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto_auto] sm:grid-cols-[auto_minmax(0,1.6fr)_auto_minmax(0,0.8fr)_auto_auto_auto_auto] items-center gap-3 px-3 py-2.5 border-b border-slate-100 dark:border-slate-800 transition-colors cursor-pointer ${
+        selected ? "bg-cyan-50/60 dark:bg-cyan-950/20" : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={selected}
+        onClick={(e) => e.stopPropagation()}
+        onChange={onToggleSelect}
+        className="h-4 w-4 rounded border-slate-300 dark:border-slate-700 accent-cyan-500"
+        aria-label={`Select ${product.name}`}
+      />
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">{product.name}</p>
+          <StatusPill s={status} />
+        </div>
+        {product.sku && <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">SKU {product.sku}</p>}
+      </div>
+      <div className="hidden sm:block">
+        <StatusPill s={status} />
+      </div>
+      <div className="hidden sm:block min-w-0">
+        {product.category && (
+          <span className="text-xs text-slate-500 dark:text-slate-400 truncate block">{product.category}</span>
+        )}
+      </div>
+      <div className="text-right">
+        <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider">Price</p>
+        <InlineNumericCell
+          value={product.sellingPrice ?? 0}
+          format={(n) => formatNaira(n)}
+          step={1}
+          onSave={onSavePrice}
+          disabled={!canEdit}
+        />
+      </div>
+      <div className="text-right">
+        <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider">Stock</p>
+        <InlineNumericCell
+          value={product.currentStock}
+          suffix={` ${product.unit ?? ""}`.trimEnd()}
+          step={1}
+          min={0}
+          onSave={onSaveStock}
+          disabled={!canEdit}
+          className={status === "out" ? "text-rose-600 dark:text-rose-400 font-semibold" : status === "low" ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}
+        />
+      </div>
+      <div className="hidden sm:block text-right">
+        <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider">Threshold</p>
+        <InlineNumericCell
+          value={product.lowStockThreshold ?? 0}
+          step={1}
+          min={0}
+          onSave={onSaveThreshold}
+          disabled={!canEdit}
+        />
+      </div>
+      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+        <Pencil size={14} className="text-slate-400 dark:text-slate-500" />
+      </div>
+    </div>
+  );
+}
 
 export default function InventoryPage() {
+  const { toast } = useToast();
   const [adding, setAdding] = useState(false);
   const [addingHold, setAddingHold] = useState(false);
   const [editing, setEditing] = useState<ProductDto | null>(null);
@@ -1010,9 +1226,21 @@ export default function InventoryPage() {
   const [removingStock, setRemovingStock] = useState<ProductDto | null>(null);
   const [restocking, setRestocking] = useState<ProductDto | null>(null);
   const [wastaging, setWastaging] = useState(false);
-  const [stockFilter, setStockFilter] = useState<StockFilter>("all");
-  const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [stockFilter, setStockFilter] = useStickyState<StockFilter>(
+    "inventory-stock-filter",
+    "all",
+    (v): v is StockFilter => v === "all" || v === "low" || v === "out" || v === "sufficient" || v === "wastage",
+  );
+  const [categoryFilter, setCategoryFilter] = useStickyState<string>("inventory-category-filter", "");
   const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkConfirmDelete, setBulkConfirmDelete] = useState(false);
+  // View mode: dense list (new) vs card grid (legacy). Persisted across visits.
+  const [viewMode, setViewMode] = useStickyState<"list" | "grid">(
+    "ojunai-inventory-view",
+    "list",
+    (v): v is "list" | "grid" => v === "list" || v === "grid",
+  );
   const { data: planStatus } = usePlanStatus();
   const hasHolds = planStatus?.hasStockHolds ?? true;
 
@@ -1023,15 +1251,21 @@ export default function InventoryPage() {
     }
   }, []);
 
-  const { data: productsData, isLoading } = useQuery({
+  const { data: allProductsList, isLoading } = useQuery({
     queryKey: ["products"],
-    queryFn: async () => {
-      const { data } = await api.get<{ data: PaginatedResult<ProductDto> }>(
-        "/products?page=1&pageSize=500"
-      );
-      return data.data!;
-    },
+    queryFn: () => fetchAllPaged<ProductDto>((p, ps) => `/products?page=${p}&pageSize=${ps}`),
+    staleTime: 30_000,
   });
+  const productsData = useMemo(
+    () => allProductsList ? {
+      items: allProductsList,
+      totalCount: allProductsList.length,
+      page: 1,
+      pageSize: allProductsList.length,
+      totalPages: 1,
+    } as PaginatedResult<ProductDto> : undefined,
+    [allProductsList],
+  );
 
   const { data: lowStock } = useQuery({
     queryKey: ["low-stock"],
@@ -1056,11 +1290,11 @@ export default function InventoryPage() {
   const { data: lossesData } = useQuery({
     queryKey: ["inventory-losses"],
     queryFn: async () => {
-      const { data } = await api.get<{ data: { items: LossEntry[]; totalCount: number } }>(
-        "/inventory/transactions?page=1&pageSize=20"
+      const all = await fetchAllPaged<LossEntry>(
+        (p, ps) => `/inventory/transactions?page=${p}&pageSize=${ps}`
       );
       // Filter to only Damaged and Wastage
-      const filtered = (data.data?.items ?? []).filter(
+      const filtered = all.filter(
         (t) => t.type === "Damaged" || t.type === "Wastage"
       );
       return filtered;
@@ -1076,7 +1310,10 @@ export default function InventoryPage() {
       qc.invalidateQueries({ queryKey: ["stock-holds"] });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["sales"] });
-    } catch { /* silent */ } finally {
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error(`Couldn't ${action === "release" ? "release" : "convert"} hold`, ax.response?.data?.errors?.[0] ?? "Please try again.");
+    } finally {
       setHoldAction(null);
     }
   }
@@ -1084,7 +1321,94 @@ export default function InventoryPage() {
   // Compute filtered products
   const allProducts = useMemo(() => productsData?.items ?? [], [productsData]);
   const lowStockIds = useMemo(() => new Set((lowStock ?? []).map((p) => p.id)), [lowStock]);
-  const sufficientCount = allProducts.filter((p) => !lowStockIds.has(p.id)).length;
+  const outOfStockIds = useMemo(() => new Set(allProducts.filter((p) => p.currentStock <= 0).map((p) => p.id)), [allProducts]);
+  const lowOnlyIds = useMemo(() => {
+    const s = new Set<string>();
+    lowStockIds.forEach((id) => { if (!outOfStockIds.has(id)) s.add(id); });
+    return s;
+  }, [lowStockIds, outOfStockIds]);
+  const sufficientCount = allProducts.filter((p) => !lowStockIds.has(p.id) && !outOfStockIds.has(p.id)).length;
+
+  // Inline edit save — uses existing PUT /products/:id
+  async function saveProductPatch(p: ProductDto, patch: Partial<Pick<ProductDto, "sellingPrice" | "currentStock" | "lowStockThreshold">>) {
+    await api.put(`/products/${p.id}`, {
+      name: p.name,
+      sku: p.sku,
+      unit: p.unit,
+      costPrice: p.costPrice,
+      sellingPrice: patch.sellingPrice ?? p.sellingPrice,
+      currentStock: patch.currentStock ?? p.currentStock,
+      lowStockThreshold: patch.lowStockThreshold ?? p.lowStockThreshold,
+      category: p.category,
+      subcategory: p.subcategory,
+      voiceDescription: p.voiceDescription,
+      aliases: p.aliases,
+      isActive: p.isActive,
+    });
+    qc.invalidateQueries({ queryKey: ["products"] });
+    qc.invalidateQueries({ queryKey: ["low-stock"] });
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  }
+  function clearSelection() { setSelectedIds(new Set()); }
+  function toggleSelectAll(visible: ProductDto[]) {
+    setSelectedIds((s) => {
+      const allVisibleSelected = visible.every((p) => s.has(p.id));
+      if (allVisibleSelected) {
+        const n = new Set(s);
+        visible.forEach((p) => n.delete(p.id));
+        return n;
+      }
+      const n = new Set(s);
+      visible.forEach((p) => n.add(p.id));
+      return n;
+    });
+  }
+
+  async function bulkDelete() {
+    const ids = Array.from(selectedIds);
+    await Promise.all(ids.map((id) => api.delete(`/products/${id}`).catch(() => null)));
+    qc.invalidateQueries({ queryKey: ["products"] });
+    qc.invalidateQueries({ queryKey: ["low-stock"] });
+    clearSelection();
+    setBulkConfirmDelete(false);
+  }
+
+  function bulkExportCsv() {
+    const ids = selectedIds;
+    const rows = allProducts.filter((p) => ids.has(p.id));
+    const headers = ["Name", "SKU", "Category", "Unit", "Cost", "Price", "Stock", "Threshold", "Status"];
+    const csv = [headers.join(",")]
+      .concat(
+        rows.map((p) =>
+          [
+            JSON.stringify(p.name ?? ""),
+            JSON.stringify(p.sku ?? ""),
+            JSON.stringify(p.category ?? ""),
+            JSON.stringify(p.unit ?? ""),
+            p.costPrice ?? 0,
+            p.sellingPrice ?? 0,
+            p.currentStock ?? 0,
+            p.lowStockThreshold ?? 0,
+            statusOf(p),
+          ].join(",")
+        )
+      )
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `inventory-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
 
   // Get unique categories + staff names from actual products for filter dropdowns
   const usedCategories = useMemo(() => {
@@ -1106,11 +1430,12 @@ export default function InventoryPage() {
       );
       items = [...nameStarts, ...wordStarts];
     }
-    if (stockFilter === "low") items = items.filter((p) => lowStockIds.has(p.id));
-    if (stockFilter === "sufficient") items = items.filter((p) => !lowStockIds.has(p.id));
+    if (stockFilter === "low") items = items.filter((p) => lowOnlyIds.has(p.id));
+    if (stockFilter === "out") items = items.filter((p) => outOfStockIds.has(p.id));
+    if (stockFilter === "sufficient") items = items.filter((p) => !lowStockIds.has(p.id) && !outOfStockIds.has(p.id));
     if (categoryFilter) items = items.filter((p) => p.category === categoryFilter);
     return items;
-  }, [allProducts, search, stockFilter, categoryFilter, lowStockIds]);
+  }, [allProducts, search, stockFilter, categoryFilter, lowStockIds, lowOnlyIds, outOfStockIds]);
 
   return (
     <div className="space-y-6">
@@ -1158,7 +1483,7 @@ export default function InventoryPage() {
           <CardContent className="pt-4">
             <div className="flex items-center gap-2 mb-3">
               <Lock size={16} className="text-cyan-500" />
-              <h3 className="text-sm font-semibold text-slate-700">
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                 Active Holds ({holds.length})
               </h3>
             </div>
@@ -1169,10 +1494,10 @@ export default function InventoryPage() {
                   className="flex items-center justify-between border rounded-lg px-3 py-2"
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-900 truncate">
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">
                       {hold.quantity} {hold.unit} of {hold.productName}
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
                       For <strong>{hold.contactName}</strong> — {formatDateTime(hold.createdAtUtc)}
                     </p>
                   </div>
@@ -1192,7 +1517,7 @@ export default function InventoryPage() {
                       <button
                         onClick={() => handleHoldAction(hold.id, "release")}
                         disabled={holdAction?.id === hold.id}
-                        className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+                        className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
                         title="Release hold"
                       >
                         <Unlock size={12} />
@@ -1207,54 +1532,75 @@ export default function InventoryPage() {
         </Card>
       )}
 
-      {/* Clickable summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Card
-          className={`cursor-pointer transition-all ${stockFilter === "all" ? "ring-2 ring-cyan-500" : "hover:shadow-md"}`}
-          onClick={() => setStockFilter("all")}
-        >
-          <CardContent className="p-4 text-center">
-            <Package size={20} className="mx-auto text-slate-400 mb-1" />
-            <p className="text-xl font-bold text-slate-900">{productsData?.totalCount ?? "—"}</p>
-            <p className="text-xs text-slate-500">All Products</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={`cursor-pointer transition-all ${stockFilter === "low" ? "ring-2 ring-amber-500" : "hover:shadow-md"}`}
-          onClick={() => setStockFilter("low")}
-        >
-          <CardContent className="p-4 text-center">
-            <AlertTriangle size={20} className="mx-auto text-amber-400 mb-1" />
-            <p className="text-xl font-bold text-amber-600">{lowStock?.length ?? "—"}</p>
-            <p className="text-xs text-slate-500">Low Stock</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={`cursor-pointer transition-all ${stockFilter === "sufficient" ? "ring-2 ring-emerald-500" : "hover:shadow-md"}`}
-          onClick={() => setStockFilter("sufficient")}
-        >
-          <CardContent className="p-4 text-center">
-            <Package size={20} className="mx-auto text-emerald-400 mb-1" />
-            <p className="text-xl font-bold text-emerald-600">{sufficientCount}</p>
-            <p className="text-xs text-slate-500">Sufficient</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={`cursor-pointer transition-all ${stockFilter === "wastage" ? "ring-2 ring-orange-500" : "hover:shadow-md"}`}
-          onClick={() => setStockFilter("wastage")}
-        >
-          <CardContent className="p-4 text-center">
-            <Ban size={20} className="mx-auto text-orange-400 mb-1" />
-            <p className="text-xl font-bold text-orange-600">{lossesData?.length ?? "—"}</p>
-            <p className="text-xs text-slate-500">Wasted / Damaged</p>
-          </CardContent>
-        </Card>
+      {/* Status tabs (left) + view toggle (right) */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="overflow-x-auto -mx-1 px-1 flex-1">
+          <div className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+            {([
+              { id: "all", label: "All", count: productsData?.totalCount ?? 0, dot: "bg-slate-400" },
+              { id: "sufficient", label: "In stock", count: sufficientCount, dot: "bg-emerald-500" },
+              { id: "low", label: "Low", count: lowOnlyIds.size, dot: "bg-amber-500" },
+              { id: "out", label: "Out", count: outOfStockIds.size, dot: "bg-rose-500" },
+              { id: "wastage", label: "Damaged / Wastage", count: lossesData?.length ?? 0, dot: "bg-orange-500" },
+            ] as { id: StockFilter; label: string; count: number; dot: string }[]).map((t) => {
+              const active = stockFilter === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setStockFilter(t.id)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
+                    active
+                      ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-50 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700"
+                      : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50"
+                  }`}
+                >
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${t.dot}`} />
+                  {t.label}
+                  <span className={`text-[11px] tabular-nums ${active ? "text-slate-500 dark:text-slate-400" : "text-slate-400 dark:text-slate-500"}`}>
+                    {t.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {/* View toggle — list (dense) vs grid (legacy cards). Hidden on the wastage tab. */}
+        {!isWastageView && (
+          <div className="inline-flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-lg flex-shrink-0">
+            <button
+              onClick={() => setViewMode("list")}
+              aria-label="Switch to list view"
+              title="List view"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                viewMode === "list"
+                  ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-50 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700"
+                  : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50"
+              }`}
+            >
+              <LayoutList size={14} />
+              <span className="hidden sm:inline">List</span>
+            </button>
+            <button
+              onClick={() => setViewMode("grid")}
+              aria-label="Switch to grid view"
+              title="Grid view"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                viewMode === "grid"
+                  ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-50 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700"
+                  : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50"
+              }`}
+            >
+              <LayoutGrid size={14} />
+              <span className="hidden sm:inline">Grid</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Search + Filters */}
       <div className="flex items-center gap-4 flex-wrap">
           <div className="relative w-full sm:max-w-xs">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" />
             <Input
               type="search"
               placeholder="Search by name or SKU..."
@@ -1263,16 +1609,16 @@ export default function InventoryPage() {
               className="pl-9 pr-9"
             />
             {search && (
-              <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1 rounded" type="button">
+              <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 p-1 rounded" type="button">
                 <X size={14} />
               </button>
             )}
           </div>
           {usedCategories.length > 0 && (
             <div className="flex items-center gap-2">
-              <Label className="text-sm text-slate-500 whitespace-nowrap">Category:</Label>
+              <Label className="text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap">Category:</Label>
               <select
-                className="h-9 px-2 rounded-md border border-slate-200 text-sm"
+                className="h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm"
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
               >
@@ -1299,7 +1645,7 @@ export default function InventoryPage() {
           <CardContent className="pt-4">
             <div className="flex items-center gap-2 mb-3">
               <Ban size={16} className="text-orange-500" />
-              <h3 className="text-sm font-semibold text-slate-700">
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                 Recent Wastage & Damaged Stock
               </h3>
             </div>
@@ -1310,10 +1656,10 @@ export default function InventoryPage() {
                   className="flex items-center justify-between border rounded-lg px-3 py-2"
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-900 truncate">
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">
                       {entry.quantity} of {entry.productName}
                     </p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
                       {entry.notes ?? "No notes"} — {formatDateTime(entry.createdAtUtc)}
                     </p>
                   </div>
@@ -1334,49 +1680,143 @@ export default function InventoryPage() {
         </Card>
       )}
 
-      {/* Product grid */}
-      {isLoading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 9 }).map((_, i) => (
-            <Skeleton key={i} className="h-36 rounded-xl" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredProducts.map((product) => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              onEdit={setEditing}
-              onDelete={setDeleting}
-              onDamaged={setDamaging}
-              onStockOut={setRemovingStock}
-              onRestock={setRestocking}
-            />
-          ))}
-          {filteredProducts.length === 0 && (
-            <div className="col-span-3">
-              <EmptyState
-                icon={<Package size={22} />}
-                title={
-                  stockFilter !== "all" || categoryFilter || search
-                    ? "No products match this filter"
-                    : "No products yet"
-                }
-                description={
-                  stockFilter !== "all" || categoryFilter || search
-                    ? "Try clearing filters or searching a different term."
-                    : "Add your first product via WhatsApp or click + Add Product above."
-                }
-                action={
-                  !(stockFilter !== "all" || categoryFilter || search) && hasPermission(Permission.ManageStock) ? (
-                    <Button onClick={() => setAdding(true)}>+ Add Product</Button>
-                  ) : undefined
-                }
-              />
+      {/* Product list / grid */}
+      {!isWastageView && (
+        isLoading ? (
+          viewMode === "list" ? (
+            <div className="space-y-2">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 rounded-lg" />
+              ))}
             </div>
-          )}
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {Array.from({ length: 9 }).map((_, i) => (
+                <Skeleton key={i} className="h-36 rounded-xl" />
+              ))}
+            </div>
+          )
+        ) : filteredProducts.length === 0 ? (
+          <EmptyState
+            icon={<Package size={22} />}
+            title={
+              stockFilter !== "all" || categoryFilter || search
+                ? "No products match this filter"
+                : "No products yet"
+            }
+            description={
+              stockFilter !== "all" || categoryFilter || search
+                ? "Try clearing filters or searching a different term."
+                : "Add your first product via WhatsApp or click + Add Product above."
+            }
+            action={
+              !(stockFilter !== "all" || categoryFilter || search) && hasPermission(Permission.ManageStock) ? (
+                <Button onClick={() => setAdding(true)}>+ Add Product</Button>
+              ) : undefined
+            }
+          />
+        ) : viewMode === "list" ? (
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
+            {/* List header with select-all */}
+            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto_auto] sm:grid-cols-[auto_minmax(0,1.6fr)_auto_minmax(0,0.8fr)_auto_auto_auto_auto] items-center gap-3 px-3 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50">
+              <input
+                type="checkbox"
+                checked={filteredProducts.length > 0 && filteredProducts.every((p) => selectedIds.has(p.id))}
+                onChange={() => toggleSelectAll(filteredProducts)}
+                className="h-4 w-4 rounded border-slate-300 dark:border-slate-700 accent-cyan-500"
+                aria-label="Select all visible"
+              />
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Product · {filteredProducts.length} item{filteredProducts.length === 1 ? "" : "s"}
+              </p>
+              <div className="hidden sm:block" />
+              <div className="hidden sm:block text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Category</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Price</div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Stock</div>
+              <div className="hidden sm:block text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Threshold</div>
+              <div />
+            </div>
+            {filteredProducts.map((product) => (
+              <ProductRow
+                key={product.id}
+                product={product}
+                selected={selectedIds.has(product.id)}
+                onToggleSelect={() => toggleSelect(product.id)}
+                onClickRow={() => setEditing(product)}
+                onSavePrice={(n) => saveProductPatch(product, { sellingPrice: n })}
+                onSaveStock={(n) => saveProductPatch(product, { currentStock: n })}
+                onSaveThreshold={(n) => saveProductPatch(product, { lowStockThreshold: n })}
+                canEdit={hasPermission(Permission.ManageStock)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredProducts.map((product) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                onEdit={setEditing}
+                onDelete={setDeleting}
+                onDamaged={setDamaging}
+                onStockOut={setRemovingStock}
+                onRestock={setRestocking}
+              />
+            ))}
+          </div>
+        )
+      )}
+
+      {/* Sticky bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="sticky bottom-4 z-20 mx-auto max-w-2xl">
+          <div className="bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-xl shadow-2xl ring-1 ring-slate-700 dark:ring-slate-300 px-4 py-3 flex items-center gap-3">
+            <span className="text-sm font-semibold tabular-nums">
+              {selectedIds.size} selected
+            </span>
+            <span className="flex-1" />
+            <button
+              onClick={bulkExportCsv}
+              className="text-xs font-semibold px-3 py-1.5 rounded-md bg-white/10 dark:bg-slate-900/10 hover:bg-white/20 dark:hover:bg-slate-900/20 transition-colors"
+            >
+              Export CSV
+            </button>
+            {hasPermission(Permission.ManageStock) && (
+              <button
+                onClick={() => setBulkConfirmDelete(true)}
+                className="text-xs font-semibold px-3 py-1.5 rounded-md bg-rose-500/90 hover:bg-rose-500 text-white transition-colors"
+              >
+                Delete
+              </button>
+            )}
+            <button
+              onClick={clearSelection}
+              className="text-xs font-medium text-slate-300 dark:text-slate-600 hover:text-white dark:hover:text-slate-900 transition-colors"
+            >
+              Clear
+            </button>
+          </div>
         </div>
+      )}
+
+      {/* Bulk delete confirmation */}
+      {bulkConfirmDelete && (
+        <Dialog open={bulkConfirmDelete} onOpenChange={(o) => !o && setBulkConfirmDelete(false)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete {selectedIds.size} product{selectedIds.size === 1 ? "" : "s"}?</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-slate-600 dark:text-slate-400">
+              This action can&rsquo;t be undone. Products with sales history will be soft-deleted.
+            </p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setBulkConfirmDelete(false)}>Cancel</Button>
+              <Button onClick={bulkDelete} className="bg-rose-600 hover:bg-rose-700 text-white">
+                Delete {selectedIds.size}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
 
       <AddProductDialog open={adding} onClose={() => setAdding(false)} />

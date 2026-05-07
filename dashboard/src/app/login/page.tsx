@@ -47,16 +47,16 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="flex justify-center">
-            <LogoMark size="lg" wordmarkColor="#0F172A" />
+            <LogoMark size="lg" className="text-cyan-700 dark:text-cyan-300" />
           </div>
-          <p className="text-slate-500 mt-4 text-sm">The eye that never blinks.</p>
+          <p className="text-slate-500 dark:text-slate-400 mt-4 text-sm">The eye that never blinks.</p>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-1">
               <Label htmlFor="phoneOrEmail">Phone or Email</Label>
@@ -93,7 +93,7 @@ export default function LoginPage() {
               {isSubmitting ? "Signing in…" : "Sign In"}
             </Button>
 
-            <p className="text-xs text-slate-400 text-center mt-3">
+            <p className="text-xs text-slate-400 dark:text-slate-500 text-center mt-3">
               By signing in, you agree to our{" "}
               <Link href="/terms" className="underline hover:text-slate-600">Terms of Service</Link> and{" "}
               <Link href="/privacy" className="underline hover:text-slate-600">Privacy Policy</Link>.
@@ -102,18 +102,29 @@ export default function LoginPage() {
         </div>
 
         <div className="text-center mt-4 space-y-2">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             <Link href="/forgot-password" className="text-cyan-600 font-medium hover:underline">
               Forgot password?
             </Link>
+            <span className="mx-2 text-slate-300 dark:text-slate-600">·</span>
+            <Link href="/recover-account" className="text-cyan-600 font-medium hover:underline">
+              Lost access to your phone?
+            </Link>
           </p>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             New business?{" "}
             <Link href="/register" className="text-cyan-600 font-medium hover:underline">
               Register here
             </Link>
           </p>
         </div>
+
+        <p className="text-center mt-6 text-xs text-slate-400 dark:text-slate-500">
+          On your phone?{" "}
+          <Link href="/install" className="text-cyan-600 font-medium hover:underline">
+            Install Ojunai
+          </Link>
+        </p>
       </div>
     </div>
   );

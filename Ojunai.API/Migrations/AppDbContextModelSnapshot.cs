@@ -22,6 +22,100 @@ namespace Ojunai.API.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Ojunai.API.Models.AccountRecoveryToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("HashedToken")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("RequestIp")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime?>("UsedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "ExpiresAtUtc");
+
+                    b.ToTable("AccountRecoveryTokens");
+                });
+
+            modelBuilder.Entity("Ojunai.API.Models.Alert", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DedupeKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("DismissedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LinkUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("MetadataJson")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<DateTime?>("ReadAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Severity")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessId", "CreatedAtUtc");
+
+                    b.HasIndex("BusinessId", "DedupeKey");
+
+                    b.HasIndex("BusinessId", "UserId", "ReadAtUtc");
+
+                    b.ToTable("Alerts");
+                });
+
             modelBuilder.Entity("Ojunai.API.Models.BillingEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -104,11 +198,33 @@ namespace Ojunai.API.Migrations
                     b.Property<bool>("AlertDailySummary")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("AlertDashboardAgedReceivable")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("AlertDashboardDailySummary")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("AlertDashboardLargeSale")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("AlertDashboardLowStock")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("AlertDashboardStaffChanges")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("AlertLargeSale")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("AlertLowStock")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("BackgroundImageFileName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<decimal>("BackgroundImageOpacity")
+                        .HasColumnType("numeric");
 
                     b.Property<string>("BillingCurrency")
                         .IsRequired()
@@ -153,6 +269,9 @@ namespace Ojunai.API.Migrations
 
                     b.Property<string>("CustomCategories")
                         .HasColumnType("text");
+
+                    b.Property<decimal?>("DailySalesGoal")
+                        .HasColumnType("numeric");
 
                     b.Property<string>("FlutterwaveCustomerId")
                         .HasColumnType("text");
@@ -368,6 +487,36 @@ namespace Ojunai.API.Migrations
                         .IsUnique();
 
                     b.ToTable("DailySummaries");
+                });
+
+            modelBuilder.Entity("Ojunai.API.Models.EmailVerificationToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("HashedToken")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("UsedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "ExpiresAtUtc");
+
+                    b.ToTable("EmailVerificationTokens");
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.Expense", b =>
@@ -666,6 +815,39 @@ namespace Ojunai.API.Migrations
                     b.ToTable("MessageLogs");
                 });
 
+            modelBuilder.Entity("Ojunai.API.Models.MobileEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Payload")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name", "CreatedAtUtc");
+
+                    b.ToTable("MobileEvents");
+                });
+
             modelBuilder.Entity("Ojunai.API.Models.OnboardingState", b =>
                 {
                     b.Property<Guid>("Id")
@@ -783,6 +965,46 @@ namespace Ojunai.API.Migrations
                         .IsUnique();
 
                     b.ToTable("PendingActions");
+                });
+
+            modelBuilder.Entity("Ojunai.API.Models.PhoneVerificationCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("HashedCode")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("PhoneNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("Purpose")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1);
+
+                    b.Property<DateTime?>("UsedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PhoneNumber", "Purpose", "ExpiresAtUtc");
+
+                    b.ToTable("PhoneVerificationCodes");
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.Product", b =>
@@ -1051,6 +1273,12 @@ namespace Ojunai.API.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<bool>("EmailVerified")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("EmailVerifiedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("FailedLoginAttempts")
                         .HasColumnType("integer");
 
@@ -1101,6 +1329,17 @@ namespace Ojunai.API.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("Ojunai.API.Models.AccountRecoveryToken", b =>
+                {
+                    b.HasOne("Ojunai.API.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Ojunai.API.Models.Contact", b =>
                 {
                     b.HasOne("Ojunai.API.Models.Business", "Business")
@@ -1121,6 +1360,17 @@ namespace Ojunai.API.Migrations
                         .IsRequired();
 
                     b.Navigation("Business");
+                });
+
+            modelBuilder.Entity("Ojunai.API.Models.EmailVerificationToken", b =>
+                {
+                    b.HasOne("Ojunai.API.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.Expense", b =>

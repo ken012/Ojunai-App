@@ -20,6 +20,7 @@ public class BusinessController : OjunaiBaseController
     private readonly ILogger<BusinessController> _logger;
     private readonly IConfiguration _config;
     private readonly IHttpClientFactory _httpFactory;
+    private readonly Services.Interfaces.IBackgroundImageService _backgroundImage;
 
     public BusinessController(
         IBusinessService business,
@@ -28,7 +29,8 @@ public class BusinessController : OjunaiBaseController
         PaystackService paystack,
         ILogger<BusinessController> logger,
         IConfiguration config,
-        IHttpClientFactory httpFactory)
+        IHttpClientFactory httpFactory,
+        Services.Interfaces.IBackgroundImageService backgroundImage)
     {
         _business = business;
         _planGuard = planGuard;
@@ -37,6 +39,7 @@ public class BusinessController : OjunaiBaseController
         _logger = logger;
         _config = config;
         _httpFactory = httpFactory;
+        _backgroundImage = backgroundImage;
     }
 
     [HttpGet]
@@ -78,6 +81,7 @@ public class BusinessController : OjunaiBaseController
             HasAdvancedReports = config.HasAdvancedReports,
             HasMonthlyCharts = config.HasMonthlyCharts,
             HasStockHolds = config.HasStockHolds,
+            HasCustomBranding = config.HasCustomBranding,
             IsBillable = biz.IsBillable,
             HasActiveSubscription = !string.IsNullOrEmpty(biz.PaystackSubscriptionCode)
                 || !string.IsNullOrEmpty(biz.FlutterwaveSubscriptionId)
@@ -113,6 +117,37 @@ public class BusinessController : OjunaiBaseController
     {
         var result = await _business.UpdateAsync(BusinessId, request);
         return Ok(ApiResponse<BusinessDto>.Ok(result, "Business updated."));
+    }
+
+    /// <summary>
+    /// Upload a custom dashboard background image. Pro + Business plans only.
+    ///
+    /// Security pipeline lives in BackgroundImageService — see that file for the full
+    /// list of validation layers (MIME whitelist, magic-byte sniff, dimension preflight,
+    /// full decode, EXIF strip, re-encode, UUID filename). Returns the updated business
+    /// with the new BackgroundImageUrl populated.
+    /// </summary>
+    [HttpPost("background-image")]
+    [RequirePermission(Permission.ManageSettings)]
+    [RequestSizeLimit(5 * 1024 * 1024)] // 5MB — caps wire bytes before model binding
+    public async Task<ActionResult<ApiResponse<BusinessDto>>> UploadBackgroundImage(IFormFile file)
+    {
+        var (allowed, planErr) = await _planGuard.CheckFeatureAsync(BusinessId, "custom_branding");
+        if (!allowed) return BadRequest(ApiResponse<BusinessDto>.Fail(planErr!));
+
+        await _backgroundImage.SaveAsync(BusinessId, file);
+        var result = await _business.GetByIdAsync(BusinessId);
+        return Ok(ApiResponse<BusinessDto>.Ok(result, "Background image updated."));
+    }
+
+    /// <summary>Removes the custom dashboard background image and reverts to the default.</summary>
+    [HttpDelete("background-image")]
+    [RequirePermission(Permission.ManageSettings)]
+    public async Task<ActionResult<ApiResponse<BusinessDto>>> RemoveBackgroundImage()
+    {
+        await _backgroundImage.RemoveAsync(BusinessId);
+        var result = await _business.GetByIdAsync(BusinessId);
+        return Ok(ApiResponse<BusinessDto>.Ok(result, "Background image removed."));
     }
 
     /// <summary>
@@ -844,6 +879,7 @@ public class PlanStatusDto
     public bool HasAdvancedReports { get; set; }
     public bool HasMonthlyCharts { get; set; }
     public bool HasStockHolds { get; set; }
+    public bool HasCustomBranding { get; set; }
     public bool IsBillable { get; set; }
     public bool HasActiveSubscription { get; set; }
     public DateTime? SubscriptionEndsAt { get; set; }

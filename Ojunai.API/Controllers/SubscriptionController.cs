@@ -60,6 +60,14 @@ public class SubscriptionController : OjunaiBaseController
         var currency = request.Currency?.ToUpper() ?? business.Currency ?? "NGN";
         var cycle = request.BillingCycle?.ToLower() ?? "monthly";
 
+        // Reject unsupported currencies up-front with a clear message — protects against silently
+        // charging the wrong amount when a Pan-African user picks a currency we don't yet support.
+        if (!BillingConfig.IsCurrencySupported(currency))
+        {
+            return BadRequest(ApiResponse<object>.Fail(
+                $"Billing in {currency} isn't supported yet. Supported: {string.Join(", ", BillingConfig.SupportedCurrencies)}. Contact support if you'd like {currency} added."));
+        }
+
         if (!BillingConfig.IsValidCombination(plan, cycle, currency))
             return BadRequest(ApiResponse<object>.Fail($"Invalid plan/cycle/currency combination: {plan}/{cycle}/{currency}"));
 
@@ -86,8 +94,10 @@ public class SubscriptionController : OjunaiBaseController
         if (!Enum.TryParse<BillingConfig.BillingCycle>(cycle, true, out var billingCycle))
             return BadRequest(ApiResponse<object>.Fail("Invalid billing cycle."));
 
-        var amount = BillingConfig.GetPrice(plan, billingCycle, currency)
-            ?? 0m;
+        // GetPriceOrThrow surfaces unsupported plan/cycle/currency loudly. The IsValidCombination
+        // check above should have caught this, but the throw is a defensive safety net so we never
+        // accidentally initialize a Flutterwave transaction at amount=0.
+        var amount = BillingConfig.GetPriceOrThrow(plan, billingCycle, currency);
 
         var txRef = $"ojunai-{BusinessId:N}-{plan}-{cycle}-{DateTime.UtcNow.Ticks}";
         var publicKey = _config["Flutterwave:PublicKey"];

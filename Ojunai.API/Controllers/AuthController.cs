@@ -16,13 +16,31 @@ public class AuthController : OjunaiBaseController
     private readonly AuthService _authConcrete;
     private readonly AppDbContext _db;
     private readonly IWhatsAppService _whatsApp;
+    private readonly IPhoneVerificationService _phoneVerify;
+    private readonly IEmailVerificationService _emailVerify;
+    private readonly IEmailService _emailSender;
+    private readonly IAccountRecoveryService _recovery;
+    private readonly ILogger<AuthController> _logger;
 
-    public AuthController(IAuthService auth, AppDbContext db, IWhatsAppService whatsApp)
+    public AuthController(
+        IAuthService auth,
+        AppDbContext db,
+        IWhatsAppService whatsApp,
+        IPhoneVerificationService phoneVerify,
+        IEmailVerificationService emailVerify,
+        IEmailService emailSender,
+        IAccountRecoveryService recovery,
+        ILogger<AuthController> logger)
     {
         _auth = auth;
         _authConcrete = (AuthService)auth;
         _db = db;
         _whatsApp = whatsApp;
+        _phoneVerify = phoneVerify;
+        _emailVerify = emailVerify;
+        _emailSender = emailSender;
+        _recovery = recovery;
+        _logger = logger;
     }
 
     [AllowAnonymous]
@@ -88,6 +106,73 @@ public class AuthController : OjunaiBaseController
         return Ok(ApiResponse<object>.Ok(null!, "Date of birth updated."));
     }
 
+    /// <summary>
+    /// Updates the current user's email. If the email actually changes, EmailVerified is cleared
+    /// and a fresh verification email is sent — the new address must be re-proven before it can
+    /// be used for account recovery.
+    ///
+    /// Removing an email entirely is NOT supported via this endpoint — once a user has set one
+    /// it stays as their recovery channel until support manually removes it. This prevents
+    /// users from accidentally orphaning their own account recovery.
+    /// </summary>
+    [HttpPut("email")]
+    public async Task<ActionResult<ApiResponse<UserDto>>> UpdateEmail([FromBody] UpdateEmailRequest request)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == UserId && u.IsActive)
+            ?? throw new KeyNotFoundException("User not found.");
+
+        var normalized = request.Email?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(normalized))
+            throw new InvalidOperationException(
+                "Email can't be blank. To remove your email, please contact support — it's your account recovery channel.");
+
+        var conflict = await _db.Users.AnyAsync(u =>
+            u.Email == normalized && u.IsActive && u.Id != UserId);
+        if (conflict)
+            throw new InvalidOperationException("This email is already registered to another account.");
+
+        var changed = user.Email != normalized;
+        // Capture the OLD verified address before mutating so we can send an out-of-band
+        // notification — this is the anti-takeover signal: if an attacker silently swapped
+        // the email, the legitimate owner gets a heads-up at their original inbox.
+        var previousEmail = user.Email;
+        var previousEmailVerified = user.EmailVerified;
+        user.Email = normalized;
+        if (changed)
+        {
+            user.EmailVerified = false;
+            user.EmailVerifiedAtUtc = null;
+        }
+        await _db.SaveChangesAsync();
+
+        if (changed)
+        {
+            try { await _emailVerify.SendVerificationEmailAsync(user.Id); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Could not send verification email after email update for {UserId}", user.Id); }
+
+            if (previousEmailVerified && !string.IsNullOrEmpty(previousEmail))
+            {
+                await _emailSender.TrySendSecurityNotificationAsync(
+                    previousEmail, user.FullName,
+                    action: "Account email changed",
+                    detail: $"Your Ojunai account email was just changed from {previousEmail} to {normalized}. The new address must be verified before it can be used for recovery.");
+            }
+        }
+
+        return Ok(ApiResponse<UserDto>.Ok(new UserDto
+        {
+            Id = user.Id,
+            FullName = user.FullName,
+            PhoneNumber = user.PhoneNumber,
+            Email = user.Email,
+            EmailVerified = user.EmailVerified,
+            Role = user.Role.ToString(),
+            DateOfBirth = user.DateOfBirth,
+        }, changed
+            ? "Email updated. Check your inbox to verify the new address."
+            : "Email is unchanged."));
+    }
+
     [HttpPost("change-password")]
     public async Task<ActionResult<ApiResponse<object>>> ChangePassword([FromBody] ChangePasswordRequest request)
     {
@@ -109,15 +194,10 @@ public class AuthController : OjunaiBaseController
     [HttpPost("request-reset")]
     public async Task<ActionResult<ApiResponse<object>>> RequestReset([FromBody] RequestResetDto request)
     {
-        var code = await _auth.RequestPasswordResetAsync(request.PhoneNumber);
-
-        // Send code via WhatsApp
-        var normalizedPhone = Services.WhatsAppService.NormalizePhone(request.PhoneNumber);
-        await _whatsApp.SendMessageAsync(
-            $"whatsapp:{normalizedPhone}",
-            $"🔒 Your Ojunai password reset code is: *{code}*\n\nThis code expires in 10 minutes. If you didn't request this, ignore this message."
-        );
-
+        // RequestPasswordResetAsync delegates to PhoneVerificationService which generates,
+        // hashes, stores, AND sends the code over WhatsApp — controller no longer dispatches
+        // the message itself. The role gate (Owner/Admin only) lives in the service too.
+        await _auth.RequestPasswordResetAsync(request.PhoneNumber);
         return Ok(ApiResponse<object>.Ok(null!, "Reset code sent to your WhatsApp."));
     }
 
@@ -128,6 +208,162 @@ public class AuthController : OjunaiBaseController
     {
         await _auth.VerifyResetAndChangePasswordAsync(request.PhoneNumber, request.Code, request.NewPassword);
         return Ok(ApiResponse<object>.Ok(null!, "Password reset successfully. You can now log in."));
+    }
+
+    /// <summary>
+    /// Step 1 of phone-verified signup. Issues a 6-digit code, stores its hash, and sends the code
+    /// to the phone via WhatsApp. Rate-limited (60s cooldown, 5/hour). Caller polls with /verify-phone-and-register
+    /// to actually create the account.
+    /// </summary>
+    [AllowAnonymous]
+    [AuthRateLimit]
+    [HttpPost("request-phone-verification")]
+    public async Task<ActionResult<ApiResponse<RequestPhoneVerificationResponse>>> RequestPhoneVerification(
+        [FromBody] RequestPhoneVerificationRequest request)
+    {
+        var (phone, expiresAt, cooldown) = await _phoneVerify.RequestCodeAsync(request.PhoneNumber);
+        return Ok(ApiResponse<RequestPhoneVerificationResponse>.Ok(new RequestPhoneVerificationResponse
+        {
+            PhoneNumber = phone,
+            ExpiresAtUtc = expiresAt,
+            ResendCooldownSeconds = cooldown,
+        }, "Verification code sent. Check your WhatsApp."));
+    }
+
+    /// <summary>
+    /// Step 2 of phone-verified signup. Validates the OTP, then runs the existing register flow.
+    /// No User or Business row is created until both the code and registration payload pass.
+    /// </summary>
+    [AllowAnonymous]
+    [AuthRateLimit]
+    [HttpPost("verify-phone-and-register")]
+    public async Task<ActionResult<ApiResponse<AuthResponse>>> VerifyPhoneAndRegister(
+        [FromBody] VerifyPhoneAndRegisterRequest request)
+    {
+        await _phoneVerify.ConsumeCodeAsync(request.PhoneNumber, request.Code);
+
+        var registerRequest = new RegisterOwnerRequest
+        {
+            FullName = request.FullName,
+            PhoneNumber = request.PhoneNumber,
+            Email = request.Email,
+            Password = request.Password,
+            BusinessName = request.BusinessName,
+            BusinessType = request.BusinessType,
+            State = request.State,
+            City = request.City,
+            DateOfBirth = request.DateOfBirth,
+        };
+        var result = await _auth.RegisterOwnerAsync(registerRequest);
+        SetAuthCookie(result.Token!, result.ExpiresAt);
+
+        // Fire-and-forget verification email if the user supplied one. Failure (SMTP down,
+        // bad config, etc.) must NOT block the registration response — the user can resend
+        // from the dashboard banner once they're inside.
+        if (!string.IsNullOrEmpty(result.User.Email))
+        {
+            try { await _emailVerify.SendVerificationEmailAsync(result.User.Id); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Could not send verification email at signup for {UserId}", result.User.Id); }
+        }
+
+        return Ok(ApiResponse<AuthResponse>.Ok(result, "Business registered successfully."));
+    }
+
+    /// <summary>
+    /// Authenticated endpoint — current user requests a (re-)send of their verification email.
+    /// Used by the in-dashboard "Verify your email" banner.
+    /// </summary>
+    [HttpPost("request-email-verification")]
+    public async Task<ActionResult<ApiResponse<RequestEmailVerificationResponse>>> RequestEmailVerification()
+    {
+        var expiresAt = await _emailVerify.SendVerificationEmailAsync(UserId);
+        return Ok(ApiResponse<RequestEmailVerificationResponse>.Ok(
+            new RequestEmailVerificationResponse { ExpiresAtUtc = expiresAt },
+            "Verification email sent. Check your inbox."));
+    }
+
+    /// <summary>
+    /// Anonymous endpoint — the link in the verification email POSTs here. On success we mark
+    /// the user's email verified; the link is single-use.
+    /// </summary>
+    [AllowAnonymous]
+    [AuthRateLimit]
+    [HttpPost("verify-email")]
+    public async Task<ActionResult<ApiResponse<object>>> VerifyEmail([FromBody] VerifyEmailRequest request)
+    {
+        await _emailVerify.ConsumeTokenAsync(request.Token);
+        return Ok(ApiResponse<object>.Ok(null!, "Email verified successfully."));
+    }
+
+    /// <summary>
+    /// Phone-loss recovery, step 1. Always returns 204 — we never reveal whether the email matched.
+    /// </summary>
+    [AllowAnonymous]
+    [AuthRateLimit]
+    [HttpPost("request-account-recovery")]
+    public async Task<ActionResult<ApiResponse<object>>> RequestAccountRecovery([FromBody] RequestAccountRecoveryRequest request)
+    {
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        await _recovery.RequestRecoveryAsync(request.Email, ip);
+        return Ok(ApiResponse<object>.Ok(null!, "If an account is registered to that email, a recovery link has been sent."));
+    }
+
+    /// <summary>
+    /// Phone-loss recovery — token validation. Validates without consuming so the UI can show
+    /// the redacted account info before the user picks an action.
+    /// </summary>
+    [AllowAnonymous]
+    [AuthRateLimit]
+    [HttpPost("recover-account/info")]
+    public async Task<ActionResult<ApiResponse<RecoveryTokenInfo>>> InspectRecoveryToken([FromBody] InspectRecoveryTokenRequest request)
+    {
+        var info = await _recovery.InspectTokenAsync(request.Token);
+        return Ok(ApiResponse<RecoveryTokenInfo>.Ok(info));
+    }
+
+    /// <summary>
+    /// Phone-loss recovery — completion via password reset. Consumes the token and returns a
+    /// fresh auth response so the user is logged in immediately.
+    /// </summary>
+    [AllowAnonymous]
+    [AuthRateLimit]
+    [HttpPost("recover-account/reset-password")]
+    public async Task<ActionResult<ApiResponse<AuthResponse>>> RecoverAccountResetPassword([FromBody] RecoverAccountResetPasswordRequest request)
+    {
+        var result = await _recovery.CompletePasswordResetAsync(request.Token, request.NewPassword);
+        SetAuthCookie(result.Token!, result.ExpiresAt);
+        return Ok(ApiResponse<AuthResponse>.Ok(result, "Password reset. You're signed in."));
+    }
+
+    /// <summary>
+    /// Phone-loss recovery — phone change, step 1: send OTP to the new phone.
+    /// </summary>
+    [AllowAnonymous]
+    [AuthRateLimit]
+    [HttpPost("recover-account/request-phone-otp")]
+    public async Task<ActionResult<ApiResponse<RequestPhoneVerificationResponse>>> RecoverRequestPhoneOtp([FromBody] RecoverAccountRequestPhoneOtpRequest request)
+    {
+        var expiresAt = await _recovery.RequestPhoneChangeOtpAsync(request.Token, request.NewPhoneNumber);
+        return Ok(ApiResponse<RequestPhoneVerificationResponse>.Ok(new RequestPhoneVerificationResponse
+        {
+            PhoneNumber = request.NewPhoneNumber,
+            ExpiresAtUtc = expiresAt,
+            ResendCooldownSeconds = 60,
+        }, "Verification code sent to your new phone via WhatsApp."));
+    }
+
+    /// <summary>
+    /// Phone-loss recovery — phone change, step 2: verify OTP and swap phone. Consumes the
+    /// recovery token and returns a fresh auth response.
+    /// </summary>
+    [AllowAnonymous]
+    [AuthRateLimit]
+    [HttpPost("recover-account/change-phone")]
+    public async Task<ActionResult<ApiResponse<AuthResponse>>> RecoverChangePhone([FromBody] RecoverAccountChangePhoneRequest request)
+    {
+        var result = await _recovery.CompletePhoneChangeAsync(request.Token, request.NewPhoneNumber, request.Code);
+        SetAuthCookie(result.Token!, result.ExpiresAt);
+        return Ok(ApiResponse<AuthResponse>.Ok(result, "Phone changed. You're signed in with the new number."));
     }
 }
 
@@ -140,6 +376,15 @@ public class ChangePasswordRequest
 public class UpdateDobRequest
 {
     public DateOnly DateOfBirth { get; set; }
+}
+
+public class UpdateEmailRequest
+{
+    [System.ComponentModel.DataAnnotations.EmailAddress]
+    [System.ComponentModel.DataAnnotations.MaxLength(200)]
+    public string? Email { get; set; }
+    // Note: not [Required] at the validator level so we can produce our own friendlier
+    // "contact support" message in the controller for blank submissions.
 }
 
 public class RequestResetDto

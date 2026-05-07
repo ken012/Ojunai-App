@@ -7,6 +7,8 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordStrengthHint } from "@/components/password-strength-hint";
+import { validatePassword } from "@/lib/password-policy";
 
 export default function ChangePasswordPage() {
   const router = useRouter();
@@ -20,8 +22,9 @@ export default function ChangePasswordPage() {
       setError("Passwords don't match.");
       return;
     }
-    if (form.newPassword.length < 8) {
-      setError("Password must be at least 8 characters.");
+    const pwCheck = validatePassword(form.newPassword);
+    if (!pwCheck.ok) {
+      setError(pwCheck.reason ?? "Password does not meet requirements.");
       return;
     }
     setSaving(true);
@@ -50,17 +53,17 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex justify-center">
-            <LogoMark size="lg" wordmarkColor="#0F172A" />
+            <LogoMark size="lg" className="text-cyan-700 dark:text-cyan-300" />
           </div>
-          <p className="text-slate-500 mt-4 text-sm">Set your new password</p>
-          <p className="text-xs text-slate-400 mt-1">You must change your password before continuing.</p>
+          <p className="text-slate-500 dark:text-slate-400 mt-4 text-sm">Set your new password</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">You must change your password before continuing.</p>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <Label>Current Password (temporary)</Label>
@@ -77,8 +80,9 @@ export default function ChangePasswordPage() {
                 type="password"
                 value={form.newPassword}
                 onChange={(e) => setForm({ ...form, newPassword: e.target.value })}
-                placeholder="Min 8 characters"
+                placeholder="Min 10 characters"
               />
+              <PasswordStrengthHint password={form.newPassword} />
             </div>
             <div>
               <Label>Confirm New Password</Label>

@@ -283,7 +283,9 @@ public class OnboardingService
             $"🌐 app.ojunai.com\n" +
             $"📞 Phone: {phone}\n" +
             $"🔑 Password: {tempPassword}\n" +
-            $"⚠️ You'll be asked to change this on first login.\n\n" +
+            $"⚠️ You'll be asked to change this on first login.\n" +
+            $"_New password rules:_ " +
+            $"{string.Join(", ", Common.PasswordPolicy.RequirementsHint())}.\n\n" +
             $"*Try these now:*\n" +
             $"• \"Sold 5 bags of rice at 3000\"\n" +
             $"• \"Bought 10 bottles of shampoo\"\n" +

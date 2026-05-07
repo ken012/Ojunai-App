@@ -31,8 +31,19 @@ export function DataSyncProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem("bp_business", JSON.stringify(bizRes.data.data));
       }
       if (userRes.data.data) {
-        setUser(userRes.data.data);
-        localStorage.setItem("bp_user", JSON.stringify(userRes.data.data));
+        // Keep the FULL user (with phone + DOB) in memory so Settings can render
+        // those fields, but only persist a PII-free subset to localStorage. See
+        // lib/auth.ts:cacheableUser for the security rationale.
+        const fullUser = userRes.data.data;
+        setUser(fullUser);
+        const safe = {
+          id: fullUser.id,
+          fullName: fullUser.fullName,
+          email: fullUser.email,
+          emailVerified: fullUser.emailVerified,
+          role: fullUser.role,
+        };
+        localStorage.setItem("bp_user", JSON.stringify(safe));
       }
     }).catch(() => {});
   }, []);

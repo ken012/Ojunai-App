@@ -164,7 +164,7 @@ public class ImportController : OjunaiBaseController
             Type = type,
             Status = ImportJobStatus.Queued,
             RawCsvText = csvText,
-            FileName = file.FileName,
+            FileName = SanitizeFileName(file.FileName),
             TotalRows = rowCount,
             ImportMode = mode,
             SkipExpenses = mode == "existing_stock" || mode == "price_update"
@@ -182,11 +182,67 @@ public class ImportController : OjunaiBaseController
             $"{rowCount} rows queued. You'll get a WhatsApp message when the import finishes."));
     }
 
+    /// <summary>
+    /// Sanitize a user-supplied filename before persisting it to the DB / showing it in the UI.
+    /// Strips path components (defends against path traversal markers), control characters,
+    /// quotes, and angle brackets (defends against stored XSS if the filename is rendered
+    /// without escaping somewhere downstream), then length-caps to a sane max.
+    /// </summary>
+    private static string SanitizeFileName(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "import.csv";
+        // Drop everything before the last path separator.
+        var name = raw;
+        var slashIdx = Math.Max(name.LastIndexOf('/'), name.LastIndexOf('\\'));
+        if (slashIdx >= 0) name = name[(slashIdx + 1)..];
+        // Strip control chars + a small set of HTML/quote chars that have no business in a filename.
+        var sb = new StringBuilder(name.Length);
+        foreach (var c in name)
+        {
+            if (char.IsControl(c)) continue;
+            if (c is '<' or '>' or '"' or '\'' or '`') continue;
+            sb.Append(c);
+        }
+        var cleaned = sb.ToString().Trim();
+        if (cleaned.Length == 0) return "import.csv";
+        if (cleaned.Length > 200) cleaned = cleaned[..200];
+        return cleaned;
+    }
+
+    /// <summary>
+    /// Reject obvious non-text uploads. Real CSV is ASCII or UTF-8 with very few control bytes
+    /// (only tab \t, line feed \n, and carriage return \r are legitimate). If the file is mostly
+    /// binary (e.g. PNG, ZIP, PDF renamed with a .csv extension), bail before allocating
+    /// 50MB of garbage into memory + DB. We sample the first 1KB rather than scanning the whole
+    /// file — a malicious binary always has plenty of non-text bytes in the first kilobyte.
+    /// </summary>
+    private static bool LooksLikeText(byte[] sample)
+    {
+        if (sample.Length == 0) return false;
+        var binaryByteCount = 0;
+        foreach (var b in sample)
+        {
+            if (b == 0) return false; // null bytes essentially never appear in legitimate text
+            if (b < 0x20 && b is not 0x09 and not 0x0A and not 0x0D) binaryByteCount++;
+        }
+        // More than ~5% control bytes (excluding tab/CR/LF) — looks binary.
+        return binaryByteCount * 20 < sample.Length;
+    }
+
     private static (string? CsvText, int RowCount, string? Error) ReadAndValidateFile(IFormFile? file)
     {
         if (file == null || file.Length == 0) return (null, 0, "No file uploaded.");
         if (file.Length > MaxFileSize) return (null, 0, $"File too large. Maximum size is {MaxFileSize / (1024 * 1024)}MB.");
         if (!file.FileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)) return (null, 0, "Only CSV files are supported.");
+
+        // Sniff the first kilobyte for binary content before reading the whole thing into memory.
+        using (var sniff = file.OpenReadStream())
+        {
+            var sample = new byte[Math.Min(1024, file.Length)];
+            var read = sniff.Read(sample, 0, sample.Length);
+            if (!LooksLikeText(sample.Length == read ? sample : sample[..read]))
+                return (null, 0, "This doesn't look like a CSV file. Please upload a plain-text CSV.");
+        }
 
         // Read the entire stream into memory once — we need to both count rows (for validation) and persist
         // the raw text onto the ImportJob row for the background worker. Streams can't be rewound after

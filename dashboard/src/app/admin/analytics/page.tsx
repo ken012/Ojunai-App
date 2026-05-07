@@ -58,7 +58,7 @@ const STEP_LABELS: Record<string, string> = {
 
 export default function AdminAnalyticsWrapper() {
   return (
-    <Suspense fallback={<div className="p-8 text-slate-500">Loading...</div>}>
+    <Suspense fallback={<div className="p-8 text-slate-500 dark:text-slate-400">Loading...</div>}>
       <AdminAnalyticsPage />
     </Suspense>
   );
@@ -79,7 +79,7 @@ function AdminAnalyticsPage() {
       .finally(() => setLoading(false));
   }, [key]);
 
-  if (loading) return <div className="p-8 text-slate-500">Loading...</div>;
+  if (loading) return <div className="p-8 text-slate-500 dark:text-slate-400">Loading...</div>;
   if (error) return <div className="p-8 text-red-500">{error}</div>;
   if (!data) return null;
 
@@ -95,33 +95,33 @@ function AdminAnalyticsPage() {
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Onboarding Analytics</h1>
-        <p className="text-sm text-slate-500 mt-1">Private admin view — last 500 onboarding events</p>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Onboarding Analytics</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Private admin view — last 500 onboarding events</p>
       </div>
 
       {/* Funnel */}
-      <div className="bg-white border rounded-xl p-6">
-        <h2 className="text-sm font-semibold text-slate-700 mb-4">Signup Funnel</h2>
+      <div className="bg-white dark:bg-slate-900 border rounded-xl p-6">
+        <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-4">Signup Funnel</h2>
         <div className="space-y-2">
           {funnelSteps.map((f) => (
             <div key={f.step} className="flex items-center gap-3">
-              <span className="text-xs text-slate-500 w-36 text-right">{f.label}</span>
-              <div className="flex-1 bg-slate-100 rounded-full h-6 overflow-hidden">
+              <span className="text-xs text-slate-500 dark:text-slate-400 w-36 text-right">{f.label}</span>
+              <div className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-full h-6 overflow-hidden">
                 <div
                   className="bg-cyan-500 h-full rounded-full transition-all"
                   style={{ width: `${(f.count / maxCount) * 100}%` }}
                 />
               </div>
-              <span className="text-sm font-semibold text-slate-700 w-10 text-right">{f.count}</span>
+              <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 w-10 text-right">{f.count}</span>
             </div>
           ))}
         </div>
         {otherSteps.length > 0 && (
           <div className="mt-4 pt-4 border-t">
-            <p className="text-xs text-slate-400 mb-2">Other events</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">Other events</p>
             <div className="flex flex-wrap gap-2">
               {otherSteps.map((f) => (
-                <span key={f.step} className="text-xs bg-slate-100 px-2 py-1 rounded">
+                <span key={f.step} className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
                   {STEP_LABELS[f.step] ?? f.step}: {f.count}
                 </span>
               ))}
@@ -131,15 +131,15 @@ function AdminAnalyticsPage() {
       </div>
 
       {/* Active Flows */}
-      <div className="bg-white border rounded-xl p-6">
-        <h2 className="text-sm font-semibold text-slate-700 mb-4">
+      <div className="bg-white dark:bg-slate-900 border rounded-xl p-6">
+        <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-4">
           Active / Abandoned Flows ({data.activeFlows.length})
         </h2>
         {data.activeFlows.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs text-slate-400 border-b">
+                <tr className="text-left text-xs text-slate-400 dark:text-slate-500 border-b">
                   <th className="pb-2">Phone</th>
                   <th className="pb-2">Step</th>
                   <th className="pb-2">Business</th>
@@ -157,9 +157,9 @@ function AdminAnalyticsPage() {
                       <td className="py-2">
                         <span className={`text-xs font-medium ${status}`}>{f.step}</span>
                       </td>
-                      <td className="py-2 text-slate-600">{f.businessName ?? "—"}</td>
-                      <td className="py-2 text-xs text-slate-400">{new Date(f.createdAtUtc).toLocaleString()}</td>
-                      <td className="py-2 text-xs text-slate-400">{Math.round(idle)}m ago</td>
+                      <td className="py-2 text-slate-600 dark:text-slate-400">{f.businessName ?? "—"}</td>
+                      <td className="py-2 text-xs text-slate-400 dark:text-slate-500">{new Date(f.createdAtUtc).toLocaleString()}</td>
+                      <td className="py-2 text-xs text-slate-400 dark:text-slate-500">{Math.round(idle)}m ago</td>
                     </tr>
                   );
                 })}
@@ -167,20 +167,20 @@ function AdminAnalyticsPage() {
             </table>
           </div>
         ) : (
-          <p className="text-sm text-slate-400">No active onboarding flows</p>
+          <p className="text-sm text-slate-400 dark:text-slate-500">No active onboarding flows</p>
         )}
       </div>
 
       {/* Recent Signups */}
-      <div className="bg-white border rounded-xl p-6">
-        <h2 className="text-sm font-semibold text-slate-700 mb-4">
+      <div className="bg-white dark:bg-slate-900 border rounded-xl p-6">
+        <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-4">
           Recent Signups (last 30 days)
         </h2>
         {data.recentSignups.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs text-slate-400 border-b">
+                <tr className="text-left text-xs text-slate-400 dark:text-slate-500 border-b">
                   <th className="pb-2">Business</th>
                   <th className="pb-2">Type</th>
                   <th className="pb-2">City</th>
@@ -193,20 +193,20 @@ function AdminAnalyticsPage() {
                 {data.recentSignups.map((s, i) => (
                   <tr key={i} className="border-b border-slate-50">
                     <td className="py-2 font-medium">{s.name}</td>
-                    <td className="py-2 text-slate-500">{s.businessType ?? "—"}</td>
-                    <td className="py-2 text-slate-500">{s.city ?? "—"}</td>
-                    <td className="py-2 text-slate-600">{s.owner ?? "—"}</td>
+                    <td className="py-2 text-slate-500 dark:text-slate-400">{s.businessType ?? "—"}</td>
+                    <td className="py-2 text-slate-500 dark:text-slate-400">{s.city ?? "—"}</td>
+                    <td className="py-2 text-slate-600 dark:text-slate-400">{s.owner ?? "—"}</td>
                     <td className="py-2">
-                      <span className="text-xs bg-slate-100 px-2 py-0.5 rounded">{s.plan}</span>
+                      <span className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">{s.plan}</span>
                     </td>
-                    <td className="py-2 text-xs text-slate-400">{new Date(s.createdAtUtc).toLocaleString()}</td>
+                    <td className="py-2 text-xs text-slate-400 dark:text-slate-500">{new Date(s.createdAtUtc).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <p className="text-sm text-slate-400">No signups in the last 30 days</p>
+          <p className="text-sm text-slate-400 dark:text-slate-500">No signups in the last 30 days</p>
         )}
       </div>
     </div>

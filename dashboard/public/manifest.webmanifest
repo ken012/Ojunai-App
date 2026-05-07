@@ -1,0 +1,23 @@
+{
+  "name": "Ojunai",
+  "short_name": "Ojunai",
+  "description": "The eye that never blinks. Run your shop's books from your phone.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B0B1F",
+  "theme_color": "#0F172A",
+  "categories": ["business", "productivity", "finance"],
+  "icons": [
+    { "src": "/icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Sales", "short_name": "Sales", "url": "/sales", "icons": [{ "src": "/icons/icon-maskable-192.png", "sizes": "192x192" }] },
+    { "name": "Expenses", "short_name": "Expenses", "url": "/expenses", "icons": [{ "src": "/icons/icon-maskable-192.png", "sizes": "192x192" }] },
+    { "name": "Inventory", "short_name": "Inventory", "url": "/inventory", "icons": [{ "src": "/icons/icon-maskable-192.png", "sizes": "192x192" }] }
+  ]
+}

@@ -109,6 +109,12 @@ builder.Services.AddScoped<PlanGuard>();
 builder.Services.AddScoped<VoiceAIGuard>();
 builder.Services.AddScoped<VoiceAIProvisioningService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IPhoneVerificationService, PhoneVerificationService>();
+builder.Services.AddScoped<IEmailVerificationService, EmailVerificationService>();
+builder.Services.AddScoped<IAccountRecoveryService, AccountRecoveryService>();
+builder.Services.AddScoped<IBackgroundImageService, BackgroundImageService>();
+builder.Services.AddScoped<IAlertService, AlertService>();
+builder.Services.AddScoped<AlertGeneratorJobService>();
 builder.Services.AddScoped<IBusinessService, BusinessService>();
 builder.Services.AddScoped<IStockHoldService, StockHoldService>();
 builder.Services.AddScoped<IProductService, ProductService>();
@@ -209,6 +215,23 @@ builder.Services.AddSwaggerGen(c =>
 
 // ── Build ─────────────────────────────────────────────────────────────────────
 var app = builder.Build();
+
+// ── Forwarded Headers ─────────────────────────────────────────────────────────
+// Production runs behind Nginx (or any reverse proxy). Without this, every request
+// appears to come from 127.0.0.1, breaking the per-IP rate limiter on auth endpoints.
+// We restrict the trust list to loopback so an attacker can't spoof X-Forwarded-For
+// from outside the reverse proxy.
+var forwardedOptions = new Microsoft.AspNetCore.Builder.ForwardedHeadersOptions
+{
+    ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
+                     | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto,
+    ForwardLimit = 1,
+};
+forwardedOptions.KnownProxies.Clear();
+forwardedOptions.KnownNetworks.Clear();
+forwardedOptions.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(System.Net.IPAddress.Loopback, 8));
+forwardedOptions.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(System.Net.IPAddress.IPv6Loopback, 128));
+app.UseForwardedHeaders(forwardedOptions);
 
 // ── Global Exception Handler ──────────────────────────────────────────────────
 app.UseExceptionHandler(errApp =>
@@ -332,6 +355,13 @@ RecurringJob.AddOrUpdate<SummaryJobService>(
 RecurringJob.AddOrUpdate<TrialReminderJobService>(
     "trial-reminders",
     svc => svc.SendTrialRemindersAsync(),
+    "0 * * * *");
+
+// Dashboard-bell alert generator. Hourly tick handles aged-receivable scan + trial-ending +
+// per-timezone daily-summary fan-out. Each alert is dedup'd internally so re-running is safe.
+RecurringJob.AddOrUpdate<AlertGeneratorJobService>(
+    "dashboard-alerts",
+    svc => svc.RunAsync(),
     "0 * * * *");
 
 RecurringJob.AddOrUpdate<TrialRevertJobService>(

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Ojunai.API.Common;
 using Ojunai.API.Data;
 using Ojunai.API.DTOs.Inventory;
@@ -680,6 +681,31 @@ public class WhatsAppService : IWhatsAppService
             }
         }
 
+        // Dashboard alerts mirror the WhatsApp ones via the centralized service. Fire even
+        // when no WhatsApp alerts went out — the dashboard service has its own toggles and
+        // dedup so it's safe to always call here. Only attach a sale ID if a sale actually
+        // happened recently; otherwise low-stock still fires but large-sale won't dedup
+        // identically (that's fine because it'd fail the threshold check without a fresh sale).
+        try
+        {
+            var recentSale = await _db.Sales
+                .Where(s => s.BusinessId == businessId && !s.IsDeleted
+                    && s.CreatedAtUtc > DateTime.UtcNow.AddMinutes(-2))
+                .OrderByDescending(s => s.CreatedAtUtc)
+                .Select(s => new { s.Id, s.TotalAmount })
+                .FirstOrDefaultAsync();
+            using var scope = _serviceProvider.CreateScope();
+            var alertSvc = scope.ServiceProvider.GetRequiredService<IAlertService>();
+            await alertSvc.EmitPostSaleAlertsAsync(
+                businessId,
+                recentSale?.TotalAmount ?? 0m,
+                recentSale?.Id);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Dashboard alert emit failed for business {Business}", businessId);
+        }
+
         if (alerts.Count > 0)
         {
             var alertMsg = $"🔔 *Alerts*\n{string.Join("\n", alerts)}";
@@ -837,8 +863,28 @@ public class WhatsAppService : IWhatsAppService
         return pending.Intent switch
         {
             "confirm_large_sale" => await ExecuteConfirmedSaleAsync(user.BusinessId, pending.PartialPayloadJson, user),
+            "confirm_overpayment" => await ExecuteConfirmedOverpaymentAsync(user.BusinessId, pending.PartialPayloadJson, user),
             _ => "Sorry, I don't know how to process that confirmation."
         };
+    }
+
+    private async Task<string> ExecuteConfirmedOverpaymentAsync(Guid businessId, string payloadJson, User recordedBy)
+    {
+        var payload = JsonSerializer.Deserialize<JsonElement>(payloadJson);
+        var contactId = Guid.Parse(payload.GetProperty("contactId").GetString()!);
+        var contactName = payload.GetProperty("contactName").GetString()!;
+        var amount = payload.GetProperty("amount").GetDecimal();
+        var paymentType = payload.GetProperty("paymentType").GetString()!;
+
+        await _ledger.RecordPaymentAsync(businessId, new RecordPaymentRequest
+        {
+            ContactId = contactId,
+            Amount = amount,
+            PaymentType = paymentType
+        }, EntrySource.WhatsApp, recordedBy.Id, recordedBy.FullName);
+
+        var direction = paymentType == "receivable" ? $"{contactName} paid you" : $"You paid {contactName}";
+        return $"✅ Payment recorded with credit balance: {direction} {_cs}{amount:N0}";
     }
 
     private async Task<string> ExecuteConfirmedSaleAsync(Guid businessId, string payloadJson, User recordedBy)
@@ -1565,17 +1611,48 @@ public class WhatsAppService : IWhatsAppService
             var outstanding = entries.Where(e => e.EntryType == receivableType).Sum(e => e.Amount)
                             - entries.Where(e => e.EntryType == paymentType).Sum(e => e.Amount);
 
-            if (outstanding <= 0) return $"{contact.Name} has no outstanding {type} balance.";
-
-            // Auto-clear full balance
-            if (clearAll == "true" || !amount.HasValue)
+            // Auto-clear full balance — only meaningful when there IS a balance.
+            if ((clearAll == "true" || !amount.HasValue) && outstanding > 0)
             {
                 amount = outstanding;
             }
 
-            if (amount.Value <= 0) return "Payment amount must be greater than zero.";
-            if (amount.Value > outstanding)
-                return $"⚠️ Payment of {_cs}{amount.Value:N0} exceeds the outstanding balance of {_cs}{outstanding:N0} for {contact.Name}. Please confirm the correct amount.";
+            if (!amount.HasValue || amount.Value <= 0) return "Payment amount must be greater than zero.";
+
+            // Overpayment / no-debt confirmation gate.
+            // If the user is recording a payment that has no matching debt (outstanding ≤ 0)
+            // or that exceeds the outstanding balance, stash the action and ask them to confirm
+            // before creating a credit balance. Mirrors the large-sale confirmation pattern.
+            if (outstanding <= 0 || amount.Value > outstanding)
+            {
+                var owesPhrase = type == "receivable"
+                    ? $"{contact.Name} only owes you {_cs}{Math.Max(outstanding, 0):N0}"
+                    : $"You only owe {contact.Name} {_cs}{Math.Max(outstanding, 0):N0}";
+                var noDebt = outstanding <= 0
+                    ? (type == "receivable"
+                        ? $"{contact.Name} has no outstanding debt to you"
+                        : $"You have no outstanding debt to {contact.Name}")
+                    : owesPhrase;
+
+                var excess = amount.Value - Math.Max(outstanding, 0);
+                var creditOwner = type == "receivable" ? contact.Name : "you";
+                var question = $"⚠️ {noDebt}, but you're recording a payment of {_cs}{amount.Value:N0}. " +
+                               $"This will leave a credit balance of {_cs}{excess:N0} for {creditOwner}. " +
+                               "Reply YES to record anyway, or NO to cancel.";
+
+                if (recordedBy != null)
+                {
+                    var payload = JsonSerializer.Serialize(new
+                    {
+                        contactId = contact.Id,
+                        contactName = contact.Name,
+                        amount = amount.Value,
+                        paymentType = type
+                    });
+                    await SetPendingActionAsync(businessId, recordedBy.Id, "confirm_overpayment", payload, "confirmation", question);
+                }
+                return question;
+            }
 
             var direction = type == "receivable" ? $"{contact.Name} paid you" : $"You paid {contact.Name}";
 
@@ -2857,13 +2934,30 @@ public class WhatsAppService : IWhatsAppService
             p.BusinessId == businessId && p.IsActive && p.Name.ToLower() == name.ToLower());
         if (product != null) return (product, null);
 
-        // 2. Substring match — catches "rice" → "white rice"
+        // 2. Substring match — only auto-accept when the typed name is a clear shortcut
+        //    (significantly shorter than the matched product). E.g. "rice" → "white rice"
+        //    is a genuine shortcut. But "Solitaire Platinum 950 Earrings" → "Solitaire
+        //    Platinum 950 Earrings with Moissanite" is a different variant and the user
+        //    likely meant a product that doesn't exist yet — silently picking the close
+        //    match would book a sale against the wrong SKU.
         var matches = await _db.Products
             .Where(p => p.BusinessId == businessId && p.IsActive &&
                         p.Name.ToLower().Contains(name.ToLower()))
             .ToListAsync();
 
-        if (matches.Count == 1) return (matches[0], null);
+        if (matches.Count == 1)
+        {
+            var match = matches[0];
+            // Threshold: typed name must be < 50% of matched name's length to count as a shortcut.
+            if (name.Length * 2 < match.Name.Length)
+                return (match, null);
+
+            // Otherwise the typed name is close enough that the user likely meant a
+            // distinct product. Refuse the auto-match and prompt them to add it first.
+            return (null, $"You don't have *{name}* in stock. Closest existing product: *{match.Name}*. " +
+                          $"If you meant a different product, add it first:\n" +
+                          $"\"Bought [qty] [unit] of {name} at [cost], sells for [price]\"");
+        }
         if (matches.Count > 1)
         {
             var names = string.Join(", ", matches.Select(p => p.Name));
@@ -3090,21 +3184,46 @@ public class WhatsAppService : IWhatsAppService
         return $"✅ Contact added: *{contact.Name}* ({contact.Type}){phoneNote}";
     }
 
+    // Voice transcription and chat input commonly carry trailing spaces or doubled
+    // internal spaces; without normalization those cases miss a strict ILIKE match
+    // against the DB name and we end up creating duplicate contacts.
+    private static string NormalizeContactName(string? raw) =>
+        string.IsNullOrWhiteSpace(raw) ? string.Empty : Regex.Replace(raw.Trim(), @"\s+", " ");
+
     private async Task<Contact> FindOrCreateContactAsync(Guid businessId, string name, ContactType type)
     {
-        // Exact match first (case-insensitive)
+        var normalized = NormalizeContactName(name);
+        if (string.IsNullOrEmpty(normalized))
+            throw new ArgumentException("Contact name cannot be empty.");
+
+        // 1. Fast path: exact case-insensitive ILIKE — hits the lowercase index.
         var contact = await _db.Contacts.FirstOrDefaultAsync(c =>
-            c.BusinessId == businessId && EF.Functions.ILike(c.Name, name));
+            c.BusinessId == businessId && EF.Functions.ILike(c.Name, normalized));
         if (contact != null) return contact;
 
-        // Partial match: "Ada" should find "Ada Okafor" (name followed by a space)
+        // 2. Trim DB side — catches existing rows with trailing/leading whitespace.
+        contact = await _db.Contacts.FirstOrDefaultAsync(c =>
+            c.BusinessId == businessId && EF.Functions.ILike(c.Name.Trim(), normalized));
+        if (contact != null) return contact;
+
+        // 3. Full in-memory normalization — catches doubled internal spaces and other
+        //    whitespace anomalies that SQL trim alone wouldn't fix.
+        var allInBusiness = await _db.Contacts
+            .Where(c => c.BusinessId == businessId)
+            .ToListAsync();
+        var fuzzy = allInBusiness.FirstOrDefault(c =>
+            NormalizeContactName(c.Name).Equals(normalized, StringComparison.OrdinalIgnoreCase));
+        if (fuzzy != null) return fuzzy;
+
+        // 4. Forward partial: "Ada" → "Ada Okafor".
         var partial = await _db.Contacts
-            .Where(c => c.BusinessId == businessId && EF.Functions.ILike(c.Name, $"{name} %"))
+            .Where(c => c.BusinessId == businessId && EF.Functions.ILike(c.Name, $"{normalized} %"))
             .OrderBy(c => c.Name.Length)
             .FirstOrDefaultAsync();
         if (partial != null) return partial;
 
-        contact = new Contact { BusinessId = businessId, Name = name, Type = type, Source = EntrySource.WhatsApp };
+        // 5. No match — create new with normalized name so future lookups don't drift.
+        contact = new Contact { BusinessId = businessId, Name = normalized, Type = type, Source = EntrySource.WhatsApp };
         _db.Contacts.Add(contact);
         await _db.SaveChangesAsync();
         return contact;
@@ -3116,15 +3235,31 @@ public class WhatsAppService : IWhatsAppService
     /// </summary>
     private async Task<(Contact? Contact, List<Contact>? Ambiguous)> FindContactWithDisambiguationAsync(Guid businessId, string name, ContactType type)
     {
-        // Exact match (case-insensitive) — highest priority, no ambiguity
+        var normalized = NormalizeContactName(name);
+        if (string.IsNullOrEmpty(normalized))
+            throw new ArgumentException("Contact name cannot be empty.");
+
+        // 1. Exact case-insensitive — never ambiguous.
         var exact = await _db.Contacts.FirstOrDefaultAsync(c =>
-            c.BusinessId == businessId && EF.Functions.ILike(c.Name, name));
+            c.BusinessId == businessId && EF.Functions.ILike(c.Name, normalized));
         if (exact != null) return (exact, null);
 
-        // Partial match — "Ada" finds "Ada Okafor", "Ada Orji", etc.
+        // 2. Trim DB side.
+        exact = await _db.Contacts.FirstOrDefaultAsync(c =>
+            c.BusinessId == businessId && EF.Functions.ILike(c.Name.Trim(), normalized));
+        if (exact != null) return (exact, null);
+
+        // 3. Full in-memory normalization.
+        var allInBusiness = await _db.Contacts
+            .Where(c => c.BusinessId == businessId)
+            .ToListAsync();
+        var fuzzy = allInBusiness.FirstOrDefault(c =>
+            NormalizeContactName(c.Name).Equals(normalized, StringComparison.OrdinalIgnoreCase));
+        if (fuzzy != null) return (fuzzy, null);
+
+        // 4. Forward partial — may be ambiguous if multiple match.
         var partials = await _db.Contacts
-            .Where(c => c.BusinessId == businessId && (
-                EF.Functions.ILike(c.Name, $"{name} %")))
+            .Where(c => c.BusinessId == businessId && EF.Functions.ILike(c.Name, $"{normalized} %"))
             .OrderBy(c => c.Name.Length)
             .Take(5)
             .ToListAsync();
@@ -3132,8 +3267,8 @@ public class WhatsAppService : IWhatsAppService
         if (partials.Count == 1) return (partials[0], null);
         if (partials.Count > 1) return (null, partials);
 
-        // No match — create new
-        var contact = new Contact { BusinessId = businessId, Name = name, Type = type, Source = EntrySource.WhatsApp };
+        // 5. No match — create new with normalized name.
+        var contact = new Contact { BusinessId = businessId, Name = normalized, Type = type, Source = EntrySource.WhatsApp };
         _db.Contacts.Add(contact);
         await _db.SaveChangesAsync();
         return (contact, null);

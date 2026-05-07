@@ -28,7 +28,7 @@ scp -r src public tsconfig.json tailwind.config.ts postcss.config.mjs components
 echo "🔨 Building on server..."
 ssh -t "$SERVER" "
   cd $REMOTE_DIR
-  npm ci --legacy-peer-deps
+  npm ci --legacy-peer-deps --no-audit --no-fund
   npm run build
   pm2 restart ojunai-dashboard
   sleep 3

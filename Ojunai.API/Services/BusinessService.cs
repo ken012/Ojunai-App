@@ -43,6 +43,21 @@ public class BusinessService : IBusinessService
         if (request.AlertLargeSale.HasValue) business.AlertLargeSale = request.AlertLargeSale.Value;
         if (request.ConfirmLargeSales.HasValue) business.ConfirmLargeSales = request.ConfirmLargeSales.Value;
         if (request.ConfirmLargeSaleThreshold.HasValue) business.ConfirmLargeSaleThreshold = request.ConfirmLargeSaleThreshold.Value;
+        if (request.AlertDashboardLowStock.HasValue) business.AlertDashboardLowStock = request.AlertDashboardLowStock.Value;
+        if (request.AlertDashboardDailySummary.HasValue) business.AlertDashboardDailySummary = request.AlertDashboardDailySummary.Value;
+        if (request.AlertDashboardLargeSale.HasValue) business.AlertDashboardLargeSale = request.AlertDashboardLargeSale.Value;
+        if (request.AlertDashboardAgedReceivable.HasValue) business.AlertDashboardAgedReceivable = request.AlertDashboardAgedReceivable.Value;
+        if (request.AlertDashboardStaffChanges.HasValue) business.AlertDashboardStaffChanges = request.AlertDashboardStaffChanges.Value;
+        // DailySalesGoal: 0 or null means "no goal." Generators only fire when value > 0.
+        // We can't distinguish "field omitted" from "explicitly null" via HasValue, so we
+        // only update when the caller sends a number. To clear, send 0.
+        if (request.DailySalesGoal.HasValue) business.DailySalesGoal = request.DailySalesGoal.Value > 0 ? request.DailySalesGoal.Value : null;
+        if (request.BackgroundImageOpacity.HasValue)
+        {
+            // Clamp 0..1 (Range attribute should already enforce, but be defensive).
+            var op = request.BackgroundImageOpacity.Value;
+            business.BackgroundImageOpacity = op < 0 ? 0 : op > 1 ? 1 : op;
+        }
         if (request.Address != null) business.Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim();
         if (request.VatEnabled.HasValue) business.VatEnabled = request.VatEnabled.Value;
         if (request.VatRate.HasValue && request.VatRate.Value >= 0 && request.VatRate.Value <= 100) business.VatRate = request.VatRate.Value;
@@ -84,6 +99,16 @@ public class BusinessService : IBusinessService
         AlertLargeSale = b.AlertLargeSale,
         ConfirmLargeSales = b.ConfirmLargeSales,
         ConfirmLargeSaleThreshold = b.ConfirmLargeSaleThreshold,
+        AlertDashboardLowStock = b.AlertDashboardLowStock,
+        AlertDashboardDailySummary = b.AlertDashboardDailySummary,
+        AlertDashboardLargeSale = b.AlertDashboardLargeSale,
+        AlertDashboardAgedReceivable = b.AlertDashboardAgedReceivable,
+        AlertDashboardStaffChanges = b.AlertDashboardStaffChanges,
+        DailySalesGoal = b.DailySalesGoal,
+        BackgroundImageUrl = string.IsNullOrEmpty(b.BackgroundImageFileName)
+            ? null
+            : $"/uploads/businesses/{b.Id:N}/{b.BackgroundImageFileName}",
+        BackgroundImageOpacity = b.BackgroundImageOpacity,
         IsActive = b.IsActive,
         AccountNumber = b.AccountNumber,
         Address = b.Address,

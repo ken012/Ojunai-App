@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { hasPermission, Permission } from "@/lib/permissions";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
+import { useToast } from "@/components/toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -134,6 +135,7 @@ function validateRows(headers: string[], rows: string[][], importType: string): 
 }
 
 export default function ImportPage() {
+  const { toast } = useToast();
   const [type, setType] = useState<ImportType>("inventory");
   const [file, setFile] = useState<File | null>(null);
   const [allRows, setAllRows] = useState<string[][]>([]);
@@ -188,11 +190,11 @@ export default function ImportPage() {
       refetchHistory();
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { errors?: string[] } } };
-      alert(ax.response?.data?.errors?.[0] ?? "Rollback failed");
+      toast.error("Rollback failed", ax.response?.data?.errors?.[0] ?? undefined);
     } finally {
       setRollingBackId(null);
     }
-  }, [refetchHistory]);
+  }, [refetchHistory, toast]);
 
   // Poll the job status until it reaches a terminal state. The backend updates ProcessedRows every 200
   // rows, so a 1.5s interval gives smooth progress without hammering the server.
@@ -218,11 +220,11 @@ export default function ImportPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Import</h2>
-          <p className="text-slate-500 text-sm mt-0.5">Import products, sales, or expenses from CSV files</p>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Import</h2>
+          <p className="text-slate-500 dark:text-slate-400 text-sm mt-0.5">Import products, sales, or expenses from CSV files</p>
         </div>
         <UpgradePrompt feature="CSV Import" plan="Pro">
-          <p className="text-xs text-slate-400 mt-2">Import products, sales, and expenses from CSV files to save time on data entry.</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">Import products, sales, and expenses from CSV files to save time on data entry.</p>
         </UpgradePrompt>
       </div>
     );
@@ -315,14 +317,14 @@ export default function ImportPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900">Import Data</h2>
-        <p className="text-slate-500 text-sm mt-0.5">Bulk import products, sales, or expenses from a CSV file</p>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Import Data</h2>
+        <p className="text-slate-500 dark:text-slate-400 text-sm mt-0.5">Bulk import products, sales, or expenses from a CSV file</p>
       </div>
 
       <div>
         <Label>What are you importing?</Label>
         <select
-          className="w-full max-w-xs h-9 px-2 mt-1 rounded-md border border-slate-200 text-sm bg-white"
+          className="w-full max-w-xs h-9 px-2 mt-1 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
           value={type}
           onChange={(e) => { const t = e.target.value as ImportType; setType(t); setImportMode(t === "sales" ? "new_sales" : t === "contacts-ledger" ? "new_debts" : "new_purchase"); resetForNewImport(); }}
           disabled={!!isProcessing}
@@ -335,11 +337,11 @@ export default function ImportPage() {
 
       <Card>
         <CardContent className="pt-4">
-          <p className="text-sm font-semibold text-slate-700 mb-2">Expected CSV Format</p>
-          <pre className="bg-slate-50 border rounded-lg p-3 text-xs font-mono text-slate-700 overflow-x-auto">
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Expected CSV Format</p>
+          <pre className="bg-slate-50 dark:bg-slate-950 border rounded-lg p-3 text-xs font-mono text-slate-700 dark:text-slate-300 overflow-x-auto">
             {format.headers + "\n" + format.example}
           </pre>
-          <div className="mt-2 text-xs text-slate-500">
+          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
             <p><strong>Required:</strong> {format.required}</p>
             <p><strong>Optional:</strong> {format.optional}</p>
           </div>
@@ -357,27 +359,27 @@ export default function ImportPage() {
       {type === "inventory" && (
         <Card>
           <CardContent className="pt-4">
-            <p className="text-sm font-semibold text-slate-700 mb-3">How should we handle this import?</p>
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">How should we handle this import?</p>
             <div className="space-y-3">
-              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "new_purchase" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "new_purchase" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
                 <input type="radio" name="inv-mode" value="new_purchase" checked={importMode === "new_purchase"} onChange={() => setImportMode("new_purchase")} className="mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-slate-700">New purchase — I just bought this stock</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Creates products, adds stock, and records an expense.</p>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">New purchase — I just bought this stock</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Creates products, adds stock, and records an expense.</p>
                 </div>
               </label>
-              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "existing_stock" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "existing_stock" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
                 <input type="radio" name="inv-mode" value="existing_stock" checked={importMode === "existing_stock"} onChange={() => setImportMode("existing_stock")} className="mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-slate-700">Existing stock — I already own this, moving to Ojunai</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Creates products and stock levels. No expense recorded since these were already paid for.</p>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Existing stock — I already own this, moving to Ojunai</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Creates products and stock levels. No expense recorded since these were already paid for.</p>
                 </div>
               </label>
-              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "price_update" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "price_update" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
                 <input type="radio" name="inv-mode" value="price_update" checked={importMode === "price_update"} onChange={() => setImportMode("price_update")} className="mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-slate-700">Price update only — Just update my catalog prices</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Updates cost and selling prices on existing products. Stock levels are not changed. New products are skipped.</p>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Price update only — Just update my catalog prices</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Updates cost and selling prices on existing products. Stock levels are not changed. New products are skipped.</p>
                 </div>
               </label>
             </div>
@@ -388,20 +390,20 @@ export default function ImportPage() {
       {type === "sales" && (
         <Card>
           <CardContent className="pt-4">
-            <p className="text-sm font-semibold text-slate-700 mb-3">How should we handle this import?</p>
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">How should we handle this import?</p>
             <div className="space-y-3">
-              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "new_sales" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "new_sales" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
                 <input type="radio" name="sales-mode" value="new_sales" checked={importMode === "new_sales"} onChange={() => setImportMode("new_sales")} className="mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-slate-700">New sales — Record these sales and deduct stock</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Deducts inventory and creates receivables for credit sales.</p>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">New sales — Record these sales and deduct stock</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Deducts inventory and creates receivables for credit sales.</p>
                 </div>
               </label>
-              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "historical_sales" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "historical_sales" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
                 <input type="radio" name="sales-mode" value="historical_sales" checked={importMode === "historical_sales"} onChange={() => setImportMode("historical_sales")} className="mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-slate-700">Historical sales — Import for reporting only</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Records sales for revenue history. Stock is not deducted and no receivables are created, since your current inventory already reflects these.</p>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Historical sales — Import for reporting only</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Records sales for revenue history. Stock is not deducted and no receivables are created, since your current inventory already reflects these.</p>
                 </div>
               </label>
             </div>
@@ -412,20 +414,20 @@ export default function ImportPage() {
       {type === "contacts-ledger" && (
         <Card>
           <CardContent className="pt-4">
-            <p className="text-sm font-semibold text-slate-700 mb-3">How should we handle this import?</p>
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">How should we handle this import?</p>
             <div className="space-y-3">
-              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "new_debts" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "new_debts" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
                 <input type="radio" name="ledger-mode" value="new_debts" checked={importMode === "new_debts"} onChange={() => setImportMode("new_debts")} className="mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-slate-700">New debts — Recording new money owed</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Creates receivable or payable entries as new transactions.</p>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">New debts — Recording new money owed</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Creates receivable or payable entries as new transactions.</p>
                 </div>
               </label>
-              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "existing_debts" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 hover:bg-slate-50"}`}>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "existing_debts" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
                 <input type="radio" name="ledger-mode" value="existing_debts" checked={importMode === "existing_debts"} onChange={() => setImportMode("existing_debts")} className="mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-slate-700">Existing debts — Migrating balances I{"'"}m already tracking</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Import the current outstanding balance for each contact. These show as {'"'}Opening balance{'"'} in the ledger so it{"'"}s clear they were carried over from your previous records.</p>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Existing debts — Migrating balances I{"'"}m already tracking</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Import the current outstanding balance for each contact. These show as {'"'}Opening balance{'"'} in the ledger so it{"'"}s clear they were carried over from your previous records.</p>
                 </div>
               </label>
             </div>
@@ -450,17 +452,17 @@ export default function ImportPage() {
               onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (!isProcessing) handleFileSelect(e.dataTransfer.files?.[0] ?? null); }}
               className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
                 isProcessing
-                  ? "border-slate-200 bg-slate-50 cursor-not-allowed"
-                  : "border-slate-200 hover:border-cyan-400 hover:bg-cyan-50/30 cursor-pointer"
+                  ? "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 cursor-not-allowed"
+                  : "border-slate-200 dark:border-slate-800 hover:border-cyan-400 hover:bg-cyan-50/30 cursor-pointer"
               }`}
             >
-              <Upload size={28} className="mx-auto text-slate-400 mb-2" />
+              <Upload size={28} className="mx-auto text-slate-400 dark:text-slate-500 mb-2" />
               {file ? (
-                <p className="text-sm text-slate-700 font-medium">{file.name} <span className="text-slate-400">({(file.size / 1024).toFixed(1)} KB)</span></p>
+                <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">{file.name} <span className="text-slate-400 dark:text-slate-500">({(file.size / 1024).toFixed(1)} KB)</span></p>
               ) : (
                 <>
-                  <p className="text-sm text-slate-600">Drag & drop a CSV file here</p>
-                  <p className="text-xs text-slate-400 mt-1">or click to browse (max 50MB, 100,000 rows)</p>
+                  <p className="text-sm text-slate-600 dark:text-slate-400">Drag & drop a CSV file here</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">or click to browse (max 50MB, 100,000 rows)</p>
                 </>
               )}
             </div>
@@ -468,7 +470,7 @@ export default function ImportPage() {
         </Card>
       ) : (
         <Card>
-          <CardContent className="pt-4 text-center py-8 text-slate-400">
+          <CardContent className="pt-4 text-center py-8 text-slate-400 dark:text-slate-500">
             Your role does not have permission to import {type}.
           </CardContent>
         </Card>
@@ -478,7 +480,7 @@ export default function ImportPage() {
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold text-slate-700">
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                 {totalRows} rows total — Page {previewPage} of {totalPreviewPages}
               </p>
               <Badge variant="secondary">{totalRows} rows total</Badge>
@@ -516,11 +518,11 @@ export default function ImportPage() {
                         key={i}
                         className={hasError ? "bg-red-50" : hasWarning ? "bg-amber-50" : ""}
                       >
-                        <TableCell className="text-xs text-slate-400">{rowNum}</TableCell>
+                        <TableCell className="text-xs text-slate-400 dark:text-slate-500">{rowNum}</TableCell>
                         {row.map((cell, j) => {
                           const cellIssue = rowIssues.find(iss => iss.column === headers[j]);
                           return (
-                            <TableCell key={j} className="text-xs text-slate-600 p-0">
+                            <TableCell key={j} className="text-xs text-slate-600 dark:text-slate-400 p-0">
                               <input
                                 className="w-full border-0 bg-transparent text-xs px-2 py-1.5 focus:bg-white focus:ring-1 focus:ring-cyan-300 rounded outline-none"
                                 value={cell}
@@ -542,7 +544,7 @@ export default function ImportPage() {
                         <TableCell className="p-0 text-center">
                           <button
                             onClick={() => setAllRows(prev => prev.filter((_, idx) => idx !== globalIdx))}
-                            className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500"
+                            className="p-1 rounded hover:bg-red-50 text-slate-400 dark:text-slate-500 hover:text-red-500"
                             title="Remove row"
                           >
                             <Trash2 size={12} />
@@ -565,7 +567,7 @@ export default function ImportPage() {
                 >
                   <ChevronLeft size={14} className="mr-1" /> Previous
                 </Button>
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-slate-500 dark:text-slate-400">
                   Page {previewPage} of {totalPreviewPages}
                 </span>
                 <Button
@@ -600,7 +602,7 @@ export default function ImportPage() {
             )}
 
             <div className="flex items-center justify-between mt-4 pt-4 border-t">
-              <p className="text-sm text-slate-500">{totalRows} rows will be imported.</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">{totalRows} rows will be imported.</p>
               <Button onClick={handleImport} disabled={submitting || !canImport}>
                 {submitting ? "Queueing..." : `Import ${totalRows} Rows`}
               </Button>
@@ -644,8 +646,8 @@ export default function ImportPage() {
                   {importHistory.map((h) => (
                     <TableRow key={h.id}>
                       <TableCell className="text-xs capitalize">{h.type}</TableCell>
-                      <TableCell className="text-xs text-slate-500 max-w-[120px] truncate">{h.fileName}</TableCell>
-                      <TableCell className="text-xs text-slate-500">{new Date(h.createdAtUtc).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-xs text-slate-500 dark:text-slate-400 max-w-[120px] truncate">{h.fileName}</TableCell>
+                      <TableCell className="text-xs text-slate-500 dark:text-slate-400">{new Date(h.createdAtUtc).toLocaleDateString()}</TableCell>
                       <TableCell className="text-xs">{h.totalRows}</TableCell>
                       <TableCell className="text-xs text-emerald-600">{h.successCount}</TableCell>
                       <TableCell className="text-xs text-amber-600">{h.errorCount}</TableCell>
@@ -685,7 +687,7 @@ export default function ImportPage() {
       {/* Active job — progress bar while running, final summary once terminal */}
       {job && (
         <Card className={
-          job.status === "RolledBack" ? "border-slate-300 bg-slate-50"
+          job.status === "RolledBack" ? "border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950"
             : job.status === "Completed" && job.errorCount === 0 ? "border-emerald-200"
             : job.status === "Completed" ? "border-amber-200"
             : job.status === "Failed" ? "border-red-200"
@@ -694,13 +696,13 @@ export default function ImportPage() {
           <CardContent className="pt-4 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                {job.status === "Queued" && <Clock size={18} className="text-slate-400" />}
+                {job.status === "Queued" && <Clock size={18} className="text-slate-400 dark:text-slate-500" />}
                 {job.status === "Running" && <Clock size={18} className="text-cyan-500 animate-pulse" />}
                 {job.status === "Completed" && job.errorCount === 0 && <CheckCircle size={18} className="text-emerald-500" />}
                 {job.status === "Completed" && job.errorCount > 0 && <AlertTriangle size={18} className="text-amber-500" />}
                 {job.status === "Failed" && <AlertTriangle size={18} className="text-red-500" />}
-                {job.status === "RolledBack" && <Clock size={18} className="text-slate-400" />}
-                <span className="text-sm font-semibold text-slate-900">
+                {job.status === "RolledBack" && <Clock size={18} className="text-slate-400 dark:text-slate-500" />}
+                <span className="text-sm font-semibold text-slate-900 dark:text-slate-50">
                   {job.status === "Queued" && "Queued — waiting to start"}
                   {job.status === "Running" && `Running — processing row ${job.processedRows.toLocaleString()} of ${job.totalRows.toLocaleString()}`}
                   {job.status === "Completed" && "Import complete"}
@@ -709,12 +711,12 @@ export default function ImportPage() {
                 </span>
               </div>
               {isProcessing && (
-                <span className="text-xs text-slate-500">{job.progressPercent}%</span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">{job.progressPercent}%</span>
               )}
             </div>
 
             {isProcessing && (
-              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-cyan-500 transition-all duration-500 ease-out"
                   style={{ width: `${job.progressPercent}%` }}
@@ -736,7 +738,7 @@ export default function ImportPage() {
                     <span className="text-sm font-medium">{job.errorCount.toLocaleString()} skipped</span>
                   </div>
                 )}
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-slate-400 dark:text-slate-500">
                   of {job.totalRows.toLocaleString()} rows total
                 </span>
               </div>
@@ -768,7 +770,7 @@ export default function ImportPage() {
 
             {isTerminal && (
               <div className="pt-2 border-t flex items-center justify-between">
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-slate-400 dark:text-slate-500">
                   {job.status === "RolledBack"
                     ? "All imported records were deleted."
                     : "A WhatsApp message has been sent to the business owner with a summary."}
@@ -790,7 +792,7 @@ export default function ImportPage() {
                           refetchHistory();
                         } catch (err: unknown) {
                           const ax = err as { response?: { data?: { errors?: string[] } } };
-                          alert(ax.response?.data?.errors?.[0] ?? "Rollback failed");
+                          toast.error("Rollback failed", ax.response?.data?.errors?.[0] ?? undefined);
                         } finally {
                           setRollingBack(false);
                         }

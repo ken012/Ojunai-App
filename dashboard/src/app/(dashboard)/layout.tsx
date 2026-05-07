@@ -6,6 +6,9 @@ import { isAuthenticated } from "@/lib/auth";
 import { DataSyncProvider } from "@/lib/data-sync";
 import { Sidebar } from "@/components/sidebar";
 import { TrialBanner } from "@/components/trial-banner";
+import { InstallBanner } from "@/components/install-banner";
+import { EmailVerificationBanner } from "@/components/email-verification-banner";
+import { DashboardBackground } from "@/components/dashboard-background";
 
 export default function DashboardLayout({
   children,
@@ -22,14 +25,22 @@ export default function DashboardLayout({
 
   return (
     <DataSyncProvider>
-      <div className="flex min-h-screen bg-slate-50">
+      <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950">
         <Sidebar />
-        <main className="flex-1 overflow-auto w-full">
+        {/* `relative isolate` creates a stacking context so the negative-z-index
+            background layers stay scoped to <main> and don't escape behind the sidebar. */}
+        <main className="flex-1 overflow-auto w-full relative isolate">
+          <DashboardBackground />
+          <EmailVerificationBanner />
           <TrialBanner />
-          <div className="h-12 lg:hidden" />
+          <div
+            className="lg:hidden"
+            style={{ height: "calc(env(safe-area-inset-top) + 3rem)" }}
+          />
           <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">{children}</div>
         </main>
       </div>
+      <InstallBanner />
     </DataSyncProvider>
   );
 }

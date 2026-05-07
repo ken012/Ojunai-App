@@ -18,6 +18,10 @@ publish/
 *.dump
 *.sql.backup
 
+# Generated migration dumps and local backup tarballs
+migrations.sql
+_backups/
+
 # Node / Next.js
 node_modules/
 .next/

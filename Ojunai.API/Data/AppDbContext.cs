@@ -24,6 +24,11 @@ public class AppDbContext : DbContext
     public DbSet<ImportJob> ImportJobs => Set<ImportJob>();
     public DbSet<PendingAction> PendingActions => Set<PendingAction>();
     public DbSet<BillingEvent> BillingEvents => Set<BillingEvent>();
+    public DbSet<MobileEvent> MobileEvents => Set<MobileEvent>();
+    public DbSet<PhoneVerificationCode> PhoneVerificationCodes => Set<PhoneVerificationCode>();
+    public DbSet<EmailVerificationToken> EmailVerificationTokens => Set<EmailVerificationToken>();
+    public DbSet<AccountRecoveryToken> AccountRecoveryTokens => Set<AccountRecoveryToken>();
+    public DbSet<Alert> Alerts => Set<Alert>();
 
     protected override void OnModelCreating(ModelBuilder mb)
     {
@@ -40,6 +45,7 @@ public class AppDbContext : DbContext
             e.HasIndex(x => x.AccountNumber).IsUnique();
             e.Property(x => x.VoiceAIPlanStatus).HasMaxLength(20).HasDefaultValue("inactive");
             e.Property(x => x.VoiceAISubscriptionId).HasMaxLength(200);
+            e.Property(x => x.BackgroundImageFileName).HasMaxLength(100);
         });
 
         mb.Entity<User>(e =>
@@ -264,6 +270,58 @@ public class AppDbContext : DbContext
             e.Property(x => x.PaymentMethod).HasMaxLength(50);
             e.Property(x => x.Status).HasMaxLength(50);
             e.Property(x => x.ErrorDetails).HasMaxLength(2000);
+        });
+
+        mb.Entity<MobileEvent>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.Name, x.CreatedAtUtc });
+            e.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            e.Property(x => x.Payload).HasMaxLength(4000);
+            e.Property(x => x.IpAddress).HasMaxLength(50);
+            e.Property(x => x.UserAgent).HasMaxLength(500);
+        });
+
+        mb.Entity<PhoneVerificationCode>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.PhoneNumber, x.Purpose, x.ExpiresAtUtc });
+            e.Property(x => x.PhoneNumber).HasMaxLength(30).IsRequired();
+            e.Property(x => x.HashedCode).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Purpose).HasConversion<int>().HasDefaultValue(PhoneVerificationPurpose.SignupVerification);
+        });
+
+        mb.Entity<EmailVerificationToken>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.UserId, x.ExpiresAtUtc });
+            e.Property(x => x.HashedToken).HasMaxLength(200).IsRequired();
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        mb.Entity<AccountRecoveryToken>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.UserId, x.ExpiresAtUtc });
+            e.Property(x => x.HashedToken).HasMaxLength(200).IsRequired();
+            e.Property(x => x.RequestIp).HasMaxLength(50);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        mb.Entity<Alert>(e =>
+        {
+            e.HasKey(x => x.Id);
+            // Bell queries are "business + unread" or "user + unread" — index supports both.
+            e.HasIndex(x => new { x.BusinessId, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.BusinessId, x.UserId, x.ReadAtUtc });
+            e.HasIndex(x => new { x.BusinessId, x.DedupeKey });
+            e.Property(x => x.Type).HasConversion<int>();
+            e.Property(x => x.Severity).HasConversion<int>();
+            e.Property(x => x.Title).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Body).HasMaxLength(2000).IsRequired();
+            e.Property(x => x.LinkUrl).HasMaxLength(500);
+            e.Property(x => x.MetadataJson).HasMaxLength(4000);
+            e.Property(x => x.DedupeKey).HasMaxLength(200);
         });
     }
 }

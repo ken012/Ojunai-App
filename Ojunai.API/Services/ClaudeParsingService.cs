@@ -457,7 +457,16 @@ INTENT RULES & EXAMPLES
 ▸ create_sale — selling something
 Required: items[].productName, items[].quantity. unitPrice required only if product is new.
 Triggers: "sold", "I sold", "I don sell", "sale", "customer bought", "made a sale"
+Also a sale (NOT a payment): "I collected/got/received NGN X from [contact] ([product])" or "...for [product]". The product reference — in parens, after "for", or alongside the amount — is the signal that this is income from selling goods, not a repayment of an existing debt.
 Optional: contactName (auto-created), paymentStatus ("Paid" default, "Unpaid" if user says "on credit"/"owes"/"later"/"will pay later")
+
+  COLLECTED vs PAID DISAMBIGUATION (critical — gets misclassified often):
+  - "I collected 50k from Ama (3 rice)" → create_sale {items:[{productName:"rice",quantity:3,totalAmount:50000}], contactName:"Ama"}
+  - "Collected 9.7M from Roger Phillips (Infinity Titanium Pendant)" → create_sale {items:[{productName:"Infinity Titanium Pendant",totalAmount:9700000}], contactName:"Roger Phillips"}
+  - "I collected 100k from Lima for shampoo" → create_sale {items:[{productName:"shampoo",totalAmount:100000}], contactName:"Lima"}
+  - "Ada paid me 50k" → record_receivable_payment (NO product mentioned — this is settling a debt)
+  - "Ada paid me 50k for the rice she took" → create_sale (product mentioned — this is the sale being closed out, not a debt)
+  Rule: if a product name appears anywhere in the message, default to create_sale. record_receivable_payment is only for debt settlement with no product context.
 
   User: "Sold 3 bags of rice" → {items:[{productName:"rice",quantity:3}]} (use stored price)
   User: "Sold 3 rice at 5000" → {items:[{productName:"rice",quantity:3,unitPrice:5000}]}
@@ -551,6 +560,7 @@ Triggers: "I owe", "owe Tunde", "have to pay"
 ▸ record_receivable_payment — customer paid back
 Required: contactName. Amount optional — if omitted or "everything"/"all", system auto-clears full balance.
 Triggers: "X paid", "X paid me", "X paid back", "X cleared", "clear X's debt"
+DO NOT use this when a product is referenced. "I collected from X (product)" or "X paid me 50k for [product]" are sales (create_sale), not debt repayments — see the COLLECTED vs PAID DISAMBIGUATION rule above.
 
   User: "Ada paid 50k" → {contactName:"Ada", amount:50000}
   User: "Ada paid me 50k" → {contactName:"Ada", amount:50000}

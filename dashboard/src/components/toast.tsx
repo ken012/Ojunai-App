@@ -66,16 +66,16 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
   return (
     <div
       role="status"
-      className={`pointer-events-auto bg-white shadow-lg rounded-xl ring-1 ${styles.ring} px-4 py-3 min-w-[280px] max-w-md flex items-start gap-3 animate-in slide-in-from-right-2 fade-in duration-200`}
+      className={`pointer-events-auto bg-white dark:bg-slate-900 shadow-lg rounded-xl ring-1 ${styles.ring} px-4 py-3 min-w-[280px] max-w-md flex items-start gap-3 animate-in slide-in-from-right-2 fade-in duration-200`}
     >
       <div className="flex-shrink-0 mt-0.5">{styles.icon}</div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-slate-900">{title}</p>
-        {description && <p className="text-xs text-slate-500 mt-0.5">{description}</p>}
+        <p className="text-sm font-semibold text-slate-900 dark:text-slate-50">{title}</p>
+        {description && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{description}</p>}
       </div>
       <button
         onClick={onDismiss}
-        className="flex-shrink-0 text-slate-400 hover:text-slate-700 transition-colors p-0.5 rounded"
+        className="flex-shrink-0 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors p-0.5 rounded"
         aria-label="Dismiss"
       >
         <X size={14} />

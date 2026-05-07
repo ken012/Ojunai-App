@@ -15,8 +15,28 @@ public class StaffController : OjunaiBaseController
     private readonly AppDbContext _db;
     private readonly PlanGuard _planGuard;
     private readonly IWhatsAppService _whatsApp;
+    private readonly IAlertService _alerts;
 
-    public StaffController(AppDbContext db, PlanGuard planGuard, IWhatsAppService whatsApp) { _db = db; _planGuard = planGuard; _whatsApp = whatsApp; }
+    public StaffController(AppDbContext db, PlanGuard planGuard, IWhatsAppService whatsApp, IAlertService alerts)
+    {
+        _db = db; _planGuard = planGuard; _whatsApp = whatsApp; _alerts = alerts;
+    }
+
+    private async Task EmitStaffChangeAlertAsync(Models.User staff, bool added)
+    {
+        var biz = await _db.Businesses.FindAsync(BusinessId);
+        if (biz == null || !biz.AlertDashboardStaffChanges) return;
+        await _alerts.CreateAsync(
+            BusinessId, userId: null,
+            type: added ? Models.AlertType.StaffAdded : Models.AlertType.StaffRemoved,
+            severity: Models.AlertSeverity.Info,
+            title: added ? $"{staff.FullName} added to your team" : $"{staff.FullName} removed from your team",
+            body: added
+                ? $"Role: {staff.Role}. They can now sign in and use the dashboard or WhatsApp bot."
+                : "They can no longer access the account.",
+            linkUrl: "/settings#team",
+            dedupeKey: $"staff-change:{staff.Id}:{(added ? "add" : "remove")}:{DateTime.UtcNow:yyyyMMddHH}");
+    }
 
     [HttpGet]
     [RequirePermission(Permission.ManageStaff)]
@@ -137,6 +157,8 @@ public class StaffController : OjunaiBaseController
             catch { /* best effort */ }
         });
 
+        await EmitStaffChangeAlertAsync(user, added: true);
+
         return Ok(ApiResponse<StaffDto>.Ok(new StaffDto
         {
             Id = user.Id,
@@ -175,6 +197,8 @@ public class StaffController : OjunaiBaseController
         staff.PasswordResetCodeExpiresAtUtc = null;
         await _db.SaveChangesAsync();
 
+        await EmitStaffChangeAlertAsync(staff, added: false);
+
         return Ok(ApiResponse<object>.Ok(null!, $"{staff.FullName} has been deactivated."));
     }
 
@@ -190,7 +214,14 @@ public class StaffController : OjunaiBaseController
         // Only active staff can have their password reset. Deactivated staff stay locked out.
         var staff = await _db.Users.FirstOrDefaultAsync(u => u.Id == id && u.BusinessId == BusinessId && u.IsActive);
         if (staff == null) return NotFound(ApiResponse<object>.Fail("Staff not found."));
-        if (request.NewPassword.Length < 8) return BadRequest(ApiResponse<object>.Fail("Password must be at least 8 characters."));
+
+        // The Owner has their own self-reset path — they can't be reset by anyone else, even
+        // a peer admin. Prevents lateral takeover within a business.
+        if (staff.Role == UserRole.Owner)
+            return BadRequest(ApiResponse<object>.Fail("Owners reset their own password — they cannot be reset by another user."));
+
+        var (pwOk, pwReason) = Common.PasswordPolicy.Validate(request.NewPassword);
+        if (!pwOk) return BadRequest(ApiResponse<object>.Fail(pwReason!));
 
         staff.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
         staff.MustChangePassword = true;

@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Ojunai.API.Common;
 using Ojunai.API.Data;
 using Ojunai.API.DTOs.Auth;
 using Ojunai.API.Models;
@@ -14,15 +15,33 @@ public class AuthService : IAuthService
 {
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
+    private readonly Services.Interfaces.IPhoneVerificationService _phoneVerify;
+    private readonly Services.Interfaces.IAlertService _alerts;
+    private readonly IEmailService _email;
+    private readonly ILogger<AuthService> _logger;
 
-    public AuthService(AppDbContext db, IConfiguration config)
+    public AuthService(
+        AppDbContext db,
+        IConfiguration config,
+        Services.Interfaces.IPhoneVerificationService phoneVerify,
+        Services.Interfaces.IAlertService alerts,
+        IEmailService email,
+        ILogger<AuthService> logger)
     {
         _db = db;
         _config = config;
+        _phoneVerify = phoneVerify;
+        _alerts = alerts;
+        _email = email;
+        _logger = logger;
     }
 
     public async Task<AuthResponse> RegisterOwnerAsync(RegisterOwnerRequest request)
     {
+        var (pwOk, pwReason) = PasswordPolicy.Validate(request.Password);
+        if (!pwOk)
+            throw new InvalidOperationException(pwReason!);
+
         var normalizedPhone = WhatsAppService.NormalizePhone(request.PhoneNumber);
         if (string.IsNullOrEmpty(normalizedPhone))
             throw new InvalidOperationException("Valid phone number required.");
@@ -123,6 +142,15 @@ public class AuthService : IAuthService
             {
                 user.LockoutEndsAtUtc = DateTime.UtcNow.AddMinutes(15);
                 user.FailedLoginAttempts = 0;
+
+                // Failed login burst — security alert to the affected user.
+                await _alerts.CreateAsync(
+                    user.BusinessId, user.Id,
+                    AlertType.FailedLoginBurst, AlertSeverity.Critical,
+                    title: "Multiple failed login attempts on your account",
+                    body: "Your account was locked for 15 minutes after 5 failed login attempts. If this wasn't you, change your password immediately.",
+                    linkUrl: "/settings#account",
+                    dedupeKey: $"failed-login-burst:{user.Id}");
             }
             await _db.SaveChangesAsync();
             throw new UnauthorizedAccessException("Invalid credentials.");
@@ -153,6 +181,7 @@ public class AuthService : IAuthService
             FullName = user.FullName,
             PhoneNumber = user.PhoneNumber,
             Email = user.Email,
+            EmailVerified = user.EmailVerified,
             Role = user.Role.ToString(),
             DateOfBirth = user.DateOfBirth
         };
@@ -166,29 +195,58 @@ public class AuthService : IAuthService
         if (!BCrypt.Net.BCrypt.Verify(currentPassword, user.PasswordHash))
             throw new UnauthorizedAccessException("Current password is incorrect.");
 
-        if (newPassword.Length < 8)
-            throw new InvalidOperationException("New password must be at least 8 characters.");
+        var (pwOk, pwReason) = PasswordPolicy.Validate(newPassword);
+        if (!pwOk)
+            throw new InvalidOperationException(pwReason!);
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
         user.MustChangePassword = false;
         user.TokenVersion++; // Invalidate all existing JWTs
         await _db.SaveChangesAsync();
+
+        await _alerts.CreateAsync(
+            user.BusinessId, user.Id,
+            AlertType.PasswordChanged, AlertSeverity.Info,
+            title: "Password changed",
+            body: "Your password was successfully updated. If this wasn't you, contact support immediately.",
+            linkUrl: "/settings#account");
+
+        // Out-of-band notification — bell only matters if attacker hasn't logged us out;
+        // an email reaches us through a different channel they don't control.
+        if (user.EmailVerified)
+        {
+            await _email.TrySendSecurityNotificationAsync(
+                user.Email, user.FullName,
+                action: "Password changed",
+                detail: "Your account password was just updated from inside the dashboard.");
+        }
     }
 
+    /// <summary>
+    /// WhatsApp-OTP self-reset for Owner and Admin only. Sales/Bookkeeper/Viewer must have
+    /// their password reset by an Owner/Admin via the staff endpoint instead — this is a
+    /// deliberate policy: lower-privilege roles don't get a self-service WhatsApp reset path.
+    ///
+    /// We surface concrete errors ("no account", "staff role") rather than silently no-op'ing.
+    /// The trade-off: a phone-existence enumeration channel exists. We accept that for clearer
+    /// UX — users who mistype a phone or are confused about which login path to use see a
+    /// helpful message instead of an apparent success that delivers no code.
+    /// </summary>
     public async Task<string> RequestPasswordResetAsync(string phoneNumber)
     {
         var normalizedPhone = WhatsAppService.NormalizePhone(phoneNumber);
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == normalizedPhone && u.IsActive);
-        if (user == null)
-            throw new KeyNotFoundException("No account found with this phone number.");
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == normalizedPhone && u.IsActive)
+            ?? throw new KeyNotFoundException("No account found with this phone number.");
 
-        // Generate 6-digit code using cryptographically secure RNG
-        var code = System.Security.Cryptography.RandomNumberGenerator.GetInt32(100000, 999999).ToString();
-        user.PasswordResetCode = BCrypt.Net.BCrypt.HashPassword(code);
-        user.PasswordResetCodeExpiresAtUtc = DateTime.UtcNow.AddMinutes(10);
-        await _db.SaveChangesAsync();
+        if (user.Role != UserRole.Owner && user.Role != UserRole.Admin)
+            throw new InvalidOperationException(
+                "Staff accounts can't self-reset by WhatsApp. Ask your owner or admin to reset your password from the dashboard.");
 
-        return code; // Caller sends this via WhatsApp
+        await _phoneVerify.RequestCodeAsync(normalizedPhone, PhoneVerificationPurpose.PasswordReset);
+
+        // Returned for backwards compatibility with the controller signature; the actual code
+        // was already sent inside the service. Empty here means "no caller-side delivery needed."
+        return string.Empty;
     }
 
     public async Task VerifyResetAndChangePasswordAsync(string phoneNumber, string code, string newPassword)
@@ -197,24 +255,35 @@ public class AuthService : IAuthService
         var user = await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == normalizedPhone && u.IsActive)
             ?? throw new KeyNotFoundException("No account found.");
 
-        if (user.PasswordResetCode == null || user.PasswordResetCodeExpiresAtUtc == null)
-            throw new InvalidOperationException("No reset code requested. Please request a new one.");
+        if (user.Role != UserRole.Owner && user.Role != UserRole.Admin)
+            throw new InvalidOperationException(
+                "Staff accounts can't self-reset by WhatsApp. Ask your owner or admin to reset your password from the dashboard.");
 
-        if (DateTime.UtcNow > user.PasswordResetCodeExpiresAtUtc.Value)
-            throw new InvalidOperationException("Reset code has expired. Please request a new one.");
+        var (pwOk, pwReason) = PasswordPolicy.Validate(newPassword);
+        if (!pwOk)
+            throw new InvalidOperationException(pwReason!);
 
-        if (!BCrypt.Net.BCrypt.Verify(code, user.PasswordResetCode))
-            throw new UnauthorizedAccessException("Invalid reset code.");
-
-        if (newPassword.Length < 8)
-            throw new InvalidOperationException("New password must be at least 8 characters.");
+        await _phoneVerify.ConsumeCodeAsync(normalizedPhone, code, PhoneVerificationPurpose.PasswordReset);
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
         user.MustChangePassword = false;
-        user.PasswordResetCode = null;
-        user.PasswordResetCodeExpiresAtUtc = null;
         user.TokenVersion++; // Invalidate all existing JWTs
         await _db.SaveChangesAsync();
+
+        await _alerts.CreateAsync(
+            user.BusinessId, user.Id,
+            AlertType.PasswordChanged, AlertSeverity.Info,
+            title: "Password reset",
+            body: "Your password was reset via WhatsApp verification. If this wasn't you, contact support immediately.",
+            linkUrl: "/settings#account");
+
+        if (user.EmailVerified)
+        {
+            await _email.TrySendSecurityNotificationAsync(
+                user.Email, user.FullName,
+                action: "Password reset via WhatsApp",
+                detail: "Your password was just reset using a WhatsApp verification code.");
+        }
     }
 
     public AuthResponse BuildAuthResponsePublic(User user, Business business, bool? overrideMustChange = null)
@@ -236,6 +305,7 @@ public class AuthService : IAuthService
                 FullName = user.FullName,
                 PhoneNumber = user.PhoneNumber,
                 Email = user.Email,
+                EmailVerified = user.EmailVerified,
                 Role = user.Role.ToString()
             },
             Business = new BusinessDto
@@ -257,6 +327,16 @@ public class AuthService : IAuthService
                 AlertLowStock = business.AlertLowStock,
                 AlertDailySummary = business.AlertDailySummary,
                 AlertLargeSale = business.AlertLargeSale,
+                AlertDashboardLowStock = business.AlertDashboardLowStock,
+                AlertDashboardDailySummary = business.AlertDashboardDailySummary,
+                AlertDashboardLargeSale = business.AlertDashboardLargeSale,
+                AlertDashboardAgedReceivable = business.AlertDashboardAgedReceivable,
+                AlertDashboardStaffChanges = business.AlertDashboardStaffChanges,
+                DailySalesGoal = business.DailySalesGoal,
+                BackgroundImageUrl = string.IsNullOrEmpty(business.BackgroundImageFileName)
+                    ? null
+                    : $"/uploads/businesses/{business.Id:N}/{business.BackgroundImageFileName}",
+                BackgroundImageOpacity = business.BackgroundImageOpacity,
                 IsActive = business.IsActive,
                 AccountNumber = business.AccountNumber
             }

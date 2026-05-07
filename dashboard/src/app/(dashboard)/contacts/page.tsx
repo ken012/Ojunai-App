@@ -2,16 +2,17 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, fetchAllPaged } from "@/lib/api";
 import { formatNaira, formatDateTime } from "@/lib/format";
-import type { PaginatedResult, ContactDto, LedgerEntryDto } from "@/lib/types";
+import type { ContactDto, LedgerEntryDto } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/components/toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
@@ -33,8 +34,9 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Users, Pencil, CreditCard, Banknote, Search, X, Trash2 } from "lucide-react";
+import { Users, Pencil, CreditCard, Banknote, Search, X, Trash2, MessageCircle } from "lucide-react";
 import { hasPermission, Permission } from "@/lib/permissions";
+import { useBusiness } from "@/lib/data-sync";
 
 export default function ContactsPage() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -62,39 +64,63 @@ export default function ContactsPage() {
     }
   }, []);
 
-  // Fetch ALL contacts once (no server-side type filter). Both the type filter and balance filter
-  // are applied client-side so they work together synchronously without async timing issues.
+  // Fetch the COMPLETE contact list by paging through the API until exhausted, then
+  // run search + filters fully client-side. Without this, large contact lists got
+  // silently truncated and "Record Debt" / "Owes You" only saw the first batch.
   const { data, isLoading } = useQuery({
-    queryKey: ["contacts", debouncedSearch],
-    queryFn: async () => {
-      const searchParam = debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : "";
-      const { data } = await api.get<{ data: PaginatedResult<ContactDto> }>(
-        `/contacts?page=1&pageSize=200${searchParam}`
-      );
-      return data.data!;
-    },
+    queryKey: ["contacts"],
+    queryFn: () => fetchAllPaged<ContactDto>((p, ps) => `/contacts?page=${p}&pageSize=${ps}`),
+    staleTime: 30_000,
   });
 
-  // Both filters applied client-side on the same dataset — no async gaps between them.
-  const allItems = useMemo(() => data?.items ?? [], [data?.items]);
+  const allItems = useMemo(() => data ?? [], [data]);
+
+  // Search runs client-side over the full list so it works with the balance/type filters
+  // simultaneously and the Record Debt picker always sees every contact.
+  const searchedItems = useMemo(() => {
+    if (!debouncedSearch) return allItems;
+    const q = debouncedSearch.toLowerCase();
+    return allItems.filter((c) =>
+      c.name.toLowerCase().includes(q) ||
+      (c.phoneNumber ? c.phoneNumber.includes(debouncedSearch) : false)
+    );
+  }, [allItems, debouncedSearch]);
+
+  // Deep-link: ?id=<contactId> auto-opens that contact's drawer once contacts are loaded.
+  // Used by Today screen "Remind" CTA and the Sales list outstanding-customer link.
+  // Consumed once via ref + URL is rewritten so closing the drawer doesn't re-trigger
+  // (which would otherwise cause an infinite reopen loop).
+  const deepLinkConsumed = useRef(false);
+  useEffect(() => {
+    if (deepLinkConsumed.current || !allItems.length) return;
+    const id = new URLSearchParams(window.location.search).get("id");
+    if (!id) return;
+    const target = allItems.find((c) => c.id === id);
+    if (target) {
+      setViewingLedger(target);
+      deepLinkConsumed.current = true;
+      // Strip ?id from URL so back/forward + drawer-close behave as expected.
+      window.history.replaceState(null, "", "/contacts");
+    }
+  }, [allItems]);
 
   const filteredContacts = useMemo(() => {
-    let result = allItems;
+    let result = searchedItems;
 
-    // Type filter
     if (typeFilter !== "all")
       result = result.filter(c => c.type === typeFilter);
 
-    // Balance filter
+    // A negative payable behaves like a receivable (and vice versa) — surface those
+    // contacts under the side that matches the user's intent.
     if (balanceFilter === "bal-receivable")
-      result = result.filter(c => c.outstandingReceivable > 0);
+      result = result.filter(c => c.outstandingReceivable > 0 || c.outstandingPayable < 0);
     else if (balanceFilter === "bal-payable")
-      result = result.filter(c => c.outstandingPayable > 0);
+      result = result.filter(c => c.outstandingPayable > 0 || c.outstandingReceivable < 0);
     else if (balanceFilter === "bal-settled")
       result = result.filter(c => c.outstandingReceivable === 0 && c.outstandingPayable === 0);
 
     return result;
-  }, [allItems, typeFilter, balanceFilter]);
+  }, [searchedItems, typeFilter, balanceFilter]);
 
   // Totals always reflect the full unfiltered set so the headline numbers don't jump when filtering.
   const totalReceivable = allItems.reduce((s, c) => s + c.outstandingReceivable, 0);
@@ -121,16 +147,16 @@ export default function ContactsPage() {
       <div className="grid grid-cols-2 gap-4">
         <Card>
           <CardContent className="p-5">
-            <p className="text-xs text-slate-500 uppercase tracking-wide">Total Receivable</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Total Receivable</p>
             <p className="text-2xl font-bold text-cyan-600 mt-1">{formatNaira(totalReceivable)}</p>
-            <p className="text-xs text-slate-400">Owed to you</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500">Owed to you</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-5">
-            <p className="text-xs text-slate-500 uppercase tracking-wide">Total Payable</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wide">Total Payable</p>
             <p className="text-2xl font-bold text-orange-500 mt-1">{formatNaira(totalPayable)}</p>
-            <p className="text-xs text-slate-400">You owe</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500">You owe</p>
           </CardContent>
         </Card>
       </div>
@@ -138,7 +164,7 @@ export default function ContactsPage() {
       {/* Active filter badges */}
       {(typeFilter !== "all" || balanceFilter !== "bal-all") && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-slate-400">Filtered by:</span>
+          <span className="text-xs text-slate-400 dark:text-slate-500">Filtered by:</span>
           {typeFilter !== "all" && (
             <Badge variant="secondary" className="text-xs gap-1">
               {typeFilter === "Customer" ? "Customers" : "Suppliers"}
@@ -151,7 +177,7 @@ export default function ContactsPage() {
               <button onClick={() => setBalanceFilter("bal-all")} className="ml-1 hover:text-red-500"><X size={10} /></button>
             </Badge>
           )}
-          <button onClick={() => { setTypeFilter("all"); setBalanceFilter("bal-all"); }} className="text-xs text-slate-400 hover:text-slate-700 underline">
+          <button onClick={() => { setTypeFilter("all"); setBalanceFilter("bal-all"); }} className="text-xs text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline">
             Clear all
           </button>
         </div>
@@ -171,14 +197,14 @@ export default function ContactsPage() {
               className={`px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
                 typeFilter === opt.value
                   ? "bg-cyan-500 text-white border-cyan-500 shadow-sm"
-                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                  : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-50"
               }`}
             >
               {opt.label}
             </button>
           ))}
 
-          <span className="w-px h-6 bg-slate-200 mx-1 self-center" />
+          <span className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1 self-center" />
 
           {/* Balance filter — plain buttons, no Tabs context */}
           {[
@@ -193,7 +219,7 @@ export default function ContactsPage() {
               className={`px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
                 balanceFilter === opt.value
                   ? "bg-cyan-500 text-white border-cyan-500 shadow-sm"
-                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
+                  : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-50"
               }`}
             >
               {opt.label}
@@ -202,7 +228,7 @@ export default function ContactsPage() {
         </div>
 
         <div className="relative w-full sm:max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" />
           <Input
             type="search"
             placeholder="Search by name..."
@@ -213,7 +239,7 @@ export default function ContactsPage() {
           {search && (
             <button
               onClick={() => setSearch("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1 rounded"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 p-1 rounded"
               aria-label="Clear search"
               type="button"
             >
@@ -249,7 +275,7 @@ export default function ContactsPage() {
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <Avatar name={contact.name} size="sm" />
-                        <span className="font-medium text-slate-900">{contact.name}</span>
+                        <span className="font-medium text-slate-900 dark:text-slate-50">{contact.name}</span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -263,7 +289,7 @@ export default function ContactsPage() {
                         {contact.type}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-sm text-slate-500 tabular-nums">
+                    <TableCell className="text-sm text-slate-500 dark:text-slate-400 tabular-nums">
                       {contact.phoneNumber ?? "—"}
                     </TableCell>
                     <TableCell className="text-right">
@@ -274,8 +300,17 @@ export default function ContactsPage() {
                         >
                           {formatNaira(contact.outstandingReceivable)}
                         </button>
+                      ) : contact.outstandingPayable < 0 ? (
+                        // Negative payable = you've paid them more than you owed → they owe you back.
+                        <button
+                          onClick={() => setViewingLedger(contact)}
+                          className="text-xs font-medium text-cyan-500 italic hover:underline tabular-nums"
+                          title="Credit balance — you paid more than you owed"
+                        >
+                          {formatNaira(Math.abs(contact.outstandingPayable))} credit
+                        </button>
                       ) : (
-                        <span className="text-slate-300">—</span>
+                        <span className="text-slate-300 dark:text-slate-600">—</span>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
@@ -286,8 +321,17 @@ export default function ContactsPage() {
                         >
                           {formatNaira(contact.outstandingPayable)}
                         </button>
+                      ) : contact.outstandingReceivable < 0 ? (
+                        // Negative receivable = they've paid you more than they owed → you owe them back.
+                        <button
+                          onClick={() => setViewingLedger(contact)}
+                          className="text-xs font-medium text-orange-500 italic hover:underline tabular-nums"
+                          title="Credit balance — they paid more than they owed"
+                        >
+                          {formatNaira(Math.abs(contact.outstandingReceivable))} credit
+                        </button>
                       ) : (
-                        <span className="text-slate-300">—</span>
+                        <span className="text-slate-300 dark:text-slate-600">—</span>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
@@ -295,7 +339,7 @@ export default function ContactsPage() {
                         {hasPermission(Permission.ManageDebts) && (contact.outstandingReceivable > 0 || contact.outstandingPayable > 0) && (
                           <button
                             onClick={() => setRecordingPayment(contact)}
-                            className="p-1 rounded hover:bg-emerald-50 text-slate-500 hover:text-emerald-600"
+                            className="p-1 rounded hover:bg-emerald-50 text-slate-500 dark:text-slate-400 hover:text-emerald-600"
                             title="Record payment"
                           >
                             <Banknote size={14} />
@@ -304,7 +348,7 @@ export default function ContactsPage() {
                         {hasPermission(Permission.ManageDebts) && (
                           <button
                             onClick={() => setEditing(contact)}
-                            className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900"
+                            className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50"
                             title="Edit contact"
                           >
                             <Pencil size={14} />
@@ -313,7 +357,7 @@ export default function ContactsPage() {
                         {hasPermission(Permission.ManageDebts) && (
                           <button
                             onClick={() => setDeleting(contact)}
-                            className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500"
+                            className="p-1 rounded hover:bg-red-50 text-slate-400 dark:text-slate-500 hover:text-red-500"
                             title="Delete contact"
                           >
                             <Trash2 size={14} />
@@ -439,7 +483,7 @@ function RecordDebtDialog({ open, onClose, contacts }: { open: boolean; onClose:
           <div>
             <Label>Type</Label>
             <select
-              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
+              className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
               value={form.type}
               onChange={(e) => setForm({ ...form, type: e.target.value })}
             >
@@ -450,7 +494,7 @@ function RecordDebtDialog({ open, onClose, contacts }: { open: boolean; onClose:
           <div>
             <Label>Contact</Label>
             <div className="relative mb-1">
-              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" />
               <Input
                 type="search"
                 placeholder="Filter contacts..."
@@ -460,7 +504,7 @@ function RecordDebtDialog({ open, onClose, contacts }: { open: boolean; onClose:
               />
             </div>
             <select
-              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
+              className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
               value={form.contactId}
               onChange={(e) => setForm({ ...form, contactId: e.target.value })}
               size={Math.min(6, Math.max(2, filteredContacts.length + 1))}
@@ -471,7 +515,7 @@ function RecordDebtDialog({ open, onClose, contacts }: { open: boolean; onClose:
               ))}
             </select>
             {contactSearch && filteredContacts.length === 0 && (
-              <p className="text-xs text-slate-400 mt-1">No contacts match &ldquo;{contactSearch}&rdquo;.</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">No contacts match &ldquo;{contactSearch}&rdquo;.</p>
             )}
           </div>
           <div>
@@ -563,7 +607,7 @@ function RecordPaymentDialog({ contact, open, onClose }: { contact: ContactDto |
               <div>
                 <Label>Payment Type</Label>
                 <select
-                  className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm bg-white"
+                  className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
                   value={form.type}
                   onChange={(e) => setForm({ ...form, type: e.target.value })}
                 >
@@ -622,10 +666,23 @@ function RecordPaymentDialog({ contact, open, onClose }: { contact: ContactDto |
 
 function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto | null; open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
+  const business = useBusiness();
+  const { toast } = useToast();
   const [editingEntry, setEditingEntry] = useState<LedgerEntryDto | null>(null);
   const [editAmount, setEditAmount] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // WhatsApp reminder: pre-fill a polite, currency-aware nudge.
+  function whatsappReminderUrl() {
+    if (!contact?.phoneNumber) return null;
+    const phone = contact.phoneNumber.replace(/[^\d]/g, "");
+    if (!phone) return null;
+    const amt = formatNaira(contact.outstandingReceivable);
+    const bizName = business?.name ?? "us";
+    const msg = `Hello ${contact.name}, this is a friendly reminder that you have an outstanding balance of ${amt} with ${bizName}. Could you please settle when convenient? Thank you.`;
+    return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+  }
 
   const { data: entries, isLoading } = useQuery({
     queryKey: ["contact-ledger", contact?.id],
@@ -658,7 +715,10 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
       qc.invalidateQueries({ queryKey: ["contact-ledger", contact?.id] });
       qc.invalidateQueries({ queryKey: ["contacts"] });
       setEditingEntry(null);
-    } catch { /* silent */ } finally { setSaving(false); }
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error("Couldn't save the entry", ax.response?.data?.errors?.[0] ?? "Please try again.");
+    } finally { setSaving(false); }
   }
 
   async function deleteEntry(entryId: string) {
@@ -667,7 +727,10 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
       await api.delete(`/ledger/entries/${entryId}`);
       qc.invalidateQueries({ queryKey: ["contact-ledger", contact?.id] });
       qc.invalidateQueries({ queryKey: ["contacts"] });
-    } catch { /* silent */ }
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error("Couldn't delete the entry", ax.response?.data?.errors?.[0] ?? "Please try again.");
+    }
   }
 
   const typeLabel = (t: string, source?: string) => {
@@ -686,7 +749,7 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
     if (t === "Receivable") return "text-cyan-600";
     if (t === "Payable") return "text-orange-500";
     if (t.includes("Payment")) return "text-emerald-600";
-    return "text-slate-600";
+    return "text-slate-600 dark:text-slate-400";
   };
 
   const canManage = hasPermission(Permission.ManageDebts);
@@ -704,21 +767,40 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
           />
           <DrawerBody>
             {(contact.outstandingReceivable > 0 || contact.outstandingPayable > 0) && (
-              <div className="grid grid-cols-2 gap-3 mb-5">
+              <div className="grid grid-cols-2 gap-3 mb-3">
                 {contact.outstandingReceivable > 0 && (
-                  <div className="rounded-lg bg-cyan-50 border border-cyan-200 px-4 py-3">
-                    <p className="text-[11px] font-semibold text-cyan-600 uppercase tracking-wider">They owe you</p>
-                    <p className="text-xl font-bold text-cyan-700 mt-1 tabular-nums">{formatNaira(contact.outstandingReceivable)}</p>
+                  <div className="rounded-lg bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-900 px-4 py-3">
+                    <p className="text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">They owe you</p>
+                    <p className="text-xl font-bold text-cyan-700 dark:text-cyan-300 mt-1 tabular-nums">{formatNaira(contact.outstandingReceivable)}</p>
                   </div>
                 )}
                 {contact.outstandingPayable > 0 && (
-                  <div className="rounded-lg bg-orange-50 border border-orange-200 px-4 py-3">
-                    <p className="text-[11px] font-semibold text-orange-600 uppercase tracking-wider">You owe them</p>
-                    <p className="text-xl font-bold text-orange-700 mt-1 tabular-nums">{formatNaira(contact.outstandingPayable)}</p>
+                  <div className="rounded-lg bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 px-4 py-3">
+                    <p className="text-[11px] font-semibold text-orange-600 dark:text-orange-400 uppercase tracking-wider">You owe them</p>
+                    <p className="text-xl font-bold text-orange-700 dark:text-orange-300 mt-1 tabular-nums">{formatNaira(contact.outstandingPayable)}</p>
                   </div>
                 )}
               </div>
             )}
+            {/* WhatsApp reminder — only when there's a receivable AND a phone */}
+            {contact.outstandingReceivable > 0 && (() => {
+              const url = whatsappReminderUrl();
+              return url ? (
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mb-5 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors"
+                >
+                  <MessageCircle size={16} />
+                  Send WhatsApp reminder
+                </a>
+              ) : (
+                <div className="mb-5 px-4 py-2.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-xs text-slate-500 dark:text-slate-400 text-center">
+                  Add a phone number to enable WhatsApp reminders
+                </div>
+              );
+            })()}
             {contact.outstandingReceivable === 0 && contact.outstandingPayable === 0 && (
               <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 mb-5">
                 <p className="text-sm font-medium text-emerald-700">Fully settled — no outstanding balance</p>
@@ -726,15 +808,15 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
             )}
 
             <div className="space-y-2">
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Activity</p>
+              <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Activity</p>
               {isLoading ? (
                 <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16" />)}</div>
               ) : entries && entries.length > 0 ? (
                 entries.map((e) => (
-                  <div key={e.id} className="border border-slate-200 rounded-lg px-3 py-2.5 bg-white">
+                  <div key={e.id} className="border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2.5 bg-white dark:bg-slate-900">
                     {editingEntry?.id === e.id ? (
                       <div className="space-y-2">
-                        <p className="text-xs text-slate-500">Set the new total outstanding balance:</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Set the new total outstanding balance:</p>
                         <div>
                           <Label className="text-xs">New balance amount</Label>
                           <Input type="number" value={editAmount} onChange={(ev) => setEditAmount(ev.target.value)} />
@@ -762,10 +844,10 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
                             </span>
                             {canManage && e.source !== "Adjustment" && (
                               <div className="flex gap-0.5">
-                                <button onClick={() => startEdit(e)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700" title="Edit">
+                                <button onClick={() => startEdit(e)} className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300" title="Edit">
                                   <Pencil size={12} />
                                 </button>
-                                <button onClick={() => deleteEntry(e.id)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500" title="Delete">
+                                <button onClick={() => deleteEntry(e.id)} className="p-1 rounded hover:bg-red-50 text-slate-400 dark:text-slate-500 hover:text-red-500" title="Delete">
                                   <Trash2 size={12} />
                                 </button>
                               </div>
@@ -773,10 +855,10 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
                           </div>
                         </div>
                         {e.notes && (
-                          <p className="text-xs text-slate-600 mt-1">{e.notes}</p>
+                          <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">{e.notes}</p>
                         )}
                         <div className="flex items-center gap-2 mt-1.5">
-                          <span className="text-xs text-slate-400">{formatDateTime(e.createdAtUtc)}</span>
+                          <span className="text-xs text-slate-400 dark:text-slate-500">{formatDateTime(e.createdAtUtc)}</span>
                           <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{e.source}</Badge>
                         </div>
                       </>
@@ -784,7 +866,7 @@ function LedgerHistoryDialog({ contact, open, onClose }: { contact: ContactDto |
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-slate-400 text-center py-6">No ledger entries for this contact.</p>
+                <p className="text-sm text-slate-400 dark:text-slate-500 text-center py-6">No ledger entries for this contact.</p>
               )}
             </div>
           </DrawerBody>
@@ -863,7 +945,7 @@ function EditContactDialog({
           <div>
             <Label>Type</Label>
             <select
-              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm"
+              className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm"
               value={form.type}
               onChange={(e) => setForm({ ...form, type: e.target.value as "Customer" | "Supplier" | "Both" })}
             >
@@ -932,7 +1014,7 @@ function AddContactDialog({ open, onClose }: { open: boolean; onClose: () => voi
           <div>
             <Label>Type</Label>
             <select
-              className="w-full h-9 px-2 rounded-md border border-slate-200 text-sm"
+              className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm"
               value={form.type}
               onChange={(e) => setForm({ ...form, type: e.target.value as "Customer" | "Supplier" | "Both" })}
             >
@@ -1003,7 +1085,7 @@ function DeleteContactDialog({ contact, open, onClose }: { contact: ContactDto |
             </div>
           )}
           {!hasOpenBalance && (
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-slate-600 dark:text-slate-400">
               Are you sure you want to delete <strong>{contact?.name}</strong>? This cannot be undone.
             </p>
           )}

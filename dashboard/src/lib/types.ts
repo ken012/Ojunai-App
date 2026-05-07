@@ -25,8 +25,14 @@ export interface AuthResponse {
 export interface UserDto {
   id: string;
   fullName: string;
-  phoneNumber: string;
+  /**
+   * Optional because the localStorage-cached user intentionally omits PII
+   * (phone, DOB) — those fields only populate after /auth/me returns.
+   * Server responses always include them.
+   */
+  phoneNumber?: string;
   email?: string;
+  emailVerified?: boolean;
   role: string;
   dateOfBirth?: string;
 }
@@ -45,6 +51,16 @@ export interface BusinessDto {
   alertLowStock?: boolean;
   alertDailySummary?: boolean;
   alertLargeSale?: boolean;
+  alertDashboardLowStock?: boolean;
+  alertDashboardDailySummary?: boolean;
+  alertDashboardLargeSale?: boolean;
+  alertDashboardAgedReceivable?: boolean;
+  alertDashboardStaffChanges?: boolean;
+  dailySalesGoal?: number | null;
+  /** Public path to the business's custom dashboard background, e.g. /uploads/businesses/.../bg.jpg. Null = no custom background. */
+  backgroundImageUrl?: string | null;
+  /** 0..1; opacity of the white/dark overlay sitting between the image and content. Higher = more legible, less image visible. */
+  backgroundImageOpacity?: number;
   confirmLargeSales?: boolean;
   confirmLargeSaleThreshold?: number;
   accountNumber?: string;
@@ -91,6 +107,7 @@ export interface SaleSummaryDto {
   paymentMethod?: string;
   itemCount: number;
   itemSummary?: string;
+  contactId?: string | null;
   customerName?: string;
   recordedByName?: string;
   source?: string;

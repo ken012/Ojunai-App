@@ -8,6 +8,8 @@ import { usePlanStatus } from "@/lib/use-plan-status";
 import { useBusiness } from "@/lib/data-sync";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { PageHeader } from "@/components/page-header";
+import { useChartTheme, useTooltipStyle } from "@/lib/chart-theme";
+import { useStickyState } from "@/lib/sticky-state";
 import type {
   DailySummaryDto, WeeklySummaryDto, CashPositionDto, DeadStockItemDto,
   StockoutPredictionDto, ProductProfitDto, StaffSalesDto,
@@ -59,9 +61,9 @@ const REPORT_QUERY_OPTS = {
 
 function StatRow({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
-    <div className="flex justify-between py-2 border-b border-slate-100 last:border-0">
-      <span className="text-sm text-slate-500">{label}</span>
-      <span className={`text-sm font-semibold ${accent ?? "text-slate-900"}`}>{value}</span>
+    <div className="flex justify-between py-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
+      <span className="text-sm text-slate-500 dark:text-slate-400">{label}</span>
+      <span className={`text-sm font-semibold ${accent ?? "text-slate-900 dark:text-slate-50"}`}>{value}</span>
     </div>
   );
 }
@@ -77,12 +79,12 @@ function ExpandableList({ title, icon, badge, children, maxH = "max-h-72" }: {
       <Card>
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
               {icon}
               {title}
               {badge}
             </CardTitle>
-            <button onClick={() => setExpanded(true)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700" title="Expand">
+            <button onClick={() => setExpanded(true)} className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300" title="Expand">
               <Maximize2 size={14} />
             </button>
           </div>
@@ -96,14 +98,14 @@ function ExpandableList({ title, icon, badge, children, maxH = "max-h-72" }: {
 
       {expanded && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setExpanded(false)}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
                 {icon}
                 {title}
                 {badge}
               </div>
-              <button onClick={() => setExpanded(false)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-900">
+              <button onClick={() => setExpanded(false)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50">
                 <X size={18} />
               </button>
             </div>
@@ -148,7 +150,7 @@ export default function ReportsPage() {
       />
 
       <Tabs defaultValue="financial" className="space-y-5">
-        <TabsList className="flex-wrap self-start bg-slate-100 p-1 rounded-lg">
+        <TabsList className="flex-wrap self-start bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
           <TabsTrigger value="financial" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md text-sm">Financial</TabsTrigger>
           <TabsTrigger value="customers" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md text-sm">Customers</TabsTrigger>
           <TabsTrigger value="inventory" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-md text-sm">Inventory</TabsTrigger>
@@ -211,7 +213,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
               <TrendingUp size={15} className="text-emerald-500" />
               Today&apos;s Summary
             </CardTitle>
@@ -240,7 +242,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
               <TrendingUp size={15} className="text-cyan-500" />
               This Week
             </CardTitle>
@@ -249,22 +251,22 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
             {loadingWeekly ? <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
               : weekly ? (
                 <>
-                  <p className="text-xs text-slate-400 mb-3">{weekly.weekStart} — {weekly.weekEnd}</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mb-3">{weekly.weekStart} — {weekly.weekEnd}</p>
                   <StatRow label="Total Sales" value={formatNaira(weekly.totalSales)} accent="text-emerald-600" />
                   <StatRow label="Total Expenses" value={formatNaira(weekly.totalExpenses)} accent="text-red-500" />
                   <StatRow label={weekly.isProfitEstimate ? "Est. Profit*" : "Est. Profit"} value={formatNaira(weekly.estimatedProfit)} accent={weekly.estimatedProfit >= 0 ? "text-emerald-600" : "text-red-500"} />
                   {weekly.topProducts.length > 0 && (
                     <div className="mt-3">
-                      <p className="text-xs text-slate-400 mb-1">Top Products</p>
+                      <p className="text-xs text-slate-400 dark:text-slate-500 mb-1">Top Products</p>
                       {weekly.topProducts.slice(0, 3).map((p) => (
                         <div key={p.productId} className="flex justify-between text-xs py-1">
-                          <span className="text-slate-600 truncate">{p.productName}</span>
-                          <span className="text-slate-900 font-medium ml-2 flex-shrink-0">{formatNaira(p.totalRevenue)}</span>
+                          <span className="text-slate-600 dark:text-slate-400 truncate">{p.productName}</span>
+                          <span className="text-slate-900 dark:text-slate-50 font-medium ml-2 flex-shrink-0">{formatNaira(p.totalRevenue)}</span>
                         </div>
                       ))}
                     </div>
                   )}
-                  {weekly.isProfitEstimate && <p className="text-xs text-slate-400 mt-2">*Add cost prices for accuracy</p>}
+                  {weekly.isProfitEstimate && <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">*Add cost prices for accuracy</p>}
                 </>
               ) : null}
           </CardContent>
@@ -272,7 +274,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
               <TrendingDown size={15} className="text-purple-500" />
               Month Cash Position
             </CardTitle>
@@ -288,7 +290,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                   <StatRow label="Payables" value={formatNaira(cashPos.outstandingPayables)} accent="text-orange-500" />
                   <div className="mt-3 pt-3 border-t">
                     <div className="flex justify-between">
-                      <span className="text-sm font-bold text-slate-700">Net Position</span>
+                      <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Net Position</span>
                       <span className={`text-sm font-bold ${cashPos.netPosition >= 0 ? "text-emerald-600" : "text-red-500"}`}>{formatNaira(cashPos.netPosition)}</span>
                     </div>
                   </div>
@@ -307,32 +309,32 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className={`text-xs ${p.urgency === "critical" ? "text-red-500" : p.urgency === "warning" ? "text-amber-500" : "text-green-500"}`}>●</span>
-                        <p className="text-sm font-medium text-slate-900 truncate">{p.productName}</p>
+                        <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">{p.productName}</p>
                       </div>
-                      <p className="text-xs text-slate-500 ml-5">{p.currentStock} {p.unit} left — ~{p.daysLeft} days at {p.dailyRate}/{p.unit} per day</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 ml-5">{p.currentStock} {p.unit} left — ~{p.daysLeft} days at {p.dailyRate}/{p.unit} per day</p>
                     </div>
                     {p.restockQty > 0 && (<Badge variant="outline" className="text-xs ml-2 shrink-0">Restock {p.restockQty} {p.unit}</Badge>)}
                   </div>
                 ))}
               </div>
-            ) : <p className="text-xs text-slate-400 italic py-4 text-center">All products have 2+ weeks of stock based on current sales.</p>}
+            ) : <p className="text-xs text-slate-400 dark:text-slate-500 italic py-4 text-center">All products have 2+ weeks of stock based on current sales.</p>}
         </ExpandableList>
 
-        <ExpandableList title="Dead Stock" icon={<Clock size={15} className="text-slate-400" />}
+        <ExpandableList title="Dead Stock" icon={<Clock size={15} className="text-slate-400 dark:text-slate-500" />}
           badge={deadStock && deadStock.length > 0 ? <Badge variant="secondary" className="text-xs">{deadStock.length}</Badge> : undefined}>
             {deadStock && deadStock.length > 0 ? (
               <div className="space-y-2">
                 {deadStock.map((p) => (
                   <div key={p.productId} className="flex items-center justify-between border rounded-lg px-3 py-2">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-900 truncate">{p.productName}</p>
-                      <p className="text-xs text-slate-500">{p.currentStock} {p.unit} in stock — {p.daysSinceLastSale >= 0 ? `last sold ${p.daysSinceLastSale} days ago` : "never sold"}</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">{p.productName}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{p.currentStock} {p.unit} in stock — {p.daysSinceLastSale >= 0 ? `last sold ${p.daysSinceLastSale} days ago` : "never sold"}</p>
                     </div>
                   </div>
                 ))}
-                <p className="text-xs text-slate-400 pt-1">Products with stock but no sales in 14+ days. Consider discounting or returning.</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 pt-1">Products with stock but no sales in 14+ days. Consider discounting or returning.</p>
               </div>
-            ) : <p className="text-xs text-slate-400 italic py-4 text-center">No dead stock. All products with stock have sold recently.</p>}
+            ) : <p className="text-xs text-slate-400 dark:text-slate-500 italic py-4 text-center">No dead stock. All products with stock have sold recently.</p>}
         </ExpandableList>
       </div>
 
@@ -343,22 +345,22 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                 {profitData.map((p) => (
                   <div key={p.productName} className="flex items-center justify-between border rounded-lg px-3 py-2">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-900 truncate">{p.productName}</p>
-                      <p className="text-xs text-slate-500">Revenue: {formatNaira(p.revenue)} — Cost: {formatNaira(p.cost)}</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">{p.productName}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Revenue: {formatNaira(p.revenue)} — Cost: {formatNaira(p.cost)}</p>
                     </div>
                     <div className="text-right ml-2 shrink-0">
                       <p className={`text-sm font-semibold ${p.profit >= 0 ? "text-emerald-600" : "text-red-500"}`}>{p.profit >= 0 ? "+" : ""}{formatNaira(p.profit)}</p>
-                      <p className="text-xs text-slate-400">{p.margin}% margin</p>
+                      <p className="text-xs text-slate-400 dark:text-slate-500">{p.margin}% margin</p>
                     </div>
                   </div>
                 ))}
               </div>
-            ) : <p className="text-xs text-slate-400 italic py-4 text-center">No profit data yet. Add cost prices to your products to see profitability.</p>}
+            ) : <p className="text-xs text-slate-400 dark:text-slate-500 italic py-4 text-center">No profit data yet. Add cost prices to your products to see profitability.</p>}
         </ExpandableList>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
               <Users size={15} className="text-cyan-500" />
               Staff Sales Today
             </CardTitle>
@@ -369,20 +371,20 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                 {staffSales.map((s) => (
                   <div key={s.staffName} className="border rounded-lg px-3 py-2">
                     <div className="flex items-center justify-between mb-1">
-                      <p className="text-sm font-semibold text-slate-900">{s.staffName}</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-50">{s.staffName}</p>
                       <p className="text-sm font-semibold text-emerald-600">{formatNaira(s.totalRevenue)}</p>
                     </div>
-                    <p className="text-xs text-slate-400 mb-1">{s.saleCount} sale{s.saleCount !== 1 ? "s" : ""}</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mb-1">{s.saleCount} sale{s.saleCount !== 1 ? "s" : ""}</p>
                     {s.items.slice(0, 5).map((item) => (
                       <div key={item.productName} className="flex justify-between text-xs py-0.5">
-                        <span className="text-slate-600 truncate">{item.quantity} {item.unit} {item.productName}</span>
-                        <span className="text-slate-900 font-medium ml-2 shrink-0">{formatNaira(item.revenue)}</span>
+                        <span className="text-slate-600 dark:text-slate-400 truncate">{item.quantity} {item.unit} {item.productName}</span>
+                        <span className="text-slate-900 dark:text-slate-50 font-medium ml-2 shrink-0">{formatNaira(item.revenue)}</span>
                       </div>
                     ))}
                   </div>
                 ))}
               </div>
-            ) : <p className="text-xs text-slate-400 italic py-4 text-center">No staff sales recorded today.</p>}
+            ) : <p className="text-xs text-slate-400 dark:text-slate-500 italic py-4 text-center">No staff sales recorded today.</p>}
           </CardContent>
         </Card>
       </div>
@@ -393,6 +395,16 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
 // ───────── Financial tab ─────────
 
 function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; currencySymbol: string }) {
+  const chart = useChartTheme();
+  const tooltipStyle = useTooltipStyle();
+  // Shared period selector — drives every months/weeks-based query on this tab.
+  // Persisted across visits so users don't reset.
+  const [periodMonths, setPeriodMonths] = useStickyState<number>(
+    "reports-financial-period",
+    12,
+    (v): v is number => typeof v === "number" && [3, 6, 12, 24].includes(v),
+  );
+  const periodWeeks = Math.max(4, Math.round(periodMonths * 4.33));
   const { data: pnl } = useQuery({
     queryKey: ["monthly-pnl"],
     queryFn: async () => (await api.get<{ data: MonthlyPnlDto }>("/reports/monthly-pnl")).data.data!,
@@ -406,33 +418,32 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
     enabled: hasAdvanced,
   });
   const { data: trend } = useQuery({
-    queryKey: ["monthly-trend"],
-    queryFn: async () => (await api.get<{ data: MonthlyTrendDto }>("/reports/monthly-trend?months=12")).data.data!,
+    queryKey: ["monthly-trend", periodMonths],
+    queryFn: async () => (await api.get<{ data: MonthlyTrendDto }>(`/reports/monthly-trend?months=${periodMonths}`)).data.data!,
     ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: avgTxn } = useQuery({
-    queryKey: ["avg-transaction-value"],
-    queryFn: async () => (await api.get<{ data: AvgTransactionValueDto }>("/reports/avg-transaction-value?months=12")).data.data!,
+    queryKey: ["avg-transaction-value", periodMonths],
+    queryFn: async () => (await api.get<{ data: AvgTransactionValueDto }>(`/reports/avg-transaction-value?months=${periodMonths}`)).data.data!,
     ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: payments } = useQuery({
-    queryKey: ["payment-methods"],
-    queryFn: async () => (await api.get<{ data: PaymentMethodSplitDto }>("/reports/payment-method-split?months=6")).data.data!,
+    queryKey: ["payment-methods", periodMonths],
+    queryFn: async () => (await api.get<{ data: PaymentMethodSplitDto }>(`/reports/payment-method-split?months=${periodMonths}`)).data.data!,
     ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
   const { data: heatmap } = useQuery({
-    queryKey: ["sales-heatmap"],
-    queryFn: async () => (await api.get<{ data: SalesHeatmapDto }>("/reports/sales-heatmap?weeks=12")).data.data!,
+    queryKey: ["sales-heatmap", periodWeeks],
+    queryFn: async () => (await api.get<{ data: SalesHeatmapDto }>(`/reports/sales-heatmap?weeks=${periodWeeks}`)).data.data!,
     ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
-  const [weeklyMonths, setWeeklyMonths] = useState(6);
   const { data: weeklyTrend } = useQuery({
-    queryKey: ["weekly-sales-trend", weeklyMonths],
-    queryFn: async () => (await api.get<{ data: WeeklySalesTrendDto }>(`/reports/weekly-sales-trend?months=${weeklyMonths}`)).data.data!,
+    queryKey: ["weekly-sales-trend", periodMonths],
+    queryFn: async () => (await api.get<{ data: WeeklySalesTrendDto }>(`/reports/weekly-sales-trend?months=${periodMonths}`)).data.data!,
     ...REPORT_QUERY_OPTS,
     enabled: hasAdvanced,
   });
@@ -461,15 +472,43 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
 
   return (
     <div className="space-y-4">
+      {/* Period selector — drives every months/weeks-based query on this tab. */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Period</p>
+          <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+            All trend, breakdown and velocity charts below cover the last {periodMonths} {periodMonths === 1 ? "month" : "months"}.
+          </p>
+        </div>
+        <div className="inline-flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+          {[3, 6, 12, 24].map((m) => {
+            const active = periodMonths === m;
+            return (
+              <button
+                key={m}
+                onClick={() => setPeriodMonths(m)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  active
+                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-50 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700"
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50"
+                }`}
+              >
+                {m === 24 ? "2y" : `${m}M`}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Sales Comparison */}
       <Card>
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
               <TrendingUp size={15} className="text-emerald-500" />
               Sales Comparison
             </CardTitle>
-            <select aria-label="Filter period" className="h-7 px-2 rounded border border-slate-200 text-xs" value={compPeriod} onChange={(e) => setCompPeriod(e.target.value as "month" | "week")}>
+            <select aria-label="Filter period" className="h-7 px-2 rounded border border-slate-200 dark:border-slate-800 text-xs" value={compPeriod} onChange={(e) => setCompPeriod(e.target.value as "month" | "week")}>
               <option value="month">Month vs Month</option>
               <option value="week">Week vs Week</option>
             </select>
@@ -484,15 +523,15 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                 { label: "Avg Order", current: formatNaira(comparison.currentAvgOrder), previous: formatNaira(comparison.previousAvgOrder), change: comparison.avgOrderChangePercent },
               ].map((m) => (
                 <div key={m.label} className="text-center">
-                  <p className="text-xs text-slate-400 mb-1">{m.label}</p>
-                  <p className="text-lg font-bold text-slate-900">{m.current}</p>
-                  <p className="text-xs text-slate-400">{m.previous}</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mb-1">{m.label}</p>
+                  <p className="text-lg font-bold text-slate-900 dark:text-slate-50">{m.current}</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">{m.previous}</p>
                   <p className={`text-xs font-semibold mt-1 ${m.change >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                     {m.change >= 0 ? "+" : ""}{m.change}%
                   </p>
                 </div>
               ))}
-              <div className="col-span-3 flex justify-between text-[10px] text-slate-400 border-t pt-2 mt-1">
+              <div className="col-span-3 flex justify-between text-[10px] text-slate-400 dark:text-slate-500 border-t pt-2 mt-1">
                 <span>{comparison.currentLabel}</span>
                 <span>vs {comparison.previousLabel}</span>
               </div>
@@ -506,7 +545,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+              <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
                 <FileBarChart size={15} className="text-emerald-500" />
                 Monthly P&amp;L
               </CardTitle>
@@ -525,7 +564,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                       ["Net Margin %", `${pnl.netMarginPercent}%`],
                     ]
                   )}
-                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100 transition-colors"
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                   title="Export CSV"
                 >
                   <Download size={12} /> CSV
@@ -536,30 +575,30 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
           <CardContent>
             {pnl ? (
               <>
-                <p className="text-xs text-slate-400 mb-3">{new Date(pnl.month).toLocaleString("en", { month: "long", year: "numeric" })}</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mb-3">{new Date(pnl.month).toLocaleString("en", { month: "long", year: "numeric" })}</p>
                 <div className="space-y-1">
-                  <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                    <span className="text-sm text-slate-500">Revenue</span>
+                  <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-800">
+                    <span className="text-sm text-slate-500 dark:text-slate-400">Revenue</span>
                     <div className="text-right">
                       <span className="text-sm font-semibold text-emerald-600">{formatNaira(pnl.revenue)}</span>
                       <div className="mt-0.5"><Delta current={pnl.revenue} previous={pnl.previousRevenue} /></div>
                     </div>
                   </div>
                   <StatRow label="Cost of Goods Sold" value={`(${formatNaira(pnl.costOfGoodsSold)})`} accent="text-red-400" />
-                  <div className="flex justify-between items-center py-2 border-b border-slate-100 bg-slate-50 -mx-4 px-4">
-                    <span className="text-sm font-medium text-slate-700">Gross Profit</span>
-                    <span className="text-sm font-semibold text-slate-900">{formatNaira(pnl.grossProfit)} <span className="text-xs text-slate-400">({pnl.grossMarginPercent}%)</span></span>
+                  <div className="flex justify-between items-center py-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 -mx-4 px-4">
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Gross Profit</span>
+                    <span className="text-sm font-semibold text-slate-900 dark:text-slate-50">{formatNaira(pnl.grossProfit)} <span className="text-xs text-slate-400 dark:text-slate-500">({pnl.grossMarginPercent}%)</span></span>
                   </div>
                   <StatRow label="Operating Expenses" value={`(${formatNaira(pnl.operatingExpenses)})`} accent="text-red-400" />
                   <div className="flex justify-between items-center py-3 bg-emerald-50 -mx-4 px-4 mt-2 rounded">
-                    <span className="text-sm font-bold text-slate-800">Net Profit</span>
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-100">Net Profit</span>
                     <div className="text-right">
                       <span className={`text-base font-bold ${pnl.netProfit >= 0 ? "text-emerald-600" : "text-red-500"}`}>{formatNaira(pnl.netProfit)}</span>
-                      <div className="text-xs text-slate-400">{pnl.netMarginPercent}% margin</div>
+                      <div className="text-xs text-slate-400 dark:text-slate-500">{pnl.netMarginPercent}% margin</div>
                     </div>
                   </div>
                 </div>
-                {pnl.isEstimate && <p className="text-xs text-slate-400 mt-3">* COGS estimated from current product cost prices.</p>}
+                {pnl.isEstimate && <p className="text-xs text-slate-400 dark:text-slate-500 mt-3">* COGS estimated from current product cost prices.</p>}
               </>
             ) : <Skeleton className="h-40" />}
           </CardContent>
@@ -568,7 +607,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
         {/* Expense Breakdown */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
               <PieChart size={15} className="text-purple-500" />
               Expense Breakdown
             </CardTitle>
@@ -576,7 +615,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
           <CardContent>
             {expenses ? (
               <>
-                <p className="text-xs text-slate-400 mb-3">Total: {formatNaira(expenses.totalExpenses)}</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mb-3">Total: {formatNaira(expenses.totalExpenses)}</p>
                 {expenses.categories.length > 0 ? (
                   <div className="space-y-2">
                     {expenses.categories.slice(0, 8).map((c, i) => {
@@ -589,18 +628,18 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                           <div className="flex justify-between text-xs mb-1">
                             <div className="flex items-center gap-1.5">
                               <span className={`inline-block w-2.5 h-2.5 rounded-sm ${colors[i % colors.length]}`} />
-                              <span className="text-slate-600">{c.category}</span>
+                              <span className="text-slate-600 dark:text-slate-400">{c.category}</span>
                             </div>
-                            <span className="text-slate-900 font-medium">{formatNaira(c.amount)} <span className="text-slate-400">({c.percentOfTotal}%)</span></span>
+                            <span className="text-slate-900 dark:text-slate-50 font-medium">{formatNaira(c.amount)} <span className="text-slate-400 dark:text-slate-500">({c.percentOfTotal}%)</span></span>
                           </div>
-                          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                             <div className={`h-full ${colors[i % colors.length]}`} style={{ width: `${Math.min(100, Number(c.percentOfTotal))}%` }} />
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                ) : <p className="text-xs text-slate-400 italic">No expenses recorded this month.</p>}
+                ) : <p className="text-xs text-slate-400 dark:text-slate-500 italic">No expenses recorded this month.</p>}
               </>
             ) : <Skeleton className="h-40" />}
           </CardContent>
@@ -611,7 +650,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
       <Card>
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
               <Activity size={15} className="text-cyan-500" />
               12-Month Trend
             </CardTitle>
@@ -625,7 +664,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                     p.revenue, p.expenses, p.profit
                   ])
                 )}
-                className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100 transition-colors"
+                className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 title="Export CSV"
               >
                 <Download size={12} /> CSV
@@ -642,10 +681,10 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                 Expenses: p.expenses,
                 Profit: p.profit
               }))}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                 <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} />
-                <Tooltip formatter={(v) => formatNaira(Number(v))} />
+                <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatNaira(Number(v))} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Line type="monotone" dataKey="Revenue" stroke="#10b981" strokeWidth={2} dot={false} />
                 <Line type="monotone" dataKey="Expenses" stroke="#ef4444" strokeWidth={2} dot={false} />
@@ -659,31 +698,19 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
       {/* Weekly Sales Velocity */}
       <Card>
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <CalendarClock size={15} className="text-violet-500" />
-              Weekly Sales Velocity
-            </CardTitle>
-            <select
-              className="h-7 px-2 rounded border border-slate-200 text-xs"
-              value={weeklyMonths}
-              onChange={(e) => setWeeklyMonths(Number(e.target.value))}
-            >
-              <option value={3}>3 months</option>
-              <option value={6}>6 months</option>
-              <option value={9}>9 months</option>
-              <option value={12}>12 months</option>
-            </select>
-          </div>
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+            <CalendarClock size={15} className="text-violet-500" />
+            Weekly Sales Velocity
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {weeklyTrend && weeklyTrend.weeks.length > 0 ? (
             <>
               {/* Summary cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                <div className="bg-slate-50 rounded-lg p-3 text-center">
-                  <p className="text-xs text-slate-400">Avg / Week</p>
-                  <p className="text-sm font-bold text-slate-900">{formatNaira(weeklyTrend.avgWeeklyRevenue)}</p>
+                <div className="bg-slate-50 dark:bg-slate-950 rounded-lg p-3 text-center">
+                  <p className="text-xs text-slate-400 dark:text-slate-500">Avg / Week</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-slate-50">{formatNaira(weeklyTrend.avgWeeklyRevenue)}</p>
                 </div>
                 <div className="bg-emerald-50 rounded-lg p-3 text-center">
                   <p className="text-xs text-emerald-500">Best Week</p>
@@ -713,12 +740,12 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                   Sales: w.saleCount,
                   Growth: w.growthPercent
                 }))}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                   <XAxis dataKey="label" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" height={55} interval={Math.max(0, Math.floor(weeklyTrend.weeks.length / 12))} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(v, name) => name === "Sales" ? v : formatNaira(Number(v))} labelStyle={{ fontSize: 12, fontWeight: 600 }} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(v, name) => name === "Sales" ? v : formatNaira(Number(v))} labelStyle={{ fontSize: 12, fontWeight: 600 }} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <ReferenceLine y={weeklyTrend.avgWeeklyRevenue} stroke="#94a3b8" strokeDasharray="6 3" label={{ value: "Avg", position: "right", fontSize: 10, fill: "#94a3b8" }} />
+                  <ReferenceLine y={weeklyTrend.avgWeeklyRevenue} stroke={chart.tickMuted} strokeDasharray="6 3" label={{ value: "Avg", position: "right", fontSize: 10, fill: chart.tickMuted }} />
                   <Area type="monotone" dataKey="Revenue" fill="#cffafe" stroke="#06b6d4" strokeWidth={2} fillOpacity={0.4} />
                   <Line type="monotone" dataKey="4-wk Avg" stroke="#f59e0b" strokeWidth={2} dot={false} strokeDasharray="5 3" />
                 </ComposedChart>
@@ -726,12 +753,12 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
 
               {/* Weekly breakdown table */}
               <details className="mt-4">
-                <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-700">
+                <summary className="text-xs text-slate-500 dark:text-slate-400 cursor-pointer hover:text-slate-700 dark:hover:text-slate-300">
                   View weekly breakdown ({weeklyTrend.totalWeeks} weeks, {weeklyTrend.totalSales} sales, {formatNaira(weeklyTrend.totalRevenue)} total)
                 </summary>
                 <div className="mt-2 max-h-64 overflow-y-auto">
                   <table className="w-full text-xs">
-                    <thead className="text-slate-400 border-b">
+                    <thead className="text-slate-400 dark:text-slate-500 border-b">
                       <tr>
                         <th className="text-left py-1 font-medium">Week</th>
                         <th className="text-right py-1 font-medium">Revenue</th>
@@ -742,12 +769,12 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                     </thead>
                     <tbody>
                       {[...weeklyTrend.weeks].reverse().map((w) => (
-                        <tr key={w.weekStart} className="border-b border-slate-50 hover:bg-slate-50">
-                          <td className="py-1.5 text-slate-700">{w.label}</td>
-                          <td className="py-1.5 text-right font-medium text-slate-900">{formatNaira(w.revenue)}</td>
-                          <td className="py-1.5 text-right text-slate-500">{w.saleCount}</td>
-                          <td className="py-1.5 text-right text-slate-500">{formatNaira(w.avgOrderValue)}</td>
-                          <td className={`py-1.5 text-right font-medium ${w.growthPercent == null ? "text-slate-300" : w.growthPercent >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                        <tr key={w.weekStart} className="border-b border-slate-50 hover:bg-slate-50 dark:hover:bg-slate-800">
+                          <td className="py-1.5 text-slate-700 dark:text-slate-300">{w.label}</td>
+                          <td className="py-1.5 text-right font-medium text-slate-900 dark:text-slate-50">{formatNaira(w.revenue)}</td>
+                          <td className="py-1.5 text-right text-slate-500 dark:text-slate-400">{w.saleCount}</td>
+                          <td className="py-1.5 text-right text-slate-500 dark:text-slate-400">{formatNaira(w.avgOrderValue)}</td>
+                          <td className={`py-1.5 text-right font-medium ${w.growthPercent == null ? "text-slate-300 dark:text-slate-600" : w.growthPercent >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                             {w.growthPercent != null ? `${w.growthPercent >= 0 ? "+" : ""}${w.growthPercent}%` : "—"}
                           </td>
                         </tr>
@@ -766,7 +793,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+              <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
                 <TrendingUp size={15} className="text-emerald-500" />
                 Average Transaction Value
               </CardTitle>
@@ -780,7 +807,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                       p.averageValue,
                     ])
                   )}
-                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100 transition-colors"
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                   title="Export CSV"
                 >
                   <Download size={12} /> CSV
@@ -795,10 +822,10 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                   month: new Date(p.month).toLocaleString("en", { month: "short" }),
                   Average: p.averageValue
                 }))}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(v) => formatNaira(Number(v))} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatNaira(Number(v))} />
                   <Line type="monotone" dataKey="Average" stroke="#10b981" strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
@@ -810,7 +837,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+              <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
                 <CreditCard size={15} className="text-cyan-500" />
                 Payment Methods (6 months)
               </CardTitle>
@@ -824,7 +851,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                       m.cash, m.transfer, m.pos, m.credit, m.other,
                     ])
                   )}
-                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100 transition-colors"
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                   title="Export CSV"
                 >
                   <Download size={12} /> CSV
@@ -839,10 +866,10 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                   month: new Date(m.month).toLocaleString("en", { month: "short" }),
                   Cash: m.cash, Transfer: m.transfer, POS: m.pos, Credit: m.credit, Other: m.other
                 }))}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(v) => formatNaira(Number(v))} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatNaira(Number(v))} />
                   <Legend wrapperStyle={{ fontSize: 10 }} />
                   <Bar dataKey="Cash" stackId="a" fill="#10b981" />
                   <Bar dataKey="Transfer" stackId="a" fill="#06b6d4" />
@@ -859,7 +886,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
       {/* Sales Heatmap */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
             <Activity size={15} className="text-orange-500" />
             Sales Heatmap — Peak hour/day
           </CardTitle>
@@ -872,7 +899,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
       {/* Revenue by Product Category */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
             <PieChart size={15} className="text-violet-500" />
             Revenue by Product Category (30 days)
           </CardTitle>
@@ -883,23 +910,23 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
               <div className="space-y-2">
                 {categoryRevenue.categories.slice(0, 10).map((c) => (
                   <div key={c.category} className="flex items-center gap-3">
-                    <span className="text-xs text-slate-600 w-28 truncate flex-shrink-0">{c.category}</span>
-                    <div className="flex-1 bg-slate-100 rounded-full h-5 overflow-hidden">
+                    <span className="text-xs text-slate-600 dark:text-slate-400 w-28 truncate flex-shrink-0">{c.category}</span>
+                    <div className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-full h-5 overflow-hidden">
                       <div className="bg-violet-500 h-full rounded-full" style={{ width: `${Math.max(2, c.percentOfTotal)}%` }} />
                     </div>
-                    <span className="text-xs font-medium text-slate-900 w-20 text-right flex-shrink-0">{formatNaira(c.revenue)}</span>
-                    <span className="text-[10px] text-slate-400 w-10 text-right flex-shrink-0">{c.percentOfTotal}%</span>
+                    <span className="text-xs font-medium text-slate-900 dark:text-slate-50 w-20 text-right flex-shrink-0">{formatNaira(c.revenue)}</span>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 w-10 text-right flex-shrink-0">{c.percentOfTotal}%</span>
                   </div>
                 ))}
               </div>
               {categoryRevenue.uncategorizedRevenue > 0 && (
-                <p className="text-xs text-slate-400 mt-3">
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-3">
                   {formatNaira(categoryRevenue.uncategorizedRevenue)} from uncategorized products — add categories to see them here.
                 </p>
               )}
             </>
           ) : categoryRevenue ? (
-            <p className="text-xs text-slate-400 italic">No sales with categorized products in the last 30 days.</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500 italic">No sales with categorized products in the last 30 days.</p>
           ) : <Skeleton className="h-40" />}
         </CardContent>
       </Card>
@@ -907,7 +934,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
       {/* Cash Flow Forecast */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
             <DollarSign size={15} className="text-cyan-500" />
             Cash Flow Forecast
           </CardTitle>
@@ -925,7 +952,7 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                   <p className="text-sm font-bold text-red-700">{formatNaira(cashFlow.avgWeeklyCashOut)}</p>
                 </div>
                 <div className={`rounded-lg p-3 text-center ${cashFlow.projectedMonthEndBalance >= 0 ? "bg-cyan-50" : "bg-amber-50"}`}>
-                  <p className="text-xs text-slate-500">Month-End Projection</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Month-End Projection</p>
                   <p className={`text-sm font-bold ${cashFlow.projectedMonthEndBalance >= 0 ? "text-cyan-700" : "text-amber-700"}`}>{formatNaira(cashFlow.projectedMonthEndBalance)}</p>
                 </div>
               </div>
@@ -934,16 +961,16 @@ function FinancialTab({ hasAdvanced, currencySymbol }: { hasAdvanced: boolean; c
                   ...cashFlow.actuals.map(w => ({ ...w, type: "actual" })),
                   ...cashFlow.forecast.map(w => ({ ...w, type: "forecast" })),
                 ]}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                   <XAxis dataKey="label" tick={{ fontSize: 9 }} angle={-25} textAnchor="end" height={45} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${currencySymbol}${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(v) => formatNaira(Number(v))} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(v) => formatNaira(Number(v))} />
                   <Legend wrapperStyle={{ fontSize: 10 }} />
                   <Bar dataKey="cashIn" name="Cash In" fill="#10b981" />
                   <Bar dataKey="cashOut" name="Cash Out" fill="#ef4444" />
                 </BarChart>
               </ResponsiveContainer>
-              <p className="text-[10px] text-slate-400 mt-2">Last 4 weeks actual + next 4 weeks projected at current pace</p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2">Last 4 weeks actual + next 4 weeks projected at current pace</p>
             </>
           ) : <Skeleton className="h-60" />}
         </CardContent>
@@ -962,7 +989,7 @@ function Heatmap({ data }: { data: SalesHeatmapDto }) {
 
   return (
     <div>
-      <p className="text-xs text-slate-400 mb-3">
+      <p className="text-xs text-slate-400 dark:text-slate-500 mb-3">
         Past {data.weeksAnalyzed} weeks. Peak: {DAY_LABELS[data.peakDayOfWeek]} {data.peakHour}:00 ({formatNaira(data.peakRevenue)})
       </p>
       <div className="overflow-x-auto">
@@ -970,16 +997,16 @@ function Heatmap({ data }: { data: SalesHeatmapDto }) {
           <div className="flex">
             <div className="w-10" />
             {Array.from({ length: 24 }, (_, h) => (
-              <div key={h} className="w-5 text-[9px] text-slate-400 text-center">{h % 3 === 0 ? h : ""}</div>
+              <div key={h} className="w-5 text-[9px] text-slate-400 dark:text-slate-500 text-center">{h % 3 === 0 ? h : ""}</div>
             ))}
           </div>
           {DAY_LABELS.map((day, d) => (
             <div key={day} className="flex items-center">
-              <div className="w-10 text-[10px] text-slate-500 pr-2 text-right">{day}</div>
+              <div className="w-10 text-[10px] text-slate-500 dark:text-slate-400 pr-2 text-right">{day}</div>
               {Array.from({ length: 24 }, (_, h) => {
                 const v = grid.get(`${d}-${h}`) ?? 0;
                 const intensity = max > 0 ? v / max : 0;
-                const bg = intensity === 0 ? "bg-slate-50"
+                const bg = intensity === 0 ? "bg-slate-50 dark:bg-slate-950"
                   : intensity < 0.25 ? "bg-cyan-100"
                   : intensity < 0.5 ? "bg-cyan-300"
                   : intensity < 0.75 ? "bg-cyan-500"
@@ -997,6 +1024,8 @@ function Heatmap({ data }: { data: SalesHeatmapDto }) {
 // ───────── Customers tab ─────────
 
 function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
+  const chart = useChartTheme();
+  const tooltipStyle = useTooltipStyle();
   const { data: aging } = useQuery({
     queryKey: ["aging-receivables"],
     queryFn: async () => (await api.get<{ data: AgingReportDto }>("/reports/aging-receivables")).data.data!,
@@ -1035,7 +1064,7 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
       {/* Aging Receivables */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
             <CalendarClock size={15} className="text-amber-500" />
             Aging Receivables
           </CardTitle>
@@ -1049,12 +1078,12 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                 <AgingBucket label="61-90 days" amount={aging.total61To90} tone="text-amber-600" />
                 <AgingBucket label="90+ days" amount={aging.total90Plus} tone="text-red-600" />
               </div>
-              <p className="text-xs text-slate-400 mb-2">Total outstanding: <span className="font-semibold text-slate-700">{formatNaira(aging.grandTotal)}</span></p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">Total outstanding: <span className="font-semibold text-slate-700 dark:text-slate-300">{formatNaira(aging.grandTotal)}</span></p>
               {aging.contacts.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="border-b border-slate-200 text-slate-500">
+                      <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
                         <th className="text-left py-2 font-medium">Customer</th>
                         <th className="text-right py-2 font-medium">0-30</th>
                         <th className="text-right py-2 font-medium">31-60</th>
@@ -1066,20 +1095,20 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                     </thead>
                     <tbody>
                       {aging.contacts.slice(0, 25).map((c) => (
-                        <tr key={c.contactId} className="border-b border-slate-100">
-                          <td className="py-2 text-slate-900">{c.contactName}</td>
-                          <td className="text-right text-slate-600">{c.bucket0To30 > 0 ? formatNaira(c.bucket0To30) : "—"}</td>
-                          <td className="text-right text-slate-600">{c.bucket31To60 > 0 ? formatNaira(c.bucket31To60) : "—"}</td>
+                        <tr key={c.contactId} className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-2 text-slate-900 dark:text-slate-50">{c.contactName}</td>
+                          <td className="text-right text-slate-600 dark:text-slate-400">{c.bucket0To30 > 0 ? formatNaira(c.bucket0To30) : "—"}</td>
+                          <td className="text-right text-slate-600 dark:text-slate-400">{c.bucket31To60 > 0 ? formatNaira(c.bucket31To60) : "—"}</td>
                           <td className="text-right text-amber-600">{c.bucket61To90 > 0 ? formatNaira(c.bucket61To90) : "—"}</td>
                           <td className="text-right text-red-600 font-medium">{c.bucket90Plus > 0 ? formatNaira(c.bucket90Plus) : "—"}</td>
-                          <td className="text-right text-slate-900 font-semibold">{formatNaira(c.total)}</td>
-                          <td className="text-right text-slate-400">{c.oldestDays}d</td>
+                          <td className="text-right text-slate-900 dark:text-slate-50 font-semibold">{formatNaira(c.total)}</td>
+                          <td className="text-right text-slate-400 dark:text-slate-500">{c.oldestDays}d</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              ) : <p className="text-xs text-slate-400 italic">No outstanding receivables.</p>}
+              ) : <p className="text-xs text-slate-400 dark:text-slate-500 italic">No outstanding receivables.</p>}
             </>
           ) : <Skeleton className="h-48" />}
         </CardContent>
@@ -1089,7 +1118,7 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
         {/* Top Customers */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
               <Users size={15} className="text-emerald-500" />
               Top Customers (12 months)
             </CardTitle>
@@ -1106,19 +1135,19 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                 {topCustomers.customers.length > 0 ? (
                   <div className="space-y-1">
                     {topCustomers.customers.slice(0, 10).map((c) => (
-                      <div key={c.contactId} className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                      <div key={c.contactId} className="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-slate-900 truncate">{c.contactName}</p>
-                          <p className="text-xs text-slate-400">{c.transactionCount} purchases</p>
+                          <p className="text-sm text-slate-900 dark:text-slate-50 truncate">{c.contactName}</p>
+                          <p className="text-xs text-slate-400 dark:text-slate-500">{c.transactionCount} purchases</p>
                         </div>
                         <div className="text-right ml-2 shrink-0">
                           <p className="text-sm font-semibold text-emerald-600">{formatNaira(c.totalRevenue)}</p>
-                          <p className="text-xs text-slate-400">{c.percentOfTotal}%</p>
+                          <p className="text-xs text-slate-400 dark:text-slate-500">{c.percentOfTotal}%</p>
                         </div>
                       </div>
                     ))}
                   </div>
-                ) : <p className="text-xs text-slate-400 italic">No customer sales yet.</p>}
+                ) : <p className="text-xs text-slate-400 dark:text-slate-500 italic">No customer sales yet.</p>}
               </>
             ) : <Skeleton className="h-40" />}
           </CardContent>
@@ -1130,10 +1159,10 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
               reliability.length > 0 ? (
                 <div className="space-y-1">
                   {reliability.map((c) => (
-                    <div key={c.contactId} className="flex items-center justify-between py-1.5 border-b border-slate-100">
+                    <div key={c.contactId} className="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-800">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-slate-900 truncate">{c.contactName}</p>
-                        <p className="text-xs text-slate-400">{c.paidReceivables} invoices paid</p>
+                        <p className="text-sm text-slate-900 dark:text-slate-50 truncate">{c.contactName}</p>
+                        <p className="text-xs text-slate-400 dark:text-slate-500">{c.paidReceivables} invoices paid</p>
                       </div>
                       <div className="text-right ml-2 shrink-0">
                         <Badge
@@ -1151,7 +1180,7 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                     </div>
                   ))}
                 </div>
-              ) : <p className="text-xs text-slate-400 italic">No credit history yet.</p>
+              ) : <p className="text-xs text-slate-400 dark:text-slate-500 italic">No credit history yet.</p>
             ) : <Skeleton className="h-40" />}
         </ExpandableList>
       </div>
@@ -1160,7 +1189,7 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
         {/* Customer Retention */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
               <Repeat size={15} className="text-purple-500" />
               New vs. Returning Customers
             </CardTitle>
@@ -1173,10 +1202,10 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                   New: m.newCustomers,
                   Returning: m.returningCustomers
                 }))}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: chart.tickStrong }} />
+                  <YAxis tick={{ fontSize: 11, fill: chart.tickStrong }} />
+                  <Tooltip contentStyle={tooltipStyle} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Bar dataKey="New" fill="#10b981" />
                   <Bar dataKey="Returning" fill="#06b6d4" />
@@ -1189,7 +1218,7 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
         {/* Product Affinity */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
               <Link2 size={15} className="text-cyan-500" />
               Frequently Bought Together
             </CardTitle>
@@ -1199,18 +1228,18 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
               affinity.length > 0 ? (
                 <div className="space-y-1">
                   {affinity.map((a, i) => (
-                    <div key={i} className="flex items-center justify-between py-1.5 border-b border-slate-100 text-xs">
-                      <span className="text-slate-900">
-                        {a.productA} <span className="text-slate-400">+</span> {a.productB}
+                    <div key={i} className="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-800 text-xs">
+                      <span className="text-slate-900 dark:text-slate-50">
+                        {a.productA} <span className="text-slate-400 dark:text-slate-500">+</span> {a.productB}
                       </span>
                       <div className="text-right ml-2 shrink-0">
-                        <span className="text-slate-700 font-medium">{a.coOccurrenceCount}x</span>
-                        <span className="text-slate-400 ml-2">{formatNaira(a.combinedRevenue)}</span>
+                        <span className="text-slate-700 dark:text-slate-300 font-medium">{a.coOccurrenceCount}x</span>
+                        <span className="text-slate-400 dark:text-slate-500 ml-2">{formatNaira(a.combinedRevenue)}</span>
                       </div>
                     </div>
                   ))}
                 </div>
-              ) : <p className="text-xs text-slate-400 italic py-4">Not enough multi-item sales yet to detect patterns.</p>
+              ) : <p className="text-xs text-slate-400 dark:text-slate-500 italic py-4">Not enough multi-item sales yet to detect patterns.</p>
             ) : <Skeleton className="h-40" />}
           </CardContent>
         </Card>
@@ -1222,7 +1251,7 @@ function CustomersTab({ hasAdvanced }: { hasAdvanced: boolean }) {
 function AgingBucket({ label, amount, tone }: { label: string; amount: number; tone: string }) {
   return (
     <div className="border rounded-lg p-3">
-      <p className="text-xs text-slate-500">{label}</p>
+      <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
       <p className={`text-sm font-semibold mt-1 ${tone}`}>{formatNaira(amount)}</p>
     </div>
   );
@@ -1266,22 +1295,22 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                         <Badge variant="outline" className={
                           r.urgency === "Critical" ? "text-red-700 border-red-200"
                           : r.urgency === "High" ? "text-amber-700 border-amber-200"
-                          : "text-slate-600"
+                          : "text-slate-600 dark:text-slate-400"
                         }>{r.urgency}</Badge>
-                        <p className="text-sm font-medium text-slate-900 truncate">{r.productName}</p>
+                        <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">{r.productName}</p>
                       </div>
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                         {r.currentStock} {r.unit} left — {r.dailyVelocity}/day velocity
                       </p>
                     </div>
                     <div className="text-right ml-2 shrink-0">
-                      <p className="text-sm font-semibold text-slate-900">Reorder {r.suggestedReorderQty} {r.unit}</p>
-                      {r.estimatedCost > 0 && <p className="text-xs text-slate-400">~{formatNaira(r.estimatedCost)}</p>}
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-50">Reorder {r.suggestedReorderQty} {r.unit}</p>
+                      {r.estimatedCost > 0 && <p className="text-xs text-slate-400 dark:text-slate-500">~{formatNaira(r.estimatedCost)}</p>}
                     </div>
                   </div>
                 ))}
               </div>
-            ) : <p className="text-xs text-slate-400 italic py-4 text-center">All fast-moving products have enough stock.</p>
+            ) : <p className="text-xs text-slate-400 dark:text-slate-500 italic py-4 text-center">All fast-moving products have enough stock.</p>
           ) : <Skeleton className="h-40" />}
       </ExpandableList>
 
@@ -1292,7 +1321,7 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-slate-200 text-slate-500">
+                    <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
                       <th className="text-left py-2 font-medium">Product</th>
                       <th className="text-right py-2 font-medium">Stock</th>
                       <th className="text-right py-2 font-medium">Sold 30d</th>
@@ -1303,12 +1332,12 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                   </thead>
                   <tbody>
                     {turnover.slice(0, 30).map((t) => (
-                      <tr key={t.productId} className="border-b border-slate-100">
-                        <td className="py-2 text-slate-900">{t.productName}</td>
-                        <td className="text-right text-slate-600">{t.currentStock} {t.unit}</td>
-                        <td className="text-right text-slate-600">{t.soldLast30Days}</td>
-                        <td className="text-right text-slate-600">{t.daysOfStockRemaining >= 999 ? "∞" : t.daysOfStockRemaining}</td>
-                        <td className="text-right text-slate-600">{formatNaira(t.inventoryValue)}</td>
+                      <tr key={t.productId} className="border-b border-slate-100 dark:border-slate-800">
+                        <td className="py-2 text-slate-900 dark:text-slate-50">{t.productName}</td>
+                        <td className="text-right text-slate-600 dark:text-slate-400">{t.currentStock} {t.unit}</td>
+                        <td className="text-right text-slate-600 dark:text-slate-400">{t.soldLast30Days}</td>
+                        <td className="text-right text-slate-600 dark:text-slate-400">{t.daysOfStockRemaining >= 999 ? "∞" : t.daysOfStockRemaining}</td>
+                        <td className="text-right text-slate-600 dark:text-slate-400">{formatNaira(t.inventoryValue)}</td>
                         <td className="text-right">
                           <Badge variant="outline" className={
                             t.classification === "Fast" ? "text-emerald-700 border-emerald-200"
@@ -1322,14 +1351,14 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                   </tbody>
                 </table>
               </div>
-            ) : <p className="text-xs text-slate-400 italic">No products yet.</p>
+            ) : <p className="text-xs text-slate-400 dark:text-slate-500 italic">No products yet.</p>
           ) : <Skeleton className="h-48" />}
       </ExpandableList>
 
       {/* Wastage */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
             <PackageX size={15} className="text-red-500" />
             Wastage &amp; Damage
           </CardTitle>
@@ -1339,21 +1368,21 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
             <>
               <div className="flex items-baseline gap-3 mb-3">
                 <p className="text-xl font-bold text-red-600">{formatNaira(wastage.totalValue)}</p>
-                <p className="text-xs text-slate-500">{wastage.eventCount} event{wastage.eventCount !== 1 ? "s" : ""} — {wastage.period}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{wastage.eventCount} event{wastage.eventCount !== 1 ? "s" : ""} — {wastage.period}</p>
               </div>
               {wastage.topProducts.length > 0 ? (
                 <div className="space-y-1 max-h-56 overflow-y-auto">
                   {wastage.topProducts.slice(0, 10).map((w) => (
-                    <div key={w.productId} className="flex items-center justify-between py-1.5 border-b border-slate-100 text-xs">
-                      <span className="text-slate-900 truncate">{w.productName}</span>
+                    <div key={w.productId} className="flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-800 text-xs">
+                      <span className="text-slate-900 dark:text-slate-50 truncate">{w.productName}</span>
                       <div className="text-right ml-2 shrink-0">
                         <span className="text-red-600 font-medium">{formatNaira(w.estimatedLoss)}</span>
-                        <span className="text-slate-400 ml-2">({w.quantityDamaged} {w.unit})</span>
+                        <span className="text-slate-400 dark:text-slate-500 ml-2">({w.quantityDamaged} {w.unit})</span>
                       </div>
                     </div>
                   ))}
                 </div>
-              ) : <p className="text-xs text-slate-400 italic">No damage recorded in this window.</p>}
+              ) : <p className="text-xs text-slate-400 dark:text-slate-500 italic">No damage recorded in this window.</p>}
             </>
           ) : <Skeleton className="h-40" />}
         </CardContent>
@@ -1385,7 +1414,7 @@ function DebtsTab({ hasAdvanced }: { hasAdvanced: boolean }) {
       {/* Outstanding Debts Summary */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
             <DollarSign size={15} className="text-cyan-500" />
             Outstanding Debts Summary
           </CardTitle>
@@ -1403,7 +1432,7 @@ function DebtsTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                   <p className="text-sm font-bold text-orange-700">{formatNaira(debtSummary.totalPayables)}</p>
                 </div>
                 <div className={`rounded-lg p-3 text-center ${debtSummary.netPosition >= 0 ? "bg-emerald-50" : "bg-red-50"}`}>
-                  <p className="text-xs text-slate-500">Net Position</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Net Position</p>
                   <p className={`text-sm font-bold ${debtSummary.netPosition >= 0 ? "text-emerald-700" : "text-red-700"}`}>{formatNaira(debtSummary.netPosition)}</p>
                 </div>
               </div>
@@ -1413,13 +1442,13 @@ function DebtsTab({ hasAdvanced }: { hasAdvanced: boolean }) {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {debtSummary.topReceivables.length > 0 && (
                   <div>
-                    <p className="text-xs font-medium text-slate-500 mb-2">Top Receivables (owed to you)</p>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Top Receivables (owed to you)</p>
                     <div className="space-y-1.5">
                       {debtSummary.topReceivables.map((c) => (
                         <div key={c.contactId} className="flex justify-between items-center text-xs">
-                          <span className="text-slate-700 truncate">{c.contactName}</span>
+                          <span className="text-slate-700 dark:text-slate-300 truncate">{c.contactName}</span>
                           <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                            <span className="text-slate-400">{c.daysOld}d</span>
+                            <span className="text-slate-400 dark:text-slate-500">{c.daysOld}d</span>
                             <span className="font-medium text-blue-700">{formatNaira(c.amount)}</span>
                           </div>
                         </div>
@@ -1429,13 +1458,13 @@ function DebtsTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                 )}
                 {debtSummary.topPayables.length > 0 && (
                   <div>
-                    <p className="text-xs font-medium text-slate-500 mb-2">Top Payables (you owe)</p>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Top Payables (you owe)</p>
                     <div className="space-y-1.5">
                       {debtSummary.topPayables.map((c) => (
                         <div key={c.contactId} className="flex justify-between items-center text-xs">
-                          <span className="text-slate-700 truncate">{c.contactName}</span>
+                          <span className="text-slate-700 dark:text-slate-300 truncate">{c.contactName}</span>
                           <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                            <span className="text-slate-400">{c.daysOld}d</span>
+                            <span className="text-slate-400 dark:text-slate-500">{c.daysOld}d</span>
                             <span className="font-medium text-orange-700">{formatNaira(c.amount)}</span>
                           </div>
                         </div>
@@ -1445,7 +1474,7 @@ function DebtsTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                 )}
               </div>
               {debtSummary.topReceivables.length === 0 && debtSummary.topPayables.length === 0 && (
-                <p className="text-xs text-slate-400 italic">No outstanding debts. All settled!</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 italic">No outstanding debts. All settled!</p>
               )}
             </>
           ) : <Skeleton className="h-40" />}
@@ -1454,7 +1483,7 @@ function DebtsTab({ hasAdvanced }: { hasAdvanced: boolean }) {
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
             <CalendarClock size={15} className="text-orange-500" />
             Aging Payables — what you owe suppliers
           </CardTitle>
@@ -1468,12 +1497,12 @@ function DebtsTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                 <AgingBucket label="61-90 days" amount={aging.total61To90} tone="text-amber-600" />
                 <AgingBucket label="90+ days" amount={aging.total90Plus} tone="text-red-600" />
               </div>
-              <p className="text-xs text-slate-400 mb-2">Total owed: <span className="font-semibold text-slate-700">{formatNaira(aging.grandTotal)}</span></p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">Total owed: <span className="font-semibold text-slate-700 dark:text-slate-300">{formatNaira(aging.grandTotal)}</span></p>
               {aging.contacts.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="border-b border-slate-200 text-slate-500">
+                      <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400">
                         <th className="text-left py-2 font-medium">Supplier</th>
                         <th className="text-right py-2 font-medium">0-30</th>
                         <th className="text-right py-2 font-medium">31-60</th>
@@ -1485,20 +1514,20 @@ function DebtsTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                     </thead>
                     <tbody>
                       {aging.contacts.slice(0, 25).map((c) => (
-                        <tr key={c.contactId} className="border-b border-slate-100">
-                          <td className="py-2 text-slate-900">{c.contactName}</td>
-                          <td className="text-right text-slate-600">{c.bucket0To30 > 0 ? formatNaira(c.bucket0To30) : "—"}</td>
-                          <td className="text-right text-slate-600">{c.bucket31To60 > 0 ? formatNaira(c.bucket31To60) : "—"}</td>
+                        <tr key={c.contactId} className="border-b border-slate-100 dark:border-slate-800">
+                          <td className="py-2 text-slate-900 dark:text-slate-50">{c.contactName}</td>
+                          <td className="text-right text-slate-600 dark:text-slate-400">{c.bucket0To30 > 0 ? formatNaira(c.bucket0To30) : "—"}</td>
+                          <td className="text-right text-slate-600 dark:text-slate-400">{c.bucket31To60 > 0 ? formatNaira(c.bucket31To60) : "—"}</td>
                           <td className="text-right text-amber-600">{c.bucket61To90 > 0 ? formatNaira(c.bucket61To90) : "—"}</td>
                           <td className="text-right text-red-600 font-medium">{c.bucket90Plus > 0 ? formatNaira(c.bucket90Plus) : "—"}</td>
-                          <td className="text-right text-slate-900 font-semibold">{formatNaira(c.total)}</td>
-                          <td className="text-right text-slate-400">{c.oldestDays}d</td>
+                          <td className="text-right text-slate-900 dark:text-slate-50 font-semibold">{formatNaira(c.total)}</td>
+                          <td className="text-right text-slate-400 dark:text-slate-500">{c.oldestDays}d</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              ) : <p className="text-xs text-slate-400 italic">No outstanding payables.</p>}
+              ) : <p className="text-xs text-slate-400 dark:text-slate-500 italic">No outstanding payables.</p>}
             </>
           ) : <Skeleton className="h-48" />}
         </CardContent>

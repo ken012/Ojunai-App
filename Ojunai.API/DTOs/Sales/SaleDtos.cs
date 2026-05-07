@@ -30,6 +30,7 @@ public class SaleDto
     public string PaymentStatus { get; set; } = string.Empty;
     public string? PaymentMethod { get; set; }
     public string? Notes { get; set; }
+    public Guid? ContactId { get; set; }
     public string? CustomerName { get; set; }
     public string? RecordedByName { get; set; }
     public string? Source { get; set; } = "Manual";
@@ -61,6 +62,7 @@ public class SaleSummaryDto
     public string? PaymentMethod { get; set; }
     public int ItemCount { get; set; }
     public string? ItemSummary { get; set; }
+    public Guid? ContactId { get; set; }
     public string? CustomerName { get; set; }
     public string? RecordedByName { get; set; }
     public string Source { get; set; } = "Manual";

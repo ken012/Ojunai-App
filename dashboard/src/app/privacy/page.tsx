@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       <div className="max-w-3xl mx-auto px-4 py-12">
         <div className="mb-6">
           <Link
@@ -20,12 +20,12 @@ export default function PrivacyPage() {
           </Link>
         </div>
 
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">
+        <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-50 mb-2">
           Privacy Policy
         </h1>
-        <p className="text-sm text-slate-500 mb-8">Last updated: April 2026</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-8">Last updated: April 2026</p>
 
-        <div className="space-y-8 text-slate-700 leading-relaxed">
+        <div className="space-y-8 text-slate-700 dark:text-slate-300 leading-relaxed">
           <p>
             Ojunai (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or
             &ldquo;our&rdquo;) is committed to protecting your privacy. This
@@ -35,7 +35,7 @@ export default function PrivacyPage() {
 
           {/* 1. Information We Collect */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               1. Information We Collect
             </h2>
             <p>We collect the following types of information:</p>
@@ -68,7 +68,7 @@ export default function PrivacyPage() {
 
           {/* 2. How We Use Your Information */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               2. How We Use Your Information
             </h2>
             <p>We use your information to:</p>
@@ -100,7 +100,7 @@ export default function PrivacyPage() {
 
           {/* 3. Payment Data */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               3. Payment Data
             </h2>
             <p>
@@ -117,7 +117,7 @@ export default function PrivacyPage() {
 
           {/* 4. WhatsApp Messages */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               4. WhatsApp Messages
             </h2>
             <p>
@@ -135,7 +135,7 @@ export default function PrivacyPage() {
 
           {/* 5. Data Sharing */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               5. Data Sharing
             </h2>
             <p>
@@ -169,7 +169,7 @@ export default function PrivacyPage() {
 
           {/* 6. Data Retention */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               6. Data Retention
             </h2>
             <p>
@@ -186,7 +186,7 @@ export default function PrivacyPage() {
 
           {/* 7. Security */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               7. Security
             </h2>
             <p>
@@ -218,7 +218,7 @@ export default function PrivacyPage() {
 
           {/* 8. Your Rights */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               8. Your Rights
             </h2>
             <p>
@@ -263,7 +263,7 @@ export default function PrivacyPage() {
 
           {/* 9. Cookies & Analytics */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               9. Cookies &amp; Analytics
             </h2>
             <p>
@@ -280,7 +280,7 @@ export default function PrivacyPage() {
 
           {/* 10. Changes to This Policy */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               10. Changes to This Policy
             </h2>
             <p>
@@ -295,7 +295,7 @@ export default function PrivacyPage() {
 
           {/* 11. Contact */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               11. Contact
             </h2>
             <p>
@@ -312,7 +312,7 @@ export default function PrivacyPage() {
           </section>
         </div>
 
-        <div className="mt-12 pt-8 border-t border-slate-200 text-sm text-slate-500">
+        <div className="mt-12 pt-8 border-t border-slate-200 dark:border-slate-800 text-sm text-slate-500 dark:text-slate-400">
           <p>
             <Link
               href="/terms"

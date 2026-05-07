@@ -15,6 +15,8 @@ public class SalesController : OjunaiBaseController
     private readonly IWhatsAppService _whatsApp;
     private readonly IReceiptService _receipts;
     private readonly IEmailService _email;
+    private readonly IAlertService _alerts;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<SalesController> _logger;
 
     public SalesController(
@@ -23,6 +25,8 @@ public class SalesController : OjunaiBaseController
         IWhatsAppService whatsApp,
         IReceiptService receipts,
         IEmailService email,
+        IAlertService alerts,
+        IServiceScopeFactory scopeFactory,
         ILogger<SalesController> logger)
     {
         _sales = sales;
@@ -30,6 +34,8 @@ public class SalesController : OjunaiBaseController
         _whatsApp = whatsApp;
         _receipts = receipts;
         _email = email;
+        _alerts = alerts;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -40,21 +46,46 @@ public class SalesController : OjunaiBaseController
         var user = await _db.Users.FindAsync(UserId);
         var result = await _sales.CreateAsync(BusinessId, request, "Manual", user?.Id, user?.FullName);
 
-        // Fire alerts (low stock + large sale) — same as WhatsApp flow
-        // Fire alerts in background — don't block the sale response if alerts fail
+        // Fire alerts (low stock + large sale + sales goal hit) — fire in background so a slow
+        // alert never blocks the sale response. Open a fresh DI scope inside the task because
+        // the controller's scoped services (AppDbContext, IAlertService) are disposed once the
+        // request completes.
+        var businessId = BusinessId;
+        var saleAmount = result.TotalAmount;
+        var saleId = result.Id;
         _ = Task.Run(async () =>
         {
-            try { await FireDashboardAlertsAsync(result.TotalAmount); }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to fire dashboard alerts after sale"); }
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var alerts = scope.ServiceProvider.GetRequiredService<IAlertService>();
+                await alerts.EmitPostSaleAlertsAsync(businessId, saleAmount, saleId);
+                // WhatsApp side (existing) — keep firing the WhatsApp messages too
+                var ctrl = scope.ServiceProvider.GetService<Microsoft.Extensions.Logging.ILogger<SalesController>>();
+                await FireWhatsAppAlertsAsync(scope.ServiceProvider, businessId, saleAmount, ctrl);
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to fire post-sale alerts"); }
         });
 
         return CreatedAtAction(nameof(GetById), new { id = result.Id },
             ApiResponse<SaleDto>.Ok(result, "Sale recorded."));
     }
 
-    private async Task FireDashboardAlertsAsync(decimal saleAmount)
+    /// <summary>
+    /// WhatsApp post-sale alerts (low stock + large sale). Extracted to its own static helper
+    /// so the background Task can call it from a fresh DI scope without holding the controller
+    /// instance — see Create() for why.
+    /// </summary>
+    private static async Task FireWhatsAppAlertsAsync(
+        IServiceProvider scopedServices,
+        Guid businessId,
+        decimal saleAmount,
+        Microsoft.Extensions.Logging.ILogger<SalesController>? logger)
     {
-        var business = await _db.Businesses.Include(b => b.Users).FirstOrDefaultAsync(b => b.Id == BusinessId);
+        var db = scopedServices.GetRequiredService<Data.AppDbContext>();
+        var whatsApp = scopedServices.GetRequiredService<IWhatsAppService>();
+
+        var business = await db.Businesses.Include(b => b.Users).FirstOrDefaultAsync(b => b.Id == businessId);
         if (business == null) return;
 
         var owner = business.Users.FirstOrDefault(u => u.Role == Models.UserRole.Owner && u.IsActive);
@@ -62,13 +93,11 @@ public class SalesController : OjunaiBaseController
 
         var alerts = new List<string>();
 
-        // Low stock
         if (business.AlertLowStock)
         {
-            var lowStock = await _db.Products
-                .Where(p => p.BusinessId == BusinessId && p.IsActive && p.CurrentStock <= p.LowStockThreshold)
+            var lowStock = await db.Products
+                .Where(p => p.BusinessId == businessId && p.IsActive && p.CurrentStock <= p.LowStockThreshold)
                 .OrderBy(p => p.CurrentStock).Take(5).ToListAsync();
-
             foreach (var p in lowStock)
             {
                 if (p.CurrentStock <= 0)
@@ -78,7 +107,6 @@ public class SalesController : OjunaiBaseController
             }
         }
 
-        // Large sale
         if (business.AlertLargeSale && business.LargeSaleThreshold > 0 && saleAmount >= business.LargeSaleThreshold)
         {
             var cs = BillingConfig.Symbol(business.Currency);
@@ -87,10 +115,15 @@ public class SalesController : OjunaiBaseController
 
         if (alerts.Count > 0)
         {
-            var msg = $"🔔 *Alerts*\n{string.Join("\n", alerts)}";
-            await _whatsApp.SendMessageAsync($"whatsapp:{owner.PhoneNumber}", msg, BusinessId, owner.Id);
+            try
+            {
+                var msg = $"🔔 *Alerts*\n{string.Join("\n", alerts)}";
+                await whatsApp.SendMessageAsync($"whatsapp:{owner.PhoneNumber}", msg, businessId, owner.Id);
+            }
+            catch (Exception ex) { logger?.LogWarning(ex, "WhatsApp alert send failed"); }
         }
     }
+
 
     [HttpGet]
     [RequirePermission(Permission.ViewOwnReports)]
@@ -163,7 +196,8 @@ public class SalesController : OjunaiBaseController
   </div>
   <p style=""color: #475569; line-height: 1.6;"">The full receipt is attached as a PDF.</p>
   <p style=""color: #94a3b8; font-size: 12px; margin-top: 24px; border-top: 1px solid #e2e8f0; padding-top: 16px;"">
-    Sent by {System.Net.WebUtility.HtmlEncode(business.Name)} via Ojunai.
+    Sent by {System.Net.WebUtility.HtmlEncode(business.Name)} via Ojunai.<br/>
+    Run a business too? <a href=""https://ojunai.com/install"" style=""color: #06b6d4; text-decoration: none;"">Install Ojunai on your phone</a>.
   </p>
 </body>
 </html>";

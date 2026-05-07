@@ -35,6 +35,28 @@ public class Business
     public bool AlertLargeSale { get; set; } = true;
     public bool ConfirmLargeSales { get; set; } = false;
     public decimal ConfirmLargeSaleThreshold { get; set; } = 0;
+
+    // ── Dashboard alert toggles ────────────────────────────────────────────
+    // Mirror of the WhatsApp toggles above but for in-app notifications. Security
+    // and billing alerts (login from new device, payment failed, trial ending,
+    // password changed, account recovery) are always-on and not toggleable —
+    // those are safety/compliance signals.
+    public bool AlertDashboardLowStock { get; set; } = true;
+    public bool AlertDashboardDailySummary { get; set; } = true;
+    public bool AlertDashboardLargeSale { get; set; } = true;
+    public bool AlertDashboardAgedReceivable { get; set; } = true;
+    public bool AlertDashboardStaffChanges { get; set; } = true;
+    /// <summary>
+    /// Daily revenue target. When set, a dashboard alert fires once a day the
+    /// moment cumulative sales cross this number. Null = goal feature off.
+    /// </summary>
+    public decimal? DailySalesGoal { get; set; }
+
+    // ── Custom dashboard background image (Pro + Business plans only) ─────
+    /// <summary>UUID-based filename of the saved background image. Null = no custom background.</summary>
+    public string? BackgroundImageFileName { get; set; }
+    /// <summary>0.0 (image fully visible) → 1.0 (overlay fully opaque, image hidden). Default 0.85 keeps text legible.</summary>
+    public decimal BackgroundImageOpacity { get; set; } = 0.85m;
     // ── Voice AI add-on ──────────────────────────────
     public bool VoiceAIEnabled { get; set; } = false;
     public string VoiceAIPlanStatus { get; set; } = "inactive";

@@ -8,6 +8,9 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordStrengthHint } from "@/components/password-strength-hint";
+import { validatePassword } from "@/lib/password-policy";
+import { normalizePhone } from "@/lib/phone";
 
 type Step = "phone" | "code" | "done";
 
@@ -25,10 +28,16 @@ export default function ForgotPasswordPage() {
   async function handleRequestCode(e: React.FormEvent) {
     e.preventDefault();
     if (!phone.trim()) return;
+    const normalized = normalizePhone(phone);
+    if (!normalized) {
+      setError("Enter a valid phone number (e.g. 08012345678 or +2348012345678).");
+      return;
+    }
+    setPhone(normalized); // reflect normalized value back in the input
     setLoading(true);
     setError(null);
     try {
-      await api.post("/auth/request-reset", { phoneNumber: phone });
+      await api.post("/auth/request-reset", { phoneNumber: normalized });
       setSuccess("Reset code sent to your WhatsApp. Check your messages.");
       setStep("code");
     } catch (err: unknown) {
@@ -45,15 +54,16 @@ export default function ForgotPasswordPage() {
       setError("Passwords don't match.");
       return;
     }
-    if (newPassword.length < 8) {
-      setError("Password must be at least 8 characters.");
+    const pwCheck = validatePassword(newPassword);
+    if (!pwCheck.ok) {
+      setError(pwCheck.reason ?? "Password does not meet requirements.");
       return;
     }
     setLoading(true);
     setError(null);
     try {
       await api.post("/auth/verify-reset", {
-        phoneNumber: phone,
+        phoneNumber: normalizePhone(phone) ?? phone,
         code,
         newPassword,
       });
@@ -67,19 +77,19 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="flex justify-center">
-            <LogoMark size="lg" wordmarkColor="#0F172A" />
+            <LogoMark size="lg" className="text-cyan-700 dark:text-cyan-300" />
           </div>
-          <p className="text-slate-500 mt-4 text-sm">Reset your password</p>
+          <p className="text-slate-500 dark:text-slate-400 mt-4 text-sm">Reset your password</p>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
           {step === "phone" && (
             <form onSubmit={handleRequestCode} className="space-y-4">
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-slate-600 dark:text-slate-400">
                 Enter your phone number and we will send a reset code to your WhatsApp.
               </p>
               <div>
@@ -100,7 +110,7 @@ export default function ForgotPasswordPage() {
           {step === "code" && (
             <form onSubmit={handleVerifyAndReset} className="space-y-4">
               {success && <p className="text-sm text-emerald-600 bg-emerald-50 p-3 rounded-lg">{success}</p>}
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-slate-600 dark:text-slate-400">
                 Enter the 6-digit code sent to your WhatsApp and choose a new password.
               </p>
               <div>
@@ -119,8 +129,9 @@ export default function ForgotPasswordPage() {
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Min 8 characters"
+                  placeholder="Min 10 characters"
                 />
+                <PasswordStrengthHint password={newPassword} />
               </div>
               <div>
                 <Label>Confirm Password</Label>
@@ -147,7 +158,7 @@ export default function ForgotPasswordPage() {
           {step === "done" && (
             <div className="text-center space-y-4">
               <p className="text-lg font-semibold text-emerald-600">Password reset successfully!</p>
-              <p className="text-sm text-slate-500">You can now log in with your new password.</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">You can now log in with your new password.</p>
               <Button onClick={() => router.push("/login")} className="w-full">
                 Go to Login
               </Button>
@@ -155,10 +166,17 @@ export default function ForgotPasswordPage() {
           )}
         </div>
 
-        <p className="text-center text-sm text-slate-500 mt-4">
+        <p className="text-center text-sm text-slate-500 dark:text-slate-400 mt-4">
           Remember your password?{" "}
           <Link href="/login" className="text-cyan-600 font-medium hover:underline">
             Sign in
+          </Link>
+        </p>
+
+        <p className="text-center text-xs text-slate-400 dark:text-slate-500 mt-2">
+          Lost access to your phone?{" "}
+          <Link href="/recover-account" className="text-cyan-600 font-medium hover:underline">
+            Recover via email
           </Link>
         </p>
       </div>

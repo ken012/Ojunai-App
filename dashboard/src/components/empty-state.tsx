@@ -27,16 +27,16 @@ export function EmptyState({
         <div
           className={`${
             compact ? "h-10 w-10" : "h-14 w-14"
-          } rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-3`}
+          } rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500 mb-3`}
         >
           {icon}
         </div>
       )}
-      <p className={`${compact ? "text-sm" : "text-base"} font-semibold text-slate-700`}>
+      <p className={`${compact ? "text-sm" : "text-base"} font-semibold text-slate-700 dark:text-slate-300`}>
         {title}
       </p>
       {description && (
-        <p className="text-xs text-slate-500 mt-1 max-w-sm">{description}</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">{description}</p>
       )}
       {action && <div className="mt-4">{action}</div>}
     </div>

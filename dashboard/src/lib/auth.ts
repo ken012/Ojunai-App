@@ -3,8 +3,26 @@ import type { AuthResponse, UserDto, BusinessDto } from "./types";
 
 const SESSION_TIMEOUT_MS = 12 * 60 * 60 * 1000; // 12 hours
 
+/**
+ * Strip PII before persisting the user to localStorage. Phone number and date
+ * of birth aren't needed for any UI render outside the Settings page (which
+ * fetches them fresh from /auth/me on mount), so they shouldn't sit at rest in
+ * the browser where an XSS would have free access.
+ *
+ * Whitelist approach — anything new added to UserDto stays out of cache by default.
+ */
+function cacheableUser(user: UserDto): Partial<UserDto> {
+  return {
+    id: user.id,
+    fullName: user.fullName,
+    email: user.email,
+    emailVerified: user.emailVerified,
+    role: user.role,
+  };
+}
+
 function storeAuth(auth: AuthResponse) {
-  localStorage.setItem("bp_user", JSON.stringify(auth.user));
+  localStorage.setItem("bp_user", JSON.stringify(cacheableUser(auth.user)));
   localStorage.setItem("bp_business", JSON.stringify(auth.business));
   localStorage.setItem("bp_auth_time", Date.now().toString());
 }
@@ -20,7 +38,17 @@ export function getStoredUser(): UserDto | null {
   if (typeof window === "undefined") return null;
   if (isSessionExpired()) { clearAuth(); return null; }
   const raw = localStorage.getItem("bp_user");
-  return raw ? JSON.parse(raw) : null;
+  if (!raw) return null;
+  const parsed = JSON.parse(raw) as UserDto;
+  // Self-heal legacy cache entries written before the PII-strip policy: if
+  // we find phone/DOB in storage, re-write the cleaned version on read so
+  // existing sessions get scrubbed without waiting for next sync.
+  if (parsed.phoneNumber || parsed.dateOfBirth) {
+    const cleaned = cacheableUser(parsed);
+    localStorage.setItem("bp_user", JSON.stringify(cleaned));
+    return cleaned as UserDto;
+  }
+  return parsed;
 }
 
 export function getStoredBusiness(): BusinessDto | null {
@@ -44,7 +72,7 @@ export async function login(phoneOrEmail: string, password: string): Promise<Aut
   return auth;
 }
 
-export async function register(payload: {
+export type RegisterPayload = {
   fullName: string;
   phoneNumber: string;
   email?: string;
@@ -54,8 +82,98 @@ export async function register(payload: {
   state?: string;
   city?: string;
   dateOfBirth?: string;
-}): Promise<AuthResponse> {
+};
+
+export async function register(payload: RegisterPayload): Promise<AuthResponse> {
   const { data } = await api.post<{ data: AuthResponse }>("/auth/register", payload);
+  const auth = data.data!;
+  storeAuth(auth);
+  return auth;
+}
+
+export async function requestPhoneVerification(
+  phoneNumber: string,
+): Promise<{ phoneNumber: string; expiresAtUtc: string; resendCooldownSeconds: number }> {
+  const { data } = await api.post<{ data: { phoneNumber: string; expiresAtUtc: string; resendCooldownSeconds: number } }>(
+    "/auth/request-phone-verification",
+    { phoneNumber },
+  );
+  return data.data!;
+}
+
+export async function verifyPhoneAndRegister(payload: RegisterPayload & { code: string }): Promise<AuthResponse> {
+  const { data } = await api.post<{ data: AuthResponse }>("/auth/verify-phone-and-register", payload);
+  const auth = data.data!;
+  storeAuth(auth);
+  return auth;
+}
+
+export async function requestEmailVerification(): Promise<{ expiresAtUtc: string }> {
+  const { data } = await api.post<{ data: { expiresAtUtc: string } }>("/auth/request-email-verification", {});
+  return data.data!;
+}
+
+export async function verifyEmail(token: string): Promise<void> {
+  await api.post("/auth/verify-email", { token });
+  // Refresh stored user so EmailVerified flag updates everywhere — UserDto is what powers the banner.
+  if (typeof window !== "undefined" && localStorage.getItem("bp_user")) {
+    try {
+      const { data } = await api.get<{ data: UserDto }>("/auth/me");
+      const me = data.data!;
+      // Cache only the safe subset — same policy as storeAuth.
+      localStorage.setItem("bp_user", JSON.stringify(cacheableUser(me)));
+    } catch {
+      // Best-effort refresh — banner will sync on next page load anyway.
+    }
+  }
+}
+
+// ─── Account recovery (phone-loss) ─────────────────────────────────────────
+
+export interface RecoveryTokenInfo {
+  fullName: string;
+  maskedPhone: string;
+  maskedEmail: string;
+  businessName: string;
+}
+
+export async function requestAccountRecovery(email: string): Promise<void> {
+  await api.post("/auth/request-account-recovery", { email });
+}
+
+export async function inspectRecoveryToken(token: string): Promise<RecoveryTokenInfo> {
+  const { data } = await api.post<{ data: RecoveryTokenInfo }>("/auth/recover-account/info", { token });
+  return data.data!;
+}
+
+export async function recoverAccountResetPassword(token: string, newPassword: string): Promise<AuthResponse> {
+  const { data } = await api.post<{ data: AuthResponse }>("/auth/recover-account/reset-password", { token, newPassword });
+  const auth = data.data!;
+  storeAuth(auth);
+  return auth;
+}
+
+export async function recoverAccountRequestPhoneOtp(
+  token: string,
+  newPhoneNumber: string,
+): Promise<{ phoneNumber: string; expiresAtUtc: string; resendCooldownSeconds: number }> {
+  const { data } = await api.post<{ data: { phoneNumber: string; expiresAtUtc: string; resendCooldownSeconds: number } }>(
+    "/auth/recover-account/request-phone-otp",
+    { token, newPhoneNumber },
+  );
+  return data.data!;
+}
+
+export async function recoverAccountChangePhone(
+  token: string,
+  newPhoneNumber: string,
+  code: string,
+): Promise<AuthResponse> {
+  const { data } = await api.post<{ data: AuthResponse }>("/auth/recover-account/change-phone", {
+    token,
+    newPhoneNumber,
+    code,
+  });
   const auth = data.data!;
   storeAuth(auth);
   return auth;

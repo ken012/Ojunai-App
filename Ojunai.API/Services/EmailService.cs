@@ -20,6 +20,19 @@ public interface IEmailService
 
     /// <summary>True if SMTP credentials are configured (otherwise the endpoint should 503).</summary>
     bool IsConfigured { get; }
+
+    /// <summary>
+    /// Best-effort security notification email. Used for out-of-band alerts on sensitive
+    /// account changes (password changed, phone changed, recovery used, etc.) so a
+    /// compromised-account victim hears about it through a channel the attacker doesn't
+    /// control. Never throws — if email is unconfigured, undeliverable, or the recipient
+    /// has no email, the call quietly no-ops and logs.
+    /// </summary>
+    Task TrySendSecurityNotificationAsync(
+        string? toAddress,
+        string? toName,
+        string action,
+        string detail);
 }
 
 public record EmailAttachment(string Filename, byte[] Content, string ContentType);
@@ -114,5 +127,41 @@ public class SmtpEmailService : IEmailService
     {
         // Lightweight fallback for plain-text version. Not a full HTML→text conversion.
         return System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", " ").Trim();
+    }
+
+    public async Task TrySendSecurityNotificationAsync(string? toAddress, string? toName, string action, string detail)
+    {
+        if (!IsConfigured) return;
+        if (string.IsNullOrWhiteSpace(toAddress)) return;
+
+        var when = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'");
+        var safeAction = System.Net.WebUtility.HtmlEncode(action);
+        var safeDetail = System.Net.WebUtility.HtmlEncode(detail);
+        var safeName = System.Net.WebUtility.HtmlEncode(toName ?? "");
+
+        var html = $@"<!doctype html><html><body style=""font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #0F172A; max-width: 560px; margin: 0 auto; padding: 24px;"">
+  <h2 style=""color: #0F172A;"">Security alert on your Ojunai account</h2>
+  <p>Hi {safeName},</p>
+  <p>The following change was just made to your account:</p>
+  <p style=""background:#F8FAFC; border-left: 3px solid #06B6D4; padding: 12px 16px; margin: 16px 0;"">
+    <strong>{safeAction}</strong><br/>
+    <span style=""color:#475569;"">{safeDetail}</span><br/>
+    <span style=""color:#94A3B8; font-size:12px;"">{when}</span>
+  </p>
+  <p style=""color:#DC2626; font-size: 13px;"">If this wasn't you, contact support immediately. Your account may be compromised.</p>
+  <p style=""color: #64748B; font-size: 12px; margin-top: 32px;"">You're receiving this because Ojunai sends a notification on every sensitive account change. We can't disable these — they're your safety net.</p>
+</body></html>";
+        var plain = $"Security alert on your Ojunai account\n\n{action}\n{detail}\n{when}\n\nIf this wasn't you, contact support immediately.";
+
+        try
+        {
+            await SendAsync(toAddress, toName ?? "", $"Ojunai security alert: {action}", html, plain);
+        }
+        catch (Exception ex)
+        {
+            // Don't surface — caller's primary action already succeeded. We don't want
+            // a flaky SMTP host to roll back a password change.
+            _logger.LogWarning(ex, "Security notification email send failed to {To}", toAddress);
+        }
     }
 }

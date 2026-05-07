@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       <div className="max-w-3xl mx-auto px-4 py-12">
         <div className="mb-6">
           <Link
@@ -20,15 +20,15 @@ export default function TermsPage() {
           </Link>
         </div>
 
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">
+        <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-50 mb-2">
           Terms of Service
         </h1>
-        <p className="text-sm text-slate-500 mb-8">Last updated: April 2026</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-8">Last updated: April 2026</p>
 
-        <div className="space-y-8 text-slate-700 leading-relaxed">
+        <div className="space-y-8 text-slate-700 dark:text-slate-300 leading-relaxed">
           {/* 1. Acceptance of Terms */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               1. Acceptance of Terms
             </h2>
             <p>
@@ -42,7 +42,7 @@ export default function TermsPage() {
 
           {/* 2. Service Description */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               2. Service Description
             </h2>
             <p>
@@ -57,7 +57,7 @@ export default function TermsPage() {
 
           {/* 3. Account Registration */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               3. Account Registration
             </h2>
             <p>
@@ -75,7 +75,7 @@ export default function TermsPage() {
 
           {/* 4. Subscription Plans & Billing */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               4. Subscription Plans &amp; Billing
             </h2>
             <p>
@@ -119,7 +119,7 @@ export default function TermsPage() {
 
           {/* 5. Cancellation Policy */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               5. Cancellation Policy
             </h2>
             <p>
@@ -133,7 +133,7 @@ export default function TermsPage() {
 
           {/* 6. Refund Policy */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               6. Refund Policy
             </h2>
             <p>
@@ -152,7 +152,7 @@ export default function TermsPage() {
 
           {/* 7. Free Trial */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               7. Free Trial
             </h2>
             <p>
@@ -167,7 +167,7 @@ export default function TermsPage() {
 
           {/* 8. Acceptable Use */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               8. Acceptable Use
             </h2>
             <p>You agree not to use Ojunai to:</p>
@@ -201,7 +201,7 @@ export default function TermsPage() {
 
           {/* 9. Data & Privacy */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               9. Data &amp; Privacy
             </h2>
             <p>
@@ -219,7 +219,7 @@ export default function TermsPage() {
 
           {/* 10. Service Modifications */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               10. Service Modifications
             </h2>
             <p>
@@ -235,7 +235,7 @@ export default function TermsPage() {
 
           {/* 11. Limitation of Liability */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               11. Limitation of Liability
             </h2>
             <p>
@@ -258,7 +258,7 @@ export default function TermsPage() {
 
           {/* 12. Governing Law */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               12. Governing Law
             </h2>
             <p>
@@ -272,7 +272,7 @@ export default function TermsPage() {
 
           {/* 13. Contact */}
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-50 mb-3">
               13. Contact
             </h2>
             <p>
@@ -289,7 +289,7 @@ export default function TermsPage() {
           </section>
         </div>
 
-        <div className="mt-12 pt-8 border-t border-slate-200 text-sm text-slate-500">
+        <div className="mt-12 pt-8 border-t border-slate-200 dark:border-slate-800 text-sm text-slate-500 dark:text-slate-400">
           <p>
             <Link
               href="/privacy"

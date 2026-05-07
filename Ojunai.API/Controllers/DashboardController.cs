@@ -44,7 +44,8 @@ public class DashboardController : OjunaiBaseController
     [RequirePermission(Permission.ViewOwnReports)]
     public async Task<ActionResult<ApiResponse<PaginatedActivityResult>>> GetActivityFeed(
         [FromQuery] string? type = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 50,
-        [FromQuery] string? search = null, [FromQuery] string? startDate = null, [FromQuery] string? endDate = null)
+        [FromQuery] string? search = null, [FromQuery] string? startDate = null, [FromQuery] string? endDate = null,
+        [FromQuery] string? source = null)
     {
         // Parse date strings explicitly — HTML date inputs send "2026-04-17" which DateTime? binding
         // sometimes fails to parse. DateOnly handles the yyyy-MM-dd format reliably.
@@ -52,7 +53,7 @@ public class DashboardController : OjunaiBaseController
         if (DateOnly.TryParse(startDate, out var sd)) start = sd.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         if (DateOnly.TryParse(endDate, out var ed)) end = ed.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
 
-        var result = await _reports.GetActivityFeedAsync(BusinessId, type, Math.Max(1, page), Math.Clamp(pageSize, 10, 100), search, start, end);
+        var result = await _reports.GetActivityFeedAsync(BusinessId, type, Math.Max(1, page), Math.Clamp(pageSize, 10, 100), search, start, end, source);
         return Ok(ApiResponse<PaginatedActivityResult>.Ok(result));
     }
 }

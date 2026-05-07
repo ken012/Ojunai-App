@@ -163,16 +163,16 @@ public class ReceiptService : IReceiptService
                             c.RelativeColumn(1.7f); // Total
                         });
 
-                        // Header
+                        // Header — bottom border uses accent for brand presence
                         table.Header(h =>
                         {
-                            h.Cell().BorderBottom(0.5f).BorderColor("#E2E8F0").PaddingBottom(6)
+                            h.Cell().BorderBottom(1f).BorderColor(accent).PaddingBottom(6)
                                 .Text("Item").FontSize(8).Bold().LetterSpacing(1.2f).FontColor("#64748B");
-                            h.Cell().BorderBottom(0.5f).BorderColor("#E2E8F0").PaddingBottom(6).AlignRight()
+                            h.Cell().BorderBottom(1f).BorderColor(accent).PaddingBottom(6).AlignRight()
                                 .Text("QTY").FontSize(8).Bold().LetterSpacing(1.2f).FontColor("#64748B");
-                            h.Cell().BorderBottom(0.5f).BorderColor("#E2E8F0").PaddingBottom(6).AlignRight()
+                            h.Cell().BorderBottom(1f).BorderColor(accent).PaddingBottom(6).AlignRight()
                                 .Text("UNIT").FontSize(8).Bold().LetterSpacing(1.2f).FontColor("#64748B");
-                            h.Cell().BorderBottom(0.5f).BorderColor("#E2E8F0").PaddingBottom(6).AlignRight()
+                            h.Cell().BorderBottom(1f).BorderColor(accent).PaddingBottom(6).AlignRight()
                                 .Text("TOTAL").FontSize(8).Bold().LetterSpacing(1.2f).FontColor("#64748B");
                         });
 
@@ -204,10 +204,10 @@ public class ReceiptService : IReceiptService
                                 r.ConstantItem(110).AlignRight().Text($"{cs}{sale.VatAmount:N2}").FontSize(10).FontColor("#0F172A");
                             });
                         }
-                        t.Item().PaddingTop(8).BorderTop(0.5f).BorderColor("#0F172A").PaddingTop(8).Row(r =>
+                        t.Item().PaddingTop(8).BorderTop(1.5f).BorderColor(accent).PaddingTop(8).Row(r =>
                         {
-                            r.RelativeItem().AlignRight().Text("TOTAL").FontSize(11).Bold().LetterSpacing(0.5f).FontColor("#0F172A");
-                            r.ConstantItem(110).AlignRight().Text($"{cs}{sale.TotalAmount:N2}").FontSize(13).Bold().FontColor("#0F172A");
+                            r.RelativeItem().AlignRight().Text("TOTAL").FontSize(11).Bold().LetterSpacing(0.5f).FontColor(accent);
+                            r.ConstantItem(110).AlignRight().Text($"{cs}{sale.TotalAmount:N2}").FontSize(13).Bold().FontColor(accent);
                         });
                     });
 
@@ -231,7 +231,7 @@ public class ReceiptService : IReceiptService
                     // ── Footer ──
                     col.Item().PaddingTop(28).AlignCenter().Text(footerText)
                         .FontSize(9).Italic().FontColor("#94A3B8");
-                    col.Item().PaddingTop(2).AlignCenter().Text($"Powered by Ojunai · ojunai.com")
+                    col.Item().PaddingTop(2).AlignCenter().Text($"Powered by Ojunai · install on your phone at ojunai.com/install")
                         .FontSize(7).FontColor("#CBD5E1");
                 });
             });

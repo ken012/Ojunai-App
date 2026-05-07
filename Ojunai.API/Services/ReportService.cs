@@ -436,7 +436,7 @@ public partial class ReportService : IReportService
     }
 
     public async Task<PaginatedActivityResult> GetActivityFeedAsync(
-        Guid businessId, string? type, int page, int pageSize, string? search, DateTime? startDate, DateTime? endDate)
+        Guid businessId, string? type, int page, int pageSize, string? search, DateTime? startDate, DateTime? endDate, string? source = null)
     {
         var business = await _db.Businesses.FindAsync(businessId);
         var cs = BillingConfig.Symbol(business?.Currency);
@@ -632,6 +632,15 @@ public partial class ReportService : IReportService
             activities = activities.Where(a => a.CreatedAtUtc >= startDate.Value).ToList();
         if (endDate.HasValue)
             activities = activities.Where(a => a.CreatedAtUtc < endDate.Value.AddDays(1)).ToList();
+
+        // Apply source filter — accepts comma-separated list (e.g. "WhatsApp,Voice").
+        // Used by the Voice AI page to surface AI-recorded actions only.
+        if (!string.IsNullOrWhiteSpace(source))
+        {
+            var allowed = source.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => s.ToLowerInvariant()).ToHashSet();
+            activities = activities.Where(a => a.Source != null && allowed.Contains(a.Source.ToLowerInvariant())).ToList();
+        }
 
         // Apply search filter — searches description, details, contact name, recorded by, ref ID
         if (!string.IsNullOrWhiteSpace(search))

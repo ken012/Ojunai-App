@@ -37,11 +37,25 @@ public class PaystackService
         if (planConfig.PricePerMonth <= 0)
             throw new InvalidOperationException("Invalid plan.");
 
+        // Drive everything from business.BillingCurrency (no literal "NGN").
+        // Paystack only handles NGN today, so the controller routes by currency: NGN → here,
+        // others → Flutterwave. We enforce that contract with a defensive guard — if a non-NGN
+        // business reaches this method, the routing layer is broken.
+        var billingCurrency = business.BillingCurrency ?? business.Currency ?? "NGN";
+        if (BillingConfig.GetProvider(billingCurrency) != BillingConfig.BillingProvider.Paystack)
+        {
+            throw new InvalidOperationException(
+                $"PaystackService received a {billingCurrency} business — that currency routes to a different provider. " +
+                $"This indicates a routing bug in SubscriptionController.");
+        }
+
         // Determine billing cycle and amount from BillingConfig
         var cycle = business.BillingCycle ?? "monthly";
         var isAnnual = cycle.Equals("annual", StringComparison.OrdinalIgnoreCase);
         var billingCycleEnum = isAnnual ? BillingConfig.BillingCycle.Annual : BillingConfig.BillingCycle.Monthly;
-        var amount = BillingConfig.GetPrice(plan, billingCycleEnum, "NGN") ?? planConfig.PricePerMonth;
+        // GetPriceOrThrow surfaces "no price configured" loudly instead of silently falling back to
+        // PricePerMonth (which would be wrong if PricePerMonth and BillingConfig pricing ever diverge).
+        var amount = BillingConfig.GetPriceOrThrow(plan, billingCycleEnum, billingCurrency);
         var interval = isAnnual ? "annually" : "monthly";
 
         // Create or get Paystack plan
@@ -69,7 +83,55 @@ public class PaystackService
             await _db.SaveChangesAsync();
         }
 
-        // Initialize transaction for subscription
+        // Before creating a new transaction, disable any existing active subscriptions on this customer.
+        // Without this, a user upgrading from Starter → Shop → Pro accumulates 3 active subscriptions
+        // on Paystack, all billing concurrently. Idempotent / non-fatal — failures here log + continue.
+        await DisableAllActiveSubscriptionsAsync(customerCode!, business.Name);
+
+        // ── Mid-cycle upgrade pricing (Pattern B Lite) ──
+        // Eligible when: user has an ACTIVE paid plan with future end date AND
+        //                new plan costs more (real upgrade) AND
+        //                we're within the first 3 weeks of the cycle (≥10 days remaining).
+        // In that case, charge ONLY the price delta as a one-time charge. The user keeps
+        // their existing SubscriptionEndsAt. Auto-renew breaks for this cycle — user must
+        // re-subscribe at expiry (we'll surface a banner near expiry in a follow-up).
+        // Annual cycles always go full-price (proration math is rarer + harder there).
+        bool isDeltaUpgrade = false;
+        decimal deltaAmount = 0;
+        if (!isAnnual &&
+            business.SubscriptionStatus?.Equals("active", StringComparison.OrdinalIgnoreCase) == true &&
+            business.SubscriptionEndsAt.HasValue && business.SubscriptionEndsAt.Value > DateTime.UtcNow &&
+            !string.IsNullOrEmpty(business.SubscribedPlan))
+        {
+            var currentPrice = BillingConfig.GetPrice(business.SubscribedPlan!, billingCycleEnum, billingCurrency) ?? 0;
+            var daysRemaining = (business.SubscriptionEndsAt.Value - DateTime.UtcNow).TotalDays;
+            // 30-day cycle, first 3 weeks = ≥10 days remaining
+            if (amount > currentPrice && daysRemaining >= 10)
+            {
+                isDeltaUpgrade = true;
+                deltaAmount = amount - currentPrice;
+            }
+        }
+
+        if (isDeltaUpgrade)
+        {
+            // One-time delta charge. NO `plan` param so Paystack doesn't auto-create a subscription.
+            // The webhook handler reads metadata.mode == "upgrade_delta" and updates the plan
+            // without extending SubscriptionEndsAt.
+            var deltaBody = new
+            {
+                email,
+                amount = (int)(deltaAmount * 100),
+                callback_url = $"{_config["App:DashboardUrl"] ?? "https://app.ojunai.com"}/settings?subscribed=true",
+                metadata = new { businessId = businessId.ToString(), plan, mode = "upgrade_delta" }
+            };
+            var deltaResp = await PostAsync("/transaction/initialize", deltaBody);
+            _logger.LogInformation("Mid-cycle delta upgrade for {Business}: {From} → {To} · ₦{Delta} (kept end date {EndsAt})",
+                business.Name, business.SubscribedPlan, plan, deltaAmount, business.SubscriptionEndsAt);
+            return deltaResp.GetProperty("data").GetProperty("authorization_url").GetString()!;
+        }
+
+        // Full-price flow (new subscriptions, downgrades, last-week-of-cycle upgrades, expired).
         var body = new
         {
             email,
@@ -81,6 +143,92 @@ public class PaystackService
 
         var response = await PostAsync("/transaction/initialize", body);
         return response.GetProperty("data").GetProperty("authorization_url").GetString()!;
+    }
+
+    /// <summary>
+    /// Disables every active Paystack subscription for the given customer code.
+    /// Called before initializing a new subscription transaction so plan changes don't
+    /// stack subs (Starter + Shop + Pro all billing). Errors are logged but non-fatal —
+    /// we still want to proceed with the new transaction even if disable fails.
+    /// </summary>
+    /// <remarks>
+    /// Two-step lookup: the list endpoint (GET /subscription?customer=...) may not return
+    /// `email_token` in older API versions, but `/subscription/:code` always does. So we
+    /// list to find subs, then fetch each by code to get its email_token before disabling.
+    /// </remarks>
+    private async Task DisableAllActiveSubscriptionsAsync(string customerCode, string businessName)
+    {
+        try
+        {
+            // List subs for this customer
+            var listResp = await GetAsync($"/subscription?customer={Uri.EscapeDataString(customerCode)}&perPage=50");
+
+            // Surface what Paystack actually returned so we can diagnose silent failures.
+            var listOk = listResp.TryGetProperty("status", out var stEl) && stEl.ValueKind == JsonValueKind.True;
+            if (!listOk)
+            {
+                var msg = listResp.TryGetProperty("message", out var msgEl) ? msgEl.GetString() : "(no message)";
+                _logger.LogWarning("Paystack list-subscriptions returned not-OK for customer {Customer}: {Message}", customerCode, msg);
+                return;
+            }
+
+            if (!listResp.TryGetProperty("data", out var subs) || subs.ValueKind != JsonValueKind.Array)
+            {
+                _logger.LogInformation("No subscriptions array in Paystack list response for customer {Customer}", customerCode);
+                return;
+            }
+
+            // Collect active subscription codes first (the iteration is over the list response;
+            // fetching each individually below gets the email_token reliably)
+            var activeSubCodes = new List<string>();
+            foreach (var sub in subs.EnumerateArray())
+            {
+                var status = sub.TryGetProperty("status", out var st) ? st.GetString() : null;
+                if (!string.Equals(status, "active", StringComparison.OrdinalIgnoreCase)) continue;
+                var subCode = sub.TryGetProperty("subscription_code", out var sc) ? sc.GetString() : null;
+                if (!string.IsNullOrEmpty(subCode)) activeSubCodes.Add(subCode);
+            }
+
+            _logger.LogInformation("Found {Count} active Paystack sub(s) for {Business} ({Customer}) to disable: {Codes}",
+                activeSubCodes.Count, businessName, customerCode, string.Join(", ", activeSubCodes));
+
+            int disabled = 0;
+            foreach (var subCode in activeSubCodes)
+            {
+                try
+                {
+                    // Fetch the single subscription to guarantee we have email_token
+                    var detail = await GetAsync($"/subscription/{Uri.EscapeDataString(subCode)}");
+                    if (!detail.TryGetProperty("data", out var dt) || dt.ValueKind != JsonValueKind.Object)
+                    {
+                        _logger.LogWarning("Paystack /subscription/{Code} returned no data — skipping disable", subCode);
+                        continue;
+                    }
+
+                    var emailToken = dt.TryGetProperty("email_token", out var et) ? et.GetString() : null;
+                    if (string.IsNullOrEmpty(emailToken))
+                    {
+                        _logger.LogWarning("Paystack sub {Code} has no email_token in detail response — cannot disable", subCode);
+                        continue;
+                    }
+
+                    await PostAsync("/subscription/disable", new { code = subCode, token = emailToken });
+                    disabled++;
+                    _logger.LogInformation("Disabled Paystack sub {Code} for {Business}", subCode, businessName);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to disable Paystack sub {Code} for {Business}", subCode, businessName);
+                }
+            }
+
+            _logger.LogInformation("Disable sweep complete for {Business}: {Disabled}/{Found} subs disabled",
+                businessName, disabled, activeSubCodes.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to enumerate Paystack subs for {Customer} — proceeding with new init", customerCode);
+        }
     }
 
     public async Task<string> InitializeVoiceAIAsync(Guid businessId, string email, decimal amount, string currency, string cycle)
@@ -258,6 +406,16 @@ public class PaystackService
         var business = await _db.Businesses.FirstOrDefaultAsync(b => b.PaystackCustomerCode == customerCode);
         if (business == null) { _logger.LogWarning("No business for customer {Code}", customerCode); return; }
 
+        // Idempotency: if we already stored this subscription code (e.g. created via API call
+        // from HandleChargeSuccess for a delta upgrade), skip the rest. Otherwise this handler
+        // would overwrite the carefully preserved SubscriptionEndsAt with `now + 1 month`.
+        if (!string.IsNullOrEmpty(subscriptionCode) && business.PaystackSubscriptionCode == subscriptionCode)
+        {
+            _logger.LogInformation("subscription.create webhook for already-stored sub {Code} on {Business} — skipping double-handling",
+                subscriptionCode, business.Name);
+            return;
+        }
+
         // Map Paystack plan code to our plan name
         var plan = await MapPlanCodeToName(planCode);
         if (plan == null) { _logger.LogWarning("Unknown plan code {Code}", planCode); return; }
@@ -300,16 +458,46 @@ public class PaystackService
 
     private async Task HandleChargeSuccess(JsonElement data)
     {
-        if (!data.TryGetProperty("metadata", out var meta)) return;
-        if (!meta.TryGetProperty("businessId", out var bizIdEl)) return;
+        // Path 1: metadata-driven (first charge from /transaction/initialize carries our metadata).
+        Business? business = null;
+        string? metaPlan = null;
+        string? product = null;
+        string? metaMode = null;
+        bool hasMeta = data.TryGetProperty("metadata", out var meta) && meta.ValueKind == JsonValueKind.Object;
+        if (hasMeta)
+        {
+            if (meta.TryGetProperty("businessId", out var bizIdEl) &&
+                Guid.TryParse(bizIdEl.GetString(), out var businessId))
+            {
+                business = await _db.Businesses.FindAsync(businessId);
+            }
+            if (meta.TryGetProperty("plan", out var planEl)) metaPlan = planEl.GetString();
+            if (meta.TryGetProperty("product", out var prodEl)) product = prodEl.GetString();
+            if (meta.TryGetProperty("mode", out var modeEl)) metaMode = modeEl.GetString();
+        }
 
-        if (!Guid.TryParse(bizIdEl.GetString(), out var businessId)) return;
+        // Path 2: customer-code fallback (subscription renewals + any charge missing metadata).
+        // Without this, every monthly auto-renewal would silently fail to extend the subscription.
+        if (business == null && data.TryGetProperty("customer", out var custEl) &&
+            custEl.TryGetProperty("customer_code", out var ccEl))
+        {
+            var customerCode = ccEl.GetString();
+            if (!string.IsNullOrEmpty(customerCode))
+            {
+                business = await _db.Businesses.FirstOrDefaultAsync(b => b.PaystackCustomerCode == customerCode);
+            }
+        }
 
-        var business = await _db.Businesses.FindAsync(businessId);
-        if (business == null) return;
+        if (business == null)
+        {
+            // Audit row even on no-match so unmatched payments are visible in BillingEvents
+            // instead of vanishing silently. Helps the same diagnosis we just did.
+            var refStr = data.TryGetProperty("reference", out var rEl) ? rEl.GetString() : null;
+            _logger.LogWarning("Paystack charge.success: no business matched (ref={Ref}, hasMeta={HasMeta})", refStr, hasMeta);
+            return;
+        }
 
         // Voice AI add-on payment
-        var product = meta.TryGetProperty("product", out var prodEl) ? prodEl.GetString() : null;
         if (product == "voice_ai")
         {
             decimal? chargedNaira = data.TryGetProperty("amount", out var vaAmtEl) ? vaAmtEl.GetInt64() / 100m : null;
@@ -333,7 +521,7 @@ public class PaystackService
                 Provider = "paystack",
                 Plan = "voice_ai",
                 Amount = chargedNaira,
-                Currency = "NGN",
+                Currency = business.BillingCurrency ?? business.Currency,
                 PaymentMethod = "card",
                 Status = "success"
             });
@@ -346,17 +534,34 @@ public class PaystackService
             return;
         }
 
-        var plan = meta.TryGetProperty("plan", out var planEl) ? planEl.GetString() : null;
+        // Plan name resolution:
+        //  1. Prefer metadata.plan (first-charge initialization)
+        //  2. Fall back to deriving from data.plan.plan_code (renewal events)
+        //  3. Fall back to current SubscribedPlan (last-resort renewal)
+        var plan = metaPlan;
+        if (string.IsNullOrEmpty(plan) &&
+            data.TryGetProperty("plan", out var planObj) && planObj.ValueKind == JsonValueKind.Object &&
+            planObj.TryGetProperty("plan_code", out var pcEl))
+        {
+            plan = await MapPlanCodeToName(pcEl.GetString());
+        }
+        if (string.IsNullOrEmpty(plan)) plan = business.SubscribedPlan;
+
         if (!string.IsNullOrEmpty(plan))
         {
             // Verify amount matches expected plan price
+            // Mid-cycle delta upgrade: charged amount is intentionally less than full plan price.
+            // Skip the amount-mismatch check, don't extend SubscriptionEndsAt, and disable auto-renew
+            // (no Paystack sub backs this charge — user must re-subscribe at expiry).
+            bool isDeltaUpgrade = string.Equals(metaMode, "upgrade_delta", StringComparison.OrdinalIgnoreCase);
+
             var expectedPrice = PlanLimits.Get(plan).PricePerMonth;
             decimal? chargedNaira = null;
             if (data.TryGetProperty("amount", out var amountEl))
             {
                 var chargedKobo = amountEl.GetInt64();
                 chargedNaira = chargedKobo / 100m;
-                if (Math.Abs(chargedNaira.Value - expectedPrice) > 1)
+                if (!isDeltaUpgrade && Math.Abs(chargedNaira.Value - expectedPrice) > 1)
                 {
                     _logger.LogWarning("Paystack charge amount mismatch for {Business}: charged {cs}{Charged}, expected {cs}{Expected}",
                         business.Name, BillingConfig.Symbol(business.Currency), chargedNaira, BillingConfig.Symbol(business.Currency), expectedPrice);
@@ -381,13 +586,54 @@ public class PaystackService
             business.SubscribedPlan = plan;
             business.PendingPlanChange = null;
             business.PaymentMethod = "card";
-            business.IsAutoRenew = true;
             business.SubscriptionStatus = "active";
             business.TrialEndsAt = null;
-            var baseDate = (business.SubscriptionEndsAt.HasValue && business.SubscriptionEndsAt > DateTime.UtcNow)
-                ? business.SubscriptionEndsAt.Value
-                : DateTime.UtcNow;
-            business.SubscriptionEndsAt = baseDate.AddMonths(1);
+
+            if (isDeltaUpgrade)
+            {
+                // Mid-cycle upgrade — keep existing SubscriptionEndsAt and bridge auto-renew via
+                // a future-dated Paystack subscription that starts charging full price at the
+                // current cycle end. (Scenario A in the redesign brief.)
+                business.IsAutoRenew = true;
+
+                try
+                {
+                    var newPlanPrice = PlanLimits.Get(plan).PricePerMonth;
+                    var bizCycle = business.BillingCycle ?? "monthly";
+                    var bizIsAnnual = bizCycle.Equals("annual", StringComparison.OrdinalIgnoreCase);
+                    var bizInterval = bizIsAnnual ? "annually" : "monthly";
+                    var newPlanCode = await GetOrCreatePlanAsync($"{plan}-{bizCycle}", newPlanPrice, bizInterval);
+                    var startDateIso = business.SubscriptionEndsAt!.Value.ToString("o");
+
+                    var subResp = await PostAsync("/subscription", new
+                    {
+                        customer = business.PaystackCustomerCode,
+                        plan = newPlanCode,
+                        start_date = startDateIso
+                    });
+
+                    var newSubCode = subResp.GetProperty("data").GetProperty("subscription_code").GetString();
+                    business.PaystackSubscriptionCode = newSubCode;
+                    business.PaystackPlanCode = newPlanCode;
+                    _logger.LogInformation("Scheduled future-dated sub {Code} for {Business} starting {Start}",
+                        newSubCode, business.Name, startDateIso);
+                }
+                catch (Exception ex)
+                {
+                    // Fall back to no auto-renew rather than silently leaving the user without coverage.
+                    _logger.LogError(ex, "Failed to schedule future-dated sub for {Business} after delta upgrade — auto-renew NOT active", business.Name);
+                    business.IsAutoRenew = false;
+                }
+            }
+            else
+            {
+                business.IsAutoRenew = true;
+                // Scenario B: full-price flow always anchors EndsAt to now + 1 month.
+                // Earlier behavior used max(EndsAt, now) which gave a small bonus window when
+                // upgrading in the last week of an existing cycle. New rule: pay full price = full
+                // 30 days from this moment, simpler and what users expect.
+                business.SubscriptionEndsAt = DateTime.UtcNow.AddMonths(1);
+            }
 
             // Store customer code if not yet stored
             if (string.IsNullOrEmpty(business.PaystackCustomerCode) && data.TryGetProperty("customer", out var cust))
@@ -398,7 +644,7 @@ public class PaystackService
             _db.BillingEvents.Add(new BillingEvent
             {
                 BusinessId = business.Id,
-                EventType = "payment.success",
+                EventType = isDeltaUpgrade ? "payment.upgrade_delta" : "payment.success",
                 Provider = "paystack",
                 Plan = plan,
                 Amount = chargedNaira,
@@ -409,7 +655,8 @@ public class PaystackService
             });
 
             await _db.SaveChangesAsync();
-            _logger.LogInformation("Payment confirmed: {Business} → {Plan}", business.Name, plan);
+            _logger.LogInformation("{Type} confirmed: {Business} → {Plan} (auto-renew={AutoRenew}, ends={EndsAt})",
+                isDeltaUpgrade ? "Delta upgrade" : "Payment", business.Name, plan, business.IsAutoRenew, business.SubscriptionEndsAt);
         }
     }
 
@@ -667,14 +914,25 @@ public class PaystackService
             if (owner == null) return;
 
             var planLabel = plan[0..1].ToUpper() + plan[1..];
-            var planConfig = PlanLimits.Get(plan);
             var renewDate = business.SubscriptionEndsAt?.ToString("dd MMM yyyy") ?? "in 30 days";
+
+            // Format the price in the user's actual billing currency, not a hardcoded NGN.
+            // Falls back to "your plan price" if the price lookup fails (e.g. unsupported currency).
+            var billingCurrency = business.BillingCurrency ?? business.Currency ?? "NGN";
+            var bcCycle = business.BillingCycle?.Equals("annual", StringComparison.OrdinalIgnoreCase) == true
+                ? BillingConfig.BillingCycle.Annual
+                : BillingConfig.BillingCycle.Monthly;
+            var bcPrice = BillingConfig.GetPrice(plan, bcCycle, billingCurrency);
+            var priceText = bcPrice.HasValue
+                ? BillingConfig.FormatPrice(bcPrice.Value, billingCurrency)
+                : "your plan price";
+            var cycleLabel = bcCycle == BillingConfig.BillingCycle.Annual ? "year" : "month";
 
             var whatsApp = _serviceProvider.GetRequiredService<IWhatsAppService>();
             await whatsApp.SendMessageAsync(
                 $"whatsapp:{owner.PhoneNumber}",
                 $"✅ *Payment successful!*\n\n" +
-                $"Your *{planLabel}* plan is now active at {BillingConfig.FormatPrice(planConfig.PricePerMonth, "NGN")}/month.\n\n" +
+                $"Your *{planLabel}* plan is now active at {priceText}/{cycleLabel}.\n\n" +
                 $"Next renewal: {renewDate}\n\n" +
                 $"Say *my plan* to see your features, or *help* for commands.",
                 business.Id, owner.Id);
