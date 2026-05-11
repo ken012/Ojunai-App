@@ -150,27 +150,9 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
             return;
         }
 
-        // /help or "help" — brief command list.
-        if (text.Equals("/help", StringComparison.OrdinalIgnoreCase) ||
-            text.Equals("help", StringComparison.OrdinalIgnoreCase))
-        {
-            await adapter.SendAsync(message.SenderIdentity, new ReplyComposition
-            {
-                Text =
-                    "*Ojunai on Telegram*\n\n" +
-                    "Right now I'm in setup mode — I can connect you to your dashboard and acknowledge " +
-                    "messages, but full sales/expenses parsing is coming next.\n\n" +
-                    "_Available now:_\n" +
-                    "• /start <token> — link this chat to your dashboard\n" +
-                    "• /help — show this message\n\n" +
-                    "_Coming soon:_\n" +
-                    "• \"I sold 2 of X for Y\" — record a sale\n" +
-                    "• \"I paid 3000 for printing\" — log an expense\n" +
-                    "• \"Mary paid 5000\" — record a debt payment\n" +
-                    "• PDF receipts delivered straight to this chat",
-            }, ct);
-            return;
-        }
+        // "help" and "/help" both flow through to the intent handler now (the short-circuit
+        // dictionary in ClaudeParsingService matches both). Keeping help text in one place over
+        // there makes it easy to keep Telegram, Messenger, and WhatsApp formats coherent.
 
         // Anything else — natural language. Resolve the binding, hand to the intent handler.
         var identity = await _db.ContactIdentities

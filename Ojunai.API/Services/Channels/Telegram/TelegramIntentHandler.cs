@@ -76,6 +76,42 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         _logger = logger;
     }
 
+    // Telegram-specific help text. Uses *bold* and _italic_ markers that Telegram renders via
+    // parse_mode=Markdown. Avoids the "Coming soon" wording of the old Phase 2 stub — every
+    // feature listed here is live as of Phase 3.6. When new intents are added to the bot, the
+    // top-level grouping here is the right place to surface them so users discover them.
+    private const string TelegramHelpText =
+        "*Ojunai on Telegram*\n\n" +
+        "I'm your business assistant. Type naturally and I'll record sales, expenses, and " +
+        "payments, or answer questions about your data.\n\n" +
+        "*Record*\n" +
+        "• \"sold 2 rice for 1500\" — record a sale\n" +
+        "• \"sold 3 rice and 2 beans for 5000\" — multi-item sale\n" +
+        "• \"paid 3000 for printing\" — log an expense\n" +
+        "• \"Mary paid 5000\" — customer payment\n" +
+        "• \"bought 10 rice at 800\" — restock inventory\n\n" +
+        "*Ask*\n" +
+        "• *stock* / *inventory* — current stock levels\n" +
+        "• *low stock* — what's running low\n" +
+        "• *today's sales* — revenue + transaction count\n" +
+        "• *this week* — weekly summary\n" +
+        "• *this month* — month-to-date P&L\n" +
+        "• *today's expenses* — today's expense list\n" +
+        "• *summary* — full daily snapshot\n" +
+        "• *who owes me* — outstanding receivables\n" +
+        "• *who do i owe* — outstanding payables\n" +
+        "• *my plan* — current subscription\n\n" +
+        "*Reports & exports (delivered as PDF documents)*\n" +
+        "• *export sales* — last 30 days as PDF\n" +
+        "• *export inventory* — current stock snapshot\n" +
+        "• *export expenses* — last 30 days\n" +
+        "• *monthly p&l* — profit & loss statement\n\n" +
+        "*Quick tips*\n" +
+        "• When you sell an unknown product, I'll ask if you want to add it — tap Yes/No\n" +
+        "• Sale receipts arrive as PDF documents you can tap to open or forward\n" +
+        "• Corrections work: \"cancel that\", \"add Mary to that\", \"undo\"\n" +
+        "• /start <token> — re-link this chat from the dashboard if needed";
+
     /// <summary>
     /// Intents we route through WhatsApp's dispatcher for full parity (read queries, exports,
     /// plan info, etc.). Excludes channel-specific writes we handle locally (create_sale,
@@ -108,7 +144,8 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         // Telegram document instead of a URL+PIN — the chat is already authenticated by the
         // ContactIdentity binding, so a second-factor PIN buys nothing.
         "show_roles", "show_reports",
-        "help", "greet",
+        // "help" handled locally so the text stays Telegram-tailored (Markdown + native PDF mention).
+        "greet",
         // Writes that don't trigger WhatsApp-side-effect prompts and don't record a Source field
         // — safe to delegate. Source-attribution for the ones that DO write a Source ("WhatsApp"
         // hardcoded in WhatsAppService) is a known limitation, fix in follow-up.
@@ -210,6 +247,10 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
 
             case "get_export_link":
                 await HandleExportAsync(parsed, businessId, message, ct);
+                return;
+
+            case "help":
+                await Reply(message, TelegramHelpText, ct);
                 return;
         }
 
