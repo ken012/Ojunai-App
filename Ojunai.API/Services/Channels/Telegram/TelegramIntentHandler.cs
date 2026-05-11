@@ -41,6 +41,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
     private readonly TelegramAdapter _telegram;
     private readonly IWhatsAppService _whatsappDispatch;
     private readonly IAlertService _alerts;
+    private readonly IPdfExportService _pdfExports;
     private readonly ILogger<TelegramIntentHandler> _logger;
 
     public TelegramIntentHandler(
@@ -56,6 +57,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         TelegramAdapter telegram,
         IWhatsAppService whatsappDispatch,
         IAlertService alerts,
+        IPdfExportService pdfExports,
         ILogger<TelegramIntentHandler> logger)
     {
         _db = db;
@@ -70,6 +72,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         _telegram = telegram;
         _whatsappDispatch = whatsappDispatch;
         _alerts = alerts;
+        _pdfExports = pdfExports;
         _logger = logger;
     }
 
@@ -101,7 +104,9 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         "get_staff_sales", "get_staff_list",
         "get_active_holds",
         "get_my_account", "get_my_plan", "get_plans",
-        "get_export_link",
+        // get_export_link is handled locally (not delegated) so we can ship the PDF as a native
+        // Telegram document instead of a URL+PIN — the chat is already authenticated by the
+        // ContactIdentity binding, so a second-factor PIN buys nothing.
         "show_roles", "show_reports",
         "help", "greet",
         // Writes that don't trigger WhatsApp-side-effect prompts and don't record a Source field
@@ -201,6 +206,10 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
 
             case "record_receivable_payment":
                 await HandlePaymentAsync(parsed, businessId, userId, message, ct);
+                return;
+
+            case "get_export_link":
+                await HandleExportAsync(parsed, businessId, message, ct);
                 return;
         }
 
@@ -647,6 +656,99 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         await Reply(inbound,
             $"✅ Payment recorded\n*{contact.Name}* paid {FormatAmount(amount, businessId)}",
             ct);
+    }
+
+    // ── Intent: get_export_link (PDF delivered as native document) ─────────────
+    //
+    // Telegram bypasses the URL+PIN flow that WhatsApp uses. The chat is already authenticated
+    // by the ContactIdentity binding (we know exactly which user this is) so a second-factor
+    // PIN buys nothing. We generate the PDF inline and push it via TelegramAdapter.SendDocumentAsync
+    // — same machinery as sale receipts. Covers last 30 days for the date-range reports;
+    // inventory ignores the dates because it's a snapshot.
+    private async Task HandleExportAsync(
+        ParsedMessage parsed,
+        Guid businessId,
+        ConversationMessage inbound,
+        CancellationToken ct)
+    {
+        // Same normalization as WhatsAppService.HandleGetExportLink — accept Claude's casing
+        // wobble + common synonyms ("stock" → "inventory", "pnl" → "monthly-pnl").
+        var raw = parsed.BusinessAction.ValueKind == JsonValueKind.Object
+            && parsed.BusinessAction.TryGetProperty("reportType", out var rt)
+            && rt.ValueKind == JsonValueKind.String
+                ? rt.GetString() ?? ""
+                : "";
+
+        var reportType = raw.Trim().ToLowerInvariant() switch
+        {
+            "stock" => "inventory",
+            "pnl" or "profit-and-loss" or "p&l" => "monthly-pnl",
+            "expense" => "expenses",
+            "sale" => "sales",
+            var s => s,
+        };
+
+        if (string.IsNullOrWhiteSpace(reportType))
+        {
+            await Reply(inbound,
+                "*Export your data*\n\n" +
+                "Which report do you want as a PDF?\n" +
+                "• *Sales* — last 30 days\n" +
+                "• *Expenses* — last 30 days\n" +
+                "• *Inventory* — current stock snapshot\n" +
+                "• *Monthly P&L* — profit & loss\n\n" +
+                "Just say which one — e.g. \"export my sales\".",
+                ct);
+            return;
+        }
+
+        var validTypes = new HashSet<string> { "sales", "expenses", "inventory", "monthly-pnl" };
+        if (!validTypes.Contains(reportType))
+        {
+            await Reply(inbound,
+                "I can generate PDFs for sales, expenses, inventory, or monthly P&L. " +
+                "Try \"export sales\" or \"inventory report\".",
+                ct);
+            return;
+        }
+
+        var to = DateOnly.FromDateTime(DateTime.UtcNow);
+        var from = to.AddDays(-30);
+        byte[] pdfBytes;
+        try
+        {
+            pdfBytes = await _pdfExports.GenerateReportPdfAsync(businessId, reportType, from, to);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Telegram PDF export failed for {Report} (business {Business})", reportType, businessId);
+            await Reply(inbound, "Couldn't generate the report just now. Try again in a moment.", ct);
+            return;
+        }
+
+        var label = reportType switch
+        {
+            "sales" => "Sales-Report",
+            "expenses" => "Expenses-Report",
+            "inventory" => "Inventory-Report",
+            "monthly-pnl" => "PnL-Statement",
+            _ => "Report",
+        };
+        var fileName = reportType == "inventory"
+            ? $"Ojunai-{label}-{to:yyyyMMdd}.pdf"
+            : $"Ojunai-{label}-{from:yyyyMMdd}-{to:yyyyMMdd}.pdf";
+
+        var caption = reportType switch
+        {
+            "sales" => $"*Sales Report* · {from:dd MMM} – {to:dd MMM yyyy}",
+            "expenses" => $"*Expenses Report* · {from:dd MMM} – {to:dd MMM yyyy}",
+            "inventory" => $"*Inventory Report* · as of {to:dd MMM yyyy}",
+            "monthly-pnl" => $"*Profit & Loss* · {from:dd MMM} – {to:dd MMM yyyy}",
+            _ => "Report",
+        };
+
+        using var stream = new MemoryStream(pdfBytes);
+        await _telegram.SendDocumentAsync(inbound.SenderIdentity, stream, fileName, caption, ct);
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
