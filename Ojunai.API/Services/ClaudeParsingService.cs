@@ -70,11 +70,29 @@ public class ClaudeParsingService : IClaudeParsingService
 
     private async Task<ParsedMessage> CallModelAsync(string model, string systemPrompt, List<object> messages, int maxTokens)
     {
+        // Send the system prompt as a single content block with cache_control so Anthropic
+        // caches the prefix server-side (5-minute TTL). On a cache hit the input tokens are
+        // charged at 10% of normal rate — for a 4000-token prompt at 1k msgs/day that's
+        // meaningful $$ savings.
+        //
+        // The prompt content (systemPrompt) is BYTE-IDENTICAL to what we used to send as a
+        // plain string. The model receives the same input; only the wire format changes.
+        // If the cache misses (different prompt content), the request behaves identically to
+        // the old single-string form. cache_control is a no-op when the block is below the
+        // minimum cacheable size (1024 tokens) — our prompt is well above that.
         var requestBody = new
         {
             model,
             max_tokens = maxTokens,
-            system = systemPrompt,
+            system = new object[]
+            {
+                new
+                {
+                    type = "text",
+                    text = systemPrompt,
+                    cache_control = new { type = "ephemeral" },
+                },
+            },
             messages
         };
 
@@ -93,12 +111,41 @@ public class ClaudeParsingService : IClaudeParsingService
         var responseJson = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(responseJson);
 
+        // Log cache usage so we can measure savings without bothering you. Fields are present
+        // on every response when cache_control is in the request. Cache hits show up as
+        // cache_read_input_tokens > 0; cache writes (first call after a 5-min idle gap) show
+        // as cache_creation_input_tokens > 0. Both should be near-zero on the first call after
+        // deploy and tilt heavily toward read as steady state settles in.
+        TryLogCacheUsage(doc, model);
+
         var content = doc.RootElement
             .GetProperty("content")[0]
             .GetProperty("text")
             .GetString() ?? string.Empty;
 
         return ParseClaudeResponse(content);
+    }
+
+    private void TryLogCacheUsage(JsonDocument doc, string model)
+    {
+        try
+        {
+            if (!doc.RootElement.TryGetProperty("usage", out var usage)) return;
+
+            int input = usage.TryGetProperty("input_tokens", out var i) ? i.GetInt32() : 0;
+            int output = usage.TryGetProperty("output_tokens", out var o) ? o.GetInt32() : 0;
+            int cacheRead = usage.TryGetProperty("cache_read_input_tokens", out var r) ? r.GetInt32() : 0;
+            int cacheWrite = usage.TryGetProperty("cache_creation_input_tokens", out var w) ? w.GetInt32() : 0;
+
+            _logger.LogInformation(
+                "Claude {Model} tokens — input:{In} cache_read:{Read} cache_write:{Write} output:{Out}",
+                model, input, cacheRead, cacheWrite, output);
+        }
+        catch
+        {
+            // Logging-only path; never let it surface to the caller. Cache fields might be
+            // missing on some response shapes — the parse path below still works regardless.
+        }
     }
 
     private static ParsedMessage ParseClaudeResponse(string content)
