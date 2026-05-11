@@ -35,6 +35,8 @@ export interface UserDto {
   emailVerified?: boolean;
   role: string;
   dateOfBirth?: string;
+  /** Phase 6 — "whatsapp" | "telegram". Drives where outbound alerts/summaries are delivered. */
+  alertChannel?: string;
 }
 
 export interface BusinessDto {

@@ -30,6 +30,21 @@ public class AppDbContext : DbContext
     public DbSet<AccountRecoveryToken> AccountRecoveryTokens => Set<AccountRecoveryToken>();
     public DbSet<Alert> Alerts => Set<Alert>();
 
+    // ── Pricing v2 (Phase 0) — additive, not yet wired into reads/writes ──────
+    public DbSet<Subscription> Subscriptions => Set<Subscription>();
+    public DbSet<BusinessAddOn> BusinessAddOns => Set<BusinessAddOn>();
+    public DbSet<ActionUsage> ActionUsages => Set<ActionUsage>();
+    public DbSet<BusinessOverride> BusinessOverrides => Set<BusinessOverride>();
+
+    // ── Multi-channel messaging (Phase 1 refactor) — additive ─────────────────
+    public DbSet<ContactIdentity> ContactIdentities => Set<ContactIdentity>();
+
+    // ── Channel linking (Phase 2: Telegram, future: Messenger) ────────────────
+    public DbSet<ChannelLinkToken> ChannelLinkTokens => Set<ChannelLinkToken>();
+
+    // ── Telegram pending actions (Phase 2.8: callback flows) ──────────────────
+    public DbSet<PendingTelegramAction> PendingTelegramActions => Set<PendingTelegramAction>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         base.OnModelCreating(mb);
@@ -322,6 +337,104 @@ public class AppDbContext : DbContext
             e.Property(x => x.LinkUrl).HasMaxLength(500);
             e.Property(x => x.MetadataJson).HasMaxLength(4000);
             e.Property(x => x.DedupeKey).HasMaxLength(200);
+        });
+
+        // ── Pricing v2 entity configurations ───────────────────────────────────
+        // All four are additive in Phase 0 — no reads/writes yet. Indices match the
+        // expected v1 access patterns in Phase 1+ so we don't pay for re-indexing later.
+
+        mb.Entity<Subscription>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ProductLine).HasConversion<int>();
+            e.Property(x => x.Tier).HasMaxLength(40).IsRequired();
+            e.Property(x => x.Status).HasMaxLength(20).IsRequired();
+            e.Property(x => x.BillingCycle).HasMaxLength(10);
+            e.Property(x => x.BillingCurrency).HasMaxLength(10);
+            e.Property(x => x.Provider).HasMaxLength(40);
+            e.Property(x => x.ProviderSubscriptionId).HasMaxLength(200);
+
+            // Look up "active subscription for business + product line" frequently.
+            e.HasIndex(x => new { x.BusinessId, x.ProductLine, x.Status });
+            // Webhook / reconciliation joins on provider IDs.
+            e.HasIndex(x => x.ProviderSubscriptionId);
+        });
+
+        mb.Entity<BusinessAddOn>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.AddOnCode).HasMaxLength(60).IsRequired();
+            e.Property(x => x.Status).HasMaxLength(20).IsRequired();
+            e.Property(x => x.BilledCurrency).HasMaxLength(10);
+
+            // "Find active add-ons for this business" is the hot path for gating.
+            e.HasIndex(x => new { x.BusinessId, x.Status });
+            // Per-business uniqueness for non-stackable add-ons is enforced in code (the
+            // catalog defines stackable=false), not at the DB level — Quantity is part of
+            // the row and active rows can legitimately repeat for stackable codes.
+        });
+
+        mb.Entity<ActionUsage>(e =>
+        {
+            // Composite primary key: a business has one row per (product_line, period_start).
+            // INSERT ... ON CONFLICT (BusinessId, ProductLine, PeriodStartUtc) DO UPDATE
+            // bumps Count atomically.
+            e.HasKey(x => new { x.BusinessId, x.ProductLine, x.PeriodStartUtc });
+            e.Property(x => x.ProductLine).HasConversion<int>();
+        });
+
+        mb.Entity<BusinessOverride>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.OverrideType).HasMaxLength(40).IsRequired();
+            e.Property(x => x.LegacyTier).HasMaxLength(40);
+            e.Property(x => x.LegacyPriceCurrency).HasMaxLength(10);
+            e.Property(x => x.ReasonNote).HasMaxLength(500);
+
+            // Lookup "active overrides for this business right now" is the hot path.
+            e.HasIndex(x => new { x.BusinessId, x.OverrideType });
+            e.HasIndex(x => x.ExpiresAtUtc);
+        });
+
+        mb.Entity<ContactIdentity>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Channel).HasConversion<int>();
+            e.Property(x => x.ChannelIdentityValue).HasMaxLength(120).IsRequired();
+            e.Property(x => x.DisplayName).HasMaxLength(200);
+
+            // Globally unique per (channel, handle) — no two users can share the same phone/chat_id/PSID.
+            e.HasIndex(x => new { x.Channel, x.ChannelIdentityValue }).IsUnique();
+            // Lookup "all identities for this user" hits this; not unique because a user can have
+            // multiple identities of the same channel (work + personal WhatsApp, multi-Page Messenger, etc.).
+            e.HasIndex(x => x.UserId);
+            e.HasIndex(x => x.BusinessId);
+        });
+
+        mb.Entity<ChannelLinkToken>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Channel).HasConversion<int>();
+            e.Property(x => x.Token).HasMaxLength(80).IsRequired();
+            e.Property(x => x.BoundToIdentity).HasMaxLength(120);
+
+            // Lookup "find unconsumed token by value" — hot path for /start flow.
+            e.HasIndex(x => x.Token).IsUnique();
+            // For cleanup jobs that purge old tokens.
+            e.HasIndex(x => x.ExpiresAtUtc);
+        });
+
+        mb.Entity<PendingTelegramAction>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ChatId).HasMaxLength(64).IsRequired();
+            e.Property(x => x.Token).HasMaxLength(32).IsRequired();
+            e.Property(x => x.ActionType).HasMaxLength(40).IsRequired();
+            e.Property(x => x.PayloadJson).HasColumnType("jsonb");
+
+            // Lookup by token is the hot path on callback resume.
+            e.HasIndex(x => x.Token).IsUnique();
+            e.HasIndex(x => x.ExpiresAtUtc);
         });
     }
 }

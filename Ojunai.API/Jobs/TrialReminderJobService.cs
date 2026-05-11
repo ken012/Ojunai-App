@@ -1,6 +1,8 @@
 using Ojunai.API.Common;
 using Ojunai.API.Data;
 using Ojunai.API.Models;
+using Ojunai.API.Models.Messaging;
+using Ojunai.API.Services.Channels;
 using Ojunai.API.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,12 +12,14 @@ public class TrialReminderJobService
 {
     private readonly AppDbContext _db;
     private readonly IWhatsAppService _whatsApp;
+    private readonly INotificationDispatcher _dispatcher;
     private readonly ILogger<TrialReminderJobService> _logger;
 
-    public TrialReminderJobService(AppDbContext db, IWhatsAppService whatsApp, ILogger<TrialReminderJobService> logger)
+    public TrialReminderJobService(AppDbContext db, IWhatsAppService whatsApp, INotificationDispatcher dispatcher, ILogger<TrialReminderJobService> logger)
     {
         _db = db;
         _whatsApp = whatsApp;
+        _dispatcher = dispatcher;
         _logger = logger;
     }
 
@@ -89,7 +93,8 @@ public class TrialReminderJobService
                     });
                     await _db.SaveChangesAsync();
 
-                    await _whatsApp.SendMessageAsync($"whatsapp:{owner.PhoneNumber}", message, biz.Id, owner.Id);
+                    // Phase 6 — channel-aware delivery (Telegram or WhatsApp per User.AlertChannel).
+                    await _dispatcher.SendToUserAsync(owner.Id, new ReplyComposition { Text = message });
                     _logger.LogInformation("Sent trial reminder ({DaysLeft}d) to {Business} on {Plan} plan", daysLeft, biz.Name, biz.Plan);
                 }
             }

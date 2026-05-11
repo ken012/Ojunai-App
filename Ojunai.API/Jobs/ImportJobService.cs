@@ -32,6 +32,7 @@ public class ImportJobService
     private readonly IExpenseService _expenses;
     private readonly IInventoryService _inventory;
     private readonly IWhatsAppService _whatsApp;
+    private readonly Ojunai.API.Services.Channels.INotificationDispatcher _dispatcher;
     private readonly ILogger<ImportJobService> _logger;
 
     // Flush progress + SaveChanges every N rows. 200 is a compromise between progress granularity and DB load.
@@ -57,6 +58,7 @@ public class ImportJobService
         IExpenseService expenses,
         IInventoryService inventory,
         IWhatsAppService whatsApp,
+        Ojunai.API.Services.Channels.INotificationDispatcher dispatcher,
         ILogger<ImportJobService> logger)
     {
         _db = db;
@@ -65,6 +67,7 @@ public class ImportJobService
         _expenses = expenses;
         _inventory = inventory;
         _whatsApp = whatsApp;
+        _dispatcher = dispatcher;
         _logger = logger;
     }
 
@@ -846,7 +849,8 @@ public class ImportJobService
                       $"📊 Total rows: {job.TotalRows}\n\n" +
                       $"View details: app.ojunai.com/import";
 
-            await _whatsApp.SendMessageAsync($"whatsapp:{owner.PhoneNumber}", msg, job.BusinessId, owner.Id);
+            // Phase 6 — channel-aware delivery (Telegram or WhatsApp per User.AlertChannel).
+            await _dispatcher.SendToUserAsync(owner.Id, new Ojunai.API.Models.Messaging.ReplyComposition { Text = msg });
         }
         catch (Exception ex)
         {

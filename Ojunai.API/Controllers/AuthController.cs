@@ -66,7 +66,7 @@ public class AuthController : OjunaiBaseController
     [HttpPost("logout")]
     public IActionResult Logout()
     {
-        Response.Cookies.Append("bp_auth", "", new CookieOptions
+        Response.Cookies.Append("oj_auth", "", new CookieOptions
         {
             HttpOnly = true,
             Secure = true,
@@ -79,7 +79,7 @@ public class AuthController : OjunaiBaseController
 
     private void SetAuthCookie(string token, DateTime expiresAt)
     {
-        Response.Cookies.Append("bp_auth", token, new CookieOptions
+        Response.Cookies.Append("oj_auth", token, new CookieOptions
         {
             HttpOnly = true,
             Secure = true,
@@ -104,6 +104,27 @@ public class AuthController : OjunaiBaseController
         user.DateOfBirth = request.DateOfBirth;
         await _db.SaveChangesAsync();
         return Ok(ApiResponse<object>.Ok(null!, "Date of birth updated."));
+    }
+
+    /// <summary>
+    /// Sets which messaging channel the user's outbound alerts/summaries should land on. WhatsApp,
+    /// Telegram, and Messenger are all live as of Phase 3e. The dispatcher falls back to WhatsApp
+    /// if the chosen channel isn't actually bound — so this is a preference, not a hard constraint.
+    /// </summary>
+    [HttpPut("alert-channel")]
+    public async Task<ActionResult<ApiResponse<object>>> UpdateAlertChannel([FromBody] UpdateAlertChannelRequest request)
+    {
+        var allowed = new[] { "whatsapp", "telegram", "messenger" };
+        var normalized = (request.Channel ?? "whatsapp").Trim().ToLowerInvariant();
+
+        if (!allowed.Contains(normalized))
+            throw new InvalidOperationException($"Unsupported alert channel '{request.Channel}'.");
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == UserId && u.IsActive)
+            ?? throw new KeyNotFoundException("User not found.");
+        user.AlertChannel = normalized;
+        await _db.SaveChangesAsync();
+        return Ok(ApiResponse<object>.Ok(null!, $"Alert delivery channel set to {normalized}."));
     }
 
     /// <summary>
@@ -376,6 +397,12 @@ public class ChangePasswordRequest
 public class UpdateDobRequest
 {
     public DateOnly DateOfBirth { get; set; }
+}
+
+public class UpdateAlertChannelRequest
+{
+    /// <summary>"whatsapp" | "telegram". Other values throw 400.</summary>
+    public string? Channel { get; set; }
 }
 
 public class UpdateEmailRequest

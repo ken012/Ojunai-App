@@ -62,7 +62,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     return Task.CompletedTask;
 
                 if (string.IsNullOrEmpty(context.Token)
-                    && context.Request.Cookies.TryGetValue("bp_auth", out var cookieToken)
+                    && context.Request.Cookies.TryGetValue("oj_auth", out var cookieToken)
                     && !string.IsNullOrEmpty(cookieToken))
                 {
                     context.Token = cookieToken;
@@ -129,6 +129,25 @@ builder.Services.AddScoped<IReceiptService, ReceiptService>();
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
 builder.Services.AddScoped<IClaudeParsingService, ClaudeParsingService>();
+builder.Services.AddScoped<IEntityResolverService, EntityResolverService>();
+
+// ── Phase-1 channel abstraction ────────────────────────────────────────────────
+// Adapters are registered as IChannelAdapter; ChannelRegistry collects them all by
+// IEnumerable<IChannelAdapter> at construction. Adding a new channel is one new adapter
+// + one DI line here.
+builder.Services.AddScoped<Ojunai.API.Services.Channels.IChannelAdapter, Ojunai.API.Services.Channels.TwilioWhatsAppAdapter>();
+builder.Services.AddScoped<Ojunai.API.Services.Channels.IChannelAdapter, Ojunai.API.Services.Channels.Telegram.TelegramAdapter>();
+builder.Services.AddScoped<Ojunai.API.Services.Channels.IChannelAdapter, Ojunai.API.Services.Channels.Messenger.MessengerAdapter>();
+builder.Services.AddScoped<Ojunai.API.Services.Channels.Telegram.TelegramAdapter>(); // For direct injection (PDF send extension)
+builder.Services.AddScoped<Ojunai.API.Services.Channels.Messenger.MessengerAdapter>(); // For direct injection by MessengerIntentHandler
+builder.Services.AddScoped<Ojunai.API.Services.Channels.IChannelRegistry, Ojunai.API.Services.Channels.ChannelRegistry>();
+builder.Services.AddScoped<Ojunai.API.Services.Channels.IChannelLinkingService, Ojunai.API.Services.Channels.ChannelLinkingService>();
+builder.Services.AddScoped<Ojunai.API.Services.Channels.IChatQueryService, Ojunai.API.Services.Channels.ChatQueryService>();
+builder.Services.AddScoped<Ojunai.API.Services.Channels.INotificationDispatcher, Ojunai.API.Services.Channels.NotificationDispatcher>();
+builder.Services.AddScoped<Ojunai.API.Services.Channels.Telegram.IPendingTelegramActionService, Ojunai.API.Services.Channels.Telegram.PendingTelegramActionService>();
+builder.Services.AddScoped<Ojunai.API.Services.Channels.Telegram.ITelegramIntentHandler, Ojunai.API.Services.Channels.Telegram.TelegramIntentHandler>();
+builder.Services.AddScoped<Ojunai.API.Services.Channels.Messenger.IMessengerIntentHandler, Ojunai.API.Services.Channels.Messenger.MessengerIntentHandler>();
+builder.Services.AddScoped<Ojunai.API.Services.Channels.IConversationOrchestrator, Ojunai.API.Services.Channels.ConversationOrchestrator>();
 builder.Services.AddScoped<OnboardingService>();
 builder.Services.AddScoped<SummaryJobService>();
 builder.Services.AddScoped<TrialReminderJobService>();
@@ -299,6 +318,12 @@ app.Use(async (context, next) =>
     context.Request.EnableBuffering();
     await next();
 });
+
+// Routing must run before our middleware so it can inspect endpoint metadata
+// (e.g. [AllowAnonymous]) — without this, the middleware can't tell which
+// requests are recovery endpoints (login, password reset) and ends up blocking
+// users who are trying to log in with a stale cookie.
+app.UseRouting();
 
 app.UseAuthentication();
 app.UseMiddleware<ActiveUserMiddleware>();

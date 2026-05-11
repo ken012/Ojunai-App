@@ -70,6 +70,13 @@ public class Business
     public bool IsActive { get; set; } = true;
     public string AccountNumber { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Per-business kill switch for the new pricing/gating engine. Phase 0 lands schema; Phase 1+ flips
+    /// this on per business so we can roll out safely. When false, all reads and gating still go through
+    /// the legacy <c>PlanLimits</c>/<c>Business.Plan</c> path.
+    /// </summary>
+    public bool PricingV2Enabled { get; set; } = false;
+
     // ── Receipts ─────────────────────────────────────
     public string? Address { get; set; }                       // Single-line business address printed on receipts
     public string? ReceiptPrefix { get; set; }                 // Auto-derived from Name on first generation, e.g. "GD" for "Glow Daddy"

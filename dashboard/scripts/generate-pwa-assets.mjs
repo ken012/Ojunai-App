@@ -20,41 +20,50 @@ const BG = { r: 0x0b, g: 0x0b, b: 0x1f, alpha: 1 };
 await mkdir(ICONS_OUT, { recursive: true });
 await mkdir(SPLASH_OUT, { recursive: true });
 
-// Home-screen icon — composite the real brand logo (public/brand/icon-1024.png)
-// onto a white canvas at the given scale. White bg matches the App Store norm
-// (Excalidraw, Notion, Slack) and lets the brand's dark rounded shell pop. The
-// brand logo IS the icon — no SVG recreation, no synthetic eye. The platform
-// rounds the outer corners (iOS) or applies its launcher mask (Android), so we
-// keep the brand at 90% of the canvas with a small white border for breathing
-// room. For Android maskable variants we drop to 78% so the brand stays inside
-// the central 80% safe zone after the launcher mask cuts the corners off.
-const WHITE = { r: 255, g: 255, b: 255, alpha: 1 };
+// Detect the brand's tight bounding box using the alpha channel (the source
+// has fully-transparent corners around the rounded shell). Computed once.
+async function findBrandBboxAlpha() {
+  const { data, info } = await sharp(SOURCE).raw().toBuffer({ resolveWithObject: true });
+  let minX = info.width, maxX = 0, minY = info.height, maxY = 0;
+  for (let y = 0; y < info.height; y++) {
+    for (let x = 0; x < info.width; x++) {
+      const a = data[(y * info.width + x) * info.channels + 3];
+      if (a > 50) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  return { left: minX, top: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
+}
+const BRAND_BBOX = await findBrandBboxAlpha();
 
-async function compositeBrandOnWhite(canvasSize, brandScale) {
+// Home-screen icon — crop the source to its tight content bbox so the brand
+// fills the full canvas, then composite on dark. The brand's transparent
+// rounded corners let the dark canvas show through, so iOS's outer rounding
+// blends seamlessly with the brand's own rounded shape.
+async function compositeBrand(canvasSize, brandScale) {
   const brandPx = Math.round(canvasSize * brandScale);
   const offset = Math.round((canvasSize - brandPx) / 2);
-  // Use the highest-quality source, downscale with Lanczos3 for crispness, then
-  // sharpen and lift saturation slightly so the brand reads sharp at home-icon
-  // sizes. These are pure image-processing tweaks — the design is untouched.
   const brandBuf = await sharp(SOURCE)
-    .resize(brandPx, brandPx, { kernel: sharp.kernel.lanczos3 })
-    .modulate({ saturation: 1.08 })
-    .sharpen({ sigma: 0.6 })
+    .extract(BRAND_BBOX)
+    .resize(brandPx, brandPx, { kernel: sharp.kernel.lanczos3, fit: "cover", position: "center" })
+    .modulate({ saturation: 1.05 })
+    .sharpen({ sigma: 0.5 })
     .png({ compressionLevel: 9 })
     .toBuffer();
-  return sharp({ create: { width: canvasSize, height: canvasSize, channels: 4, background: WHITE } })
+  return sharp({ create: { width: canvasSize, height: canvasSize, channels: 4, background: BG } })
     .composite([{ input: brandBuf, top: offset, left: offset }])
     .png({ compressionLevel: 9 });
 }
 
 async function makeMaskable(size) {
-  // 0.86: brand fills enough of the canvas that the icon doesn't read as
-  // padded, while keeping the eye glyph (the part that absolutely cannot be
-  // clipped) safely inside Android's 80% maskable safe zone. The brand's own
-  // rounded corners may be nibbled by tight launcher masks (squircle/circle)
-  // but that just blends with the platform shape — the rim curve and the eye
-  // both stay visible.
-  await (await compositeBrandOnWhite(size, 0.86))
+  // Scale 1.0: brand fills the canvas. Since the canvas is the same dark color
+  // as the brand's interior, Android's launcher mask just cuts dark — the eye
+  // and rim are both well inside the 80% safe zone.
+  await (await compositeBrand(size, 1.0))
     .toFile(path.join(ICONS_OUT, `icon-maskable-${size}.png`));
 }
 
@@ -76,8 +85,10 @@ const SPLASH_SIZES = [
 ];
 
 async function makeSplash({ w, h }) {
+  // Reuse compositeBrand to get the masked, dark-canvas brand at the splash's
+  // icon size, then place that on a full-size dark splash canvas.
   const iconSize = Math.round(Math.min(w, h) * 0.28);
-  const iconBuf = await sharp(SOURCE).resize(iconSize, iconSize).png().toBuffer();
+  const iconBuf = await (await compositeBrand(iconSize, 1.0)).toBuffer();
   const top = Math.round((h - iconSize) / 2);
   const left = Math.round((w - iconSize) / 2);
   await sharp({ create: { width: w, height: h, channels: 4, background: BG } })
@@ -86,13 +97,28 @@ async function makeSplash({ w, h }) {
     .toFile(path.join(SPLASH_OUT, `splash-${w}x${h}.png`));
 }
 
-// apple-touch-icon: iOS home-screen icon after Add-to-Home-Screen. iOS only
-// rounds the outer corners — there's no aggressive cropping — so the brand
-// sits at 0.97 of the canvas. The 3% white margin is just enough that iOS's
-// corner radius doesn't bite into the brand's own rounded rim.
+// apple-touch-icon: iOS home-screen icon. Dark canvas matches the brand
+// interior, so the brand at scale 1.0 fills naturally — no margin, no frame.
 async function makeAppleTouchIcon() {
-  await (await compositeBrandOnWhite(180, 0.97))
+  await (await compositeBrand(180, 1.0))
     .toFile(path.join(PUBLIC, "apple-touch-icon.png"));
+}
+
+// Regenerate all sized brand variants used elsewhere (LogoMark in the dashboard
+// sidebar, login page, etc.) from the canonical 1024 source so a single brand
+// change cascades everywhere. Each variant is the brand resized with Lanczos3
+// for crispness; transparent corners are preserved (no white fill) so the
+// LogoMark blends with whatever surface it sits on.
+const BRAND_SIZES = [16, 32, 64, 96, 128, 192, 256, 512];
+async function regenerateBrandVariants() {
+  await Promise.all(
+    BRAND_SIZES.map((size) =>
+      sharp(SOURCE)
+        .resize(size, size, { kernel: sharp.kernel.lanczos3, fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        .png({ compressionLevel: 9 })
+        .toFile(path.join(PUBLIC, `brand/icon-${size}.png`))
+    )
+  );
 }
 
 // Browser-tab favicons. Source PNGs from the brand pack at the right sizes
@@ -104,11 +130,69 @@ async function copyFavicons() {
   ]);
 }
 
+// favicon.ico — a single 32×32 PNG embedded in an ICO container. Modern
+// browsers (Vista+) accept PNG-format ICOs. Hand-written ICO header so we
+// don't need a separate npm dep.
+async function makeFaviconIco() {
+  const png = await sharp(path.join(PUBLIC, "brand/icon-32.png"))
+    .resize(32, 32, { kernel: sharp.kernel.lanczos3 })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(0, 0);              // reserved
+  header.writeUInt16LE(1, 2);              // type: 1 = ICO
+  header.writeUInt16LE(1, 4);              // image count
+  const entry = Buffer.alloc(16);
+  entry.writeUInt8(32, 0);                 // width
+  entry.writeUInt8(32, 1);                 // height
+  entry.writeUInt8(0, 2);                  // color count (0 for true color)
+  entry.writeUInt8(0, 3);                  // reserved
+  entry.writeUInt16LE(1, 4);               // color planes
+  entry.writeUInt16LE(32, 6);              // bits per pixel
+  entry.writeUInt32LE(png.length, 8);      // PNG data size
+  entry.writeUInt32LE(22, 12);             // PNG data offset (6 + 16 = 22)
+  await import("node:fs/promises").then((fs) =>
+    fs.writeFile(path.join(PUBLIC, "favicon.ico"), Buffer.concat([header, entry, png]))
+  );
+}
+
+// og-image.png — 1200×630 social-share card. Dark brand canvas + the icon +
+// "Ojunai" wordmark + tagline. Used by Open Graph / Twitter Card meta tags
+// when ojunai.com is shared.
+async function makeOgImage() {
+  const W = 1200, H = 630;
+  const ICON_SIZE = 200;
+  const iconBuf = await sharp(SOURCE)
+    .resize(ICON_SIZE, ICON_SIZE, { kernel: sharp.kernel.lanczos3 })
+    .png()
+    .toBuffer();
+  const svg = Buffer.from(`<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="${W}" y2="${H}" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#0B0B1F"/>
+    </linearGradient>
+  </defs>
+  <rect width="${W}" height="${H}" fill="url(#bg)"/>
+  <text x="${W / 2}" y="460" font-family="-apple-system, system-ui, sans-serif" font-size="80" font-weight="700" fill="#FFFFFF" text-anchor="middle">Ojunai</text>
+  <text x="${W / 2}" y="510" font-family="-apple-system, system-ui, sans-serif" font-size="28" font-weight="400" fill="#94A3B8" text-anchor="middle">The eye that never blinks.</text>
+</svg>`);
+  await sharp(svg)
+    .composite([{ input: iconBuf, top: 130, left: Math.round((W - ICON_SIZE) / 2) }])
+    .png({ compressionLevel: 9 })
+    .toFile(path.join(PUBLIC, "og-image.png"));
+}
+
+// Brand variants must regenerate first because copyFavicons() reads from them.
+await regenerateBrandVariants();
+
 await Promise.all([
   makeMaskable(192),
   makeMaskable(512),
   makeAppleTouchIcon(),
   copyFavicons(),
+  makeFaviconIco(),
+  makeOgImage(),
   ...SPLASH_SIZES.map(makeSplash),
 ]);
 

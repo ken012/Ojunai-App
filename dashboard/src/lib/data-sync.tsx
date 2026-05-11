@@ -28,7 +28,7 @@ export function DataSyncProvider({ children }: { children: React.ReactNode }) {
     ]).then(([bizRes, userRes]) => {
       if (bizRes.data.data) {
         setBusiness(bizRes.data.data);
-        localStorage.setItem("bp_business", JSON.stringify(bizRes.data.data));
+        localStorage.setItem("oj_business", JSON.stringify(bizRes.data.data));
       }
       if (userRes.data.data) {
         // Keep the FULL user (with phone + DOB) in memory so Settings can render
@@ -43,7 +43,7 @@ export function DataSyncProvider({ children }: { children: React.ReactNode }) {
           emailVerified: fullUser.emailVerified,
           role: fullUser.role,
         };
-        localStorage.setItem("bp_user", JSON.stringify(safe));
+        localStorage.setItem("oj_user", JSON.stringify(safe));
       }
     }).catch(() => {});
   }, []);
@@ -73,7 +73,7 @@ export function useUpdateBusiness() {
   const ctx = useContext(DataSyncContext);
   return (updated: BusinessDto) => {
     (ctx as unknown as { business: BusinessDto | null }).business = updated;
-    localStorage.setItem("bp_business", JSON.stringify(updated));
+    localStorage.setItem("oj_business", JSON.stringify(updated));
     ctx.refresh();
   };
 }

@@ -134,7 +134,7 @@ export function toBillingCurrency(currency: string | undefined): SupportedCurren
 export function getDefaultCurrency(): SupportedCurrency {
   if (typeof window === "undefined") return "NGN";
   try {
-    const raw = localStorage.getItem("bp_business");
+    const raw = localStorage.getItem("oj_business");
     if (raw) {
       const biz = JSON.parse(raw);
       return toBillingCurrency(biz.currency);

@@ -21,6 +21,9 @@ const withPWA = withPWAInit({
   cacheOnFrontEndNav: true,
   aggressiveFrontEndNavCaching: true,
   reloadOnOnline: true,
+  // Don't precache the historical logo backups — they're old design and just
+  // bloat the SW download for no user benefit.
+  buildExcludes: [/^_logo-backup\//, /_logo-backup\//],
   workboxOptions: {
     disableDevLogs: true,
     runtimeCaching: [

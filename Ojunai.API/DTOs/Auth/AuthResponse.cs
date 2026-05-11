@@ -18,6 +18,8 @@ public class UserDto
     public bool EmailVerified { get; set; }
     public string Role { get; set; } = string.Empty;
     public DateOnly? DateOfBirth { get; set; }
+    /// <summary>Phase 6 — "whatsapp" or "telegram". Drives where outbound alerts/summaries go.</summary>
+    public string AlertChannel { get; set; } = "whatsapp";
 }
 
 public class BusinessDto

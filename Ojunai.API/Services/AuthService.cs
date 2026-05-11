@@ -183,7 +183,8 @@ public class AuthService : IAuthService
             Email = user.Email,
             EmailVerified = user.EmailVerified,
             Role = user.Role.ToString(),
-            DateOfBirth = user.DateOfBirth
+            DateOfBirth = user.DateOfBirth,
+            AlertChannel = user.AlertChannel,
         };
     }
 
@@ -306,7 +307,8 @@ public class AuthService : IAuthService
                 PhoneNumber = user.PhoneNumber,
                 Email = user.Email,
                 EmailVerified = user.EmailVerified,
-                Role = user.Role.ToString()
+                Role = user.Role.ToString(),
+                AlertChannel = user.AlertChannel,
             },
             Business = new BusinessDto
             {

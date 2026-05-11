@@ -4,7 +4,7 @@
 function getBusinessTimezone(): string {
   if (typeof window === "undefined") return "Africa/Lagos";
   try {
-    const raw = localStorage.getItem("bp_business");
+    const raw = localStorage.getItem("oj_business");
     if (raw) {
       const biz = JSON.parse(raw);
       if (biz.timezone) return biz.timezone;
@@ -16,7 +16,7 @@ function getBusinessTimezone(): string {
 function getBusinessCurrency(): string {
   if (typeof window === "undefined") return "NGN";
   try {
-    const raw = localStorage.getItem("bp_business");
+    const raw = localStorage.getItem("oj_business");
     if (raw) {
       const biz = JSON.parse(raw);
       if (biz.currency && biz.currency.length === 3) return biz.currency;

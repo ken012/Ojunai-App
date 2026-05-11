@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getStoredUser } from "@/lib/auth";
 import { api, absoluteApiUrl } from "@/lib/api";
+import type { UserDto } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { useToast } from "@/components/toast";
 import { useBusiness, useUser, useDataSync } from "@/lib/data-sync";
@@ -24,7 +25,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { MessageSquare, Building2, User, Pencil, Bell, Tags, X, Plus, Users, Trash2, KeyRound, CreditCard, Phone, FileText, Save, CheckCircle2, ImageIcon, Upload, Lock } from "lucide-react";
+import { MessageSquare, Building2, User, Pencil, Bell, Tags, X, Plus, Users, Trash2, KeyRound, CreditCard, Phone, FileText, Save, CheckCircle2, ImageIcon, Upload, Lock, Send, Link as LinkIcon, ExternalLink } from "lucide-react";
 import { CATEGORY_NAMES } from "@/lib/categories";
 import { hasPermission, Permission } from "@/lib/permissions";
 import { InstallSettingsCard } from "@/components/install-settings-card";
@@ -169,6 +170,7 @@ function SettingsPage() {
             { href: "#account", label: "Account" },
             { href: "#voice-ai", label: "Voice AI" },
             { href: "#whatsapp", label: "WhatsApp" },
+            { href: "#channels", label: "Connected Channels" },
             { href: "#team", label: "Team" },
             { href: "#categories", label: "Categories" },
           ]}
@@ -266,7 +268,7 @@ function SettingsPage() {
       {hasPermission(Permission.ManageSettings) && (
         <BrandingCard business={business} onUpdate={(updated) => {
           setBusiness(updated);
-          if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+          if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
         }} />
       )}
       </SettingsSection>
@@ -279,7 +281,7 @@ function SettingsPage() {
           onUpdate={(updated) => {
             setBusiness(updated);
             if (typeof window !== "undefined") {
-              localStorage.setItem("bp_business", JSON.stringify(updated));
+              localStorage.setItem("oj_business", JSON.stringify(updated));
               refreshSync();
             }
           }}
@@ -332,7 +334,7 @@ function SettingsPage() {
                         const { data } = await api.put<{ data: typeof business }>("/business", { [key]: e.target.checked });
                         const updated = data.data!;
                         setBusiness(updated);
-                        if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                        if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
                       } catch (err: unknown) {
                         const ax = err as { response?: { data?: { errors?: string[] } } };
                         toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
@@ -355,7 +357,7 @@ function SettingsPage() {
                       const { data } = await api.put<{ data: typeof business }>("/business", { alertLargeSale: e.target.checked });
                       const updated = data.data!;
                       setBusiness(updated);
-                      if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                      if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
                     } catch (err: unknown) {
                       const ax = err as { response?: { data?: { errors?: string[] } } };
                       toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
@@ -380,7 +382,7 @@ function SettingsPage() {
                         const { data } = await api.put<{ data: typeof business }>("/business", { largeSaleThreshold: val || 100000 });
                         const updated = data.data!;
                         setBusiness(updated);
-                        if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                        if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
                       } catch (err: unknown) {
                         const ax = err as { response?: { data?: { errors?: string[] } } };
                         toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
@@ -392,6 +394,15 @@ function SettingsPage() {
               )}
             </div>
           </div>
+
+          {/* ── Telegram channel (Phase 6) ────────────────────────────────
+              Same alert toggles as WhatsApp would have, but they fire on the
+              user's Telegram chat instead. AlertChannel preference on the user
+              row decides which messaging channel actually receives. */}
+          <AlertChannelCard channel="telegram" />
+
+          {/* ── Messenger channel — live as of Phase 3e ─────────────────── */}
+          <AlertChannelCard channel="messenger" />
 
           {/* ── Dashboard channel ─────────────────────────────────────────
               In-app bell. Internally split into Business (toggleable, Owner/Admin
@@ -438,7 +449,7 @@ function SettingsPage() {
                           const { data } = await api.put<{ data: typeof business }>("/business", { [key]: e.target.checked });
                           const updated = data.data!;
                           setBusiness(updated);
-                          if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                          if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
                         } catch (err: unknown) {
                           const ax = err as { response?: { data?: { errors?: string[] } } };
                           toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
@@ -462,7 +473,7 @@ function SettingsPage() {
                       const { data } = await api.put<{ data: typeof business }>("/business", { dailySalesGoal: val });
                       const updated = data.data!;
                       setBusiness(updated);
-                      if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                      if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
                     } catch (err: unknown) {
                       const ax = err as { response?: { data?: { errors?: string[] } } };
                       toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
@@ -543,7 +554,7 @@ function SettingsPage() {
       {hasPermission(Permission.ManageSettings) &&
       <ManageCategoriesCard business={business} onUpdate={(updated) => {
         setBusiness(updated);
-        if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+        if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
       }} />}
       </SettingsSection>
 
@@ -619,7 +630,7 @@ function SettingsPage() {
                       const { data } = await api.put<{ data: typeof business }>("/business", { confirmLargeSales: e.target.checked });
                       const updated = data.data!;
                       setBusiness(updated);
-                      if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                      if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
                     } catch (err: unknown) {
                       const ax = err as { response?: { data?: { errors?: string[] } } };
                       toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
@@ -644,7 +655,7 @@ function SettingsPage() {
                         const { data } = await api.put<{ data: typeof business }>("/business", { confirmLargeSaleThreshold: val || 0 });
                         const updated = data.data!;
                         setBusiness(updated);
-                        if (typeof window !== "undefined") { localStorage.setItem("bp_business", JSON.stringify(updated)); refreshSync(); }
+                        if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
                       } catch (err: unknown) {
                         const ax = err as { response?: { data?: { errors?: string[] } } };
                         toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
@@ -694,6 +705,10 @@ function SettingsPage() {
       </Card>
       </SettingsSection>
 
+      <SettingsSection id="channels" title="Connected Channels" icon={<LinkIcon size={14} />}>
+        <ConnectedChannelsCard />
+      </SettingsSection>
+
       <EditBusinessDialog
         business={business}
         open={editing}
@@ -701,7 +716,7 @@ function SettingsPage() {
         onSaved={(updated) => {
           setBusiness(updated);
           if (typeof window !== "undefined") {
-            localStorage.setItem("bp_business", JSON.stringify(updated));
+            localStorage.setItem("oj_business", JSON.stringify(updated));
             refreshSync();
           }
         }}
@@ -1184,6 +1199,371 @@ type BusinessShape = {
  * upload, but the server re-validates everything (BackgroundImageService has the
  * full security pipeline: magic-byte sniff, dimension preflight, decode-and-re-encode).
  */
+// ─── Alert delivery channel card (Phase 6) ───────────────────────────────────
+/**
+ * One card per messaging channel inside Settings → Alerts. Shows whether this channel is the
+ * user's current alert recipient (badge), and a button to switch to it. Telegram and Messenger
+ * are both live as of Phase 3e — outbound alerts route through whichever channel the user picks,
+ * with WhatsApp as the fallback when the chosen channel isn't bound.
+ *
+ * Routing logic lives in the API's NotificationDispatcher — this card just toggles the
+ * User.AlertChannel preference. Same alert TYPE toggles (low stock, daily summary, etc.) are
+ * set in the WhatsApp section above and apply globally — the channel toggle only changes
+ * delivery, not content.
+ */
+function AlertChannelCard({ channel }: { channel: "telegram" | "messenger" }) {
+  const { toast } = useToast();
+  const [user, setUser] = useState<ReturnType<typeof getStoredUser>>(getStoredUser());
+  const [saving, setSaving] = useState(false);
+
+  // Mount-time refresh from the server so the badge reflects truth, not stale cache.
+  useEffect(() => {
+    let cancelled = false;
+    async function refresh() {
+      try {
+        const { data } = await api.get<{ data: UserDto }>("/auth/me");
+        if (!cancelled) setUser(data.data);
+      } catch { /* keep cached value */ }
+    }
+    refresh();
+    return () => { cancelled = true; };
+  }, []);
+
+  const isTelegram = channel === "telegram";
+  const isActive = user?.alertChannel === channel;
+
+  async function makeActive() {
+    setSaving(true);
+    try {
+      await api.put("/auth/alert-channel", { channel });
+      // Re-fetch user to pick up new AlertChannel
+      const { data } = await api.get<{ data: UserDto }>("/auth/me");
+      setUser(data.data);
+      toast.success(`Alerts will now go to ${channel === "telegram" ? "Telegram" : "Messenger"}`,
+        "Future summaries, low-stock notices, and other alerts will land there.");
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error("Couldn't change alert channel", ax.response?.data?.errors?.[0] ?? "Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const accent = isTelegram
+    ? "border-sky-200 dark:border-sky-900 bg-sky-50/40 dark:bg-sky-950/20 text-sky-700 dark:text-sky-300"
+    : "border-blue-200 dark:border-blue-900 bg-blue-50/40 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300";
+  const accentText = isTelegram ? "text-sky-700 dark:text-sky-300" : "text-blue-700 dark:text-blue-300";
+
+  return (
+    <div className={`rounded-lg border p-3 ${accent}`}>
+      <div className="flex items-center justify-between mb-1">
+        <p className={`text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 ${accentText}`}>
+          {isTelegram ? <Send size={12} /> : <MessageSquare size={12} />}
+          {isTelegram ? "Telegram" : "Facebook Messenger"}
+        </p>
+        {isActive ? (
+          <span className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-px rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900">
+            ✓ Active
+          </span>
+        ) : (
+          <span className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-px rounded-full bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
+            Inactive
+          </span>
+        )}
+      </div>
+      <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">
+        {isTelegram
+          ? "Sent as Telegram messages to your linked chat. Make sure Telegram is connected in Settings → Connected Channels first."
+          : "Sent through Facebook Messenger to your linked Page chat. Make sure Messenger is connected in Settings → Connected Channels first — otherwise alerts fall back to WhatsApp."}
+      </p>
+      {isActive ? (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={async () => {
+            setSaving(true);
+            try {
+              await api.put("/auth/alert-channel", { channel: "whatsapp" });
+              const { data } = await api.get<{ data: UserDto }>("/auth/me");
+              setUser(data.data);
+              toast.success("Switched back to WhatsApp",
+                "Future alerts will land on the owner's WhatsApp number.");
+            } catch (err: unknown) {
+              const ax = err as { response?: { data?: { errors?: string[] } } };
+              toast.error("Couldn't switch back", ax.response?.data?.errors?.[0] ?? "Please try again.");
+            } finally {
+              setSaving(false);
+            }
+          }}
+          disabled={saving}
+          className="flex-shrink-0"
+        >
+          {saving ? "Switching…" : "Switch back to WhatsApp"}
+        </Button>
+      ) : (
+        <Button size="sm" onClick={makeActive} disabled={saving} className="flex-shrink-0">
+          {saving ? "Switching…" : "Make this my alert channel"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// ─── Connected Channels (Phase 4) ─────────────────────────────────────────────
+/**
+ * Shows status of each messaging channel (WhatsApp, Telegram, Messenger) and lets users
+ * connect or disconnect them. WhatsApp is always "available" (no per-user binding — every
+ * user gets the same shared bot phone number). Telegram supports full bind/unbind via a
+ * /start deep link. Messenger is "Coming soon" until Phase 3 + Meta Advanced Access ship.
+ *
+ * Status comes from GET /api/channels/status; connect uses POST /api/channels/telegram/link
+ * which mints a 30-minute one-time token and returns the t.me deep link to open.
+ */
+type ChannelBindingStatus = {
+  connected: boolean;
+  displayName?: string | null;
+  connectedAtUtc?: string | null;
+  lastSeenAtUtc?: string | null;
+};
+
+type ChannelStatusResponse = {
+  whatsapp: ChannelBindingStatus;
+  telegram: ChannelBindingStatus;
+  messenger: ChannelBindingStatus;
+};
+
+function ConnectedChannelsCard() {
+  const { toast } = useToast();
+  const [status, setStatus] = useState<ChannelStatusResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [linking, setLinking] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  async function fetchStatus() {
+    setLoading(true);
+    try {
+      const { data } = await api.get<{ data: ChannelStatusResponse }>("/channels/status");
+      setStatus(data.data);
+    } catch {
+      // Fall through; UI shows "—" for everything. Don't toast on read failure — could be
+      // an old build that doesn't have the endpoint yet.
+      setStatus(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchStatus();
+  }, []);
+
+  async function handleConnectTelegram() {
+    setLinking(true);
+    try {
+      const { data } = await api.post<{ data: { deepLink: string } }>("/channels/telegram/link");
+      const link = data.data?.deepLink;
+      if (!link) {
+        toast.error("Couldn't create link", "Try again in a moment.");
+        return;
+      }
+      // Open the Telegram deep link in a new tab. On desktop the user gets a "Open in Telegram"
+      // prompt; on mobile it launches the Telegram app directly. Either way they tap Start and
+      // the bot binds their chat.
+      //
+      // Mobile browsers silently block `window.open(...)` calls made after `await` because the
+      // user-gesture context is lost — popup looks like programmatic navigation. Fall back to
+      // a current-window navigation when the popup is blocked. Desktop keeps the new-tab UX;
+      // mobile reliably reaches t.me which the OS routes into the Telegram app.
+      const opened = window.open(link, "_blank", "noopener,noreferrer");
+      if (!opened) window.location.href = link;
+      toast.success("Telegram link opened",
+        "Tap Start in Telegram to connect. Refresh this page after to confirm.");
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error("Couldn't create link", ax.response?.data?.errors?.[0] ?? "Please try again.");
+    } finally {
+      setLinking(false);
+    }
+  }
+
+  async function handleDisconnectTelegram() {
+    if (!confirm("Disconnect Telegram from your account?")) return;
+    setDisconnecting(true);
+    try {
+      await api.delete("/channels/telegram");
+      toast.success("Telegram disconnected", "The chat will stop responding to your account.");
+      await fetchStatus();
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error("Couldn't disconnect", ax.response?.data?.errors?.[0] ?? "Please try again.");
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+          Where Ojunai can reach you
+        </CardTitle>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          Connect a messaging account so you can record sales, expenses, and payments by chatting
+          with the assistant — on whichever platform you already use.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* WhatsApp — always available, no per-user binding. */}
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 p-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-lg bg-green-50 dark:bg-green-950/40 flex items-center justify-center flex-shrink-0">
+              <MessageSquare size={16} className="text-green-600 dark:text-green-400" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-slate-900 dark:text-slate-50">WhatsApp</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                Send messages to the shared Ojunai number to record sales and expenses.
+              </p>
+            </div>
+          </div>
+          <Badge variant="default" className="flex-shrink-0">Always on</Badge>
+        </div>
+
+        {/* Telegram — full bind/unbind via /start deep link */}
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 p-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-lg bg-sky-50 dark:bg-sky-950/40 flex items-center justify-center flex-shrink-0">
+              <Send size={16} className="text-sky-600 dark:text-sky-400" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-slate-900 dark:text-slate-50">Telegram</p>
+              {loading ? (
+                <p className="text-xs text-slate-400 dark:text-slate-500">Checking status…</p>
+              ) : status?.telegram?.connected ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                  Connected{status.telegram.displayName ? ` as ${status.telegram.displayName}` : ""}
+                  {status.telegram.connectedAtUtc
+                    ? ` · ${new Date(status.telegram.connectedAtUtc).toLocaleDateString()}`
+                    : ""}
+                </p>
+              ) : (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Not connected. Link your chat to get the bot in Telegram.
+                </p>
+              )}
+            </div>
+          </div>
+          {loading ? null : status?.telegram?.connected ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDisconnectTelegram}
+              disabled={disconnecting}
+              className="flex-shrink-0"
+            >
+              {disconnecting ? "Disconnecting…" : "Disconnect"}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              onClick={handleConnectTelegram}
+              disabled={linking}
+              className="flex-shrink-0"
+            >
+              <ExternalLink size={14} className="mr-1.5" />
+              {linking ? "Generating link…" : "Connect"}
+            </Button>
+          )}
+        </div>
+
+        {/* Messenger — linking active in Phase 3b; full NL handling lands in Phase 3c */}
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 p-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/40 flex items-center justify-center flex-shrink-0">
+              <MessageSquare size={16} className="text-blue-600 dark:text-blue-400" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-slate-900 dark:text-slate-50">Facebook Messenger</p>
+              {loading ? (
+                <p className="text-xs text-slate-400 dark:text-slate-500">Checking status…</p>
+              ) : status?.messenger?.connected ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                  Connected
+                  {status.messenger.connectedAtUtc
+                    ? ` · ${new Date(status.messenger.connectedAtUtc).toLocaleDateString()}`
+                    : ""}
+                </p>
+              ) : (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Not connected. Link Messenger to log sales, expenses, and payments by chatting with your Page.
+                </p>
+              )}
+            </div>
+          </div>
+          {loading ? null : status?.messenger?.connected ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                if (!confirm("Disconnect Messenger from your account?")) return;
+                try {
+                  await api.delete("/channels/messenger");
+                  toast.success("Messenger disconnected", "The Page will stop responding to your account.");
+                  await fetchStatus();
+                } catch (err: unknown) {
+                  const ax = err as { response?: { data?: { errors?: string[] } } };
+                  toast.error("Couldn't disconnect", ax.response?.data?.errors?.[0] ?? "Please try again.");
+                }
+              }}
+              className="flex-shrink-0"
+            >
+              Disconnect
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              onClick={async () => {
+                try {
+                  const { data } = await api.post<{ data: { deepLink: string } }>("/channels/messenger/link");
+                  const link = data.data?.deepLink;
+                  if (!link) {
+                    toast.error("Couldn't create link", "Try again in a moment.");
+                    return;
+                  }
+                  // Opens Messenger via m.me on mobile, or web Messenger on desktop. After the
+                  // user sends a message or taps Get Started, Meta fires the referral webhook
+                  // with our token; the orchestrator consumes it and binds the PSID.
+                  //
+                  // Mobile browsers silently block `window.open(...)` after an `await` (lost
+                  // user-gesture context). Fall back to current-window navigation when the
+                  // popup is blocked — m.me is a deep link the OS routes into the Messenger
+                  // app with `?ref=` preserved.
+                  const opened = window.open(link, "_blank", "noopener,noreferrer");
+                  if (!opened) window.location.href = link;
+                  toast.success("Messenger link opened",
+                    "Send a message or tap Get Started to connect. Refresh this page after.");
+                } catch (err: unknown) {
+                  const ax = err as { response?: { data?: { errors?: string[] } } };
+                  toast.error("Couldn't create link", ax.response?.data?.errors?.[0] ?? "Please try again.");
+                }
+              }}
+              className="flex-shrink-0"
+            >
+              <ExternalLink size={14} className="mr-1.5" />
+              Connect
+            </Button>
+          )}
+        </div>
+
+        <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">
+          Telegram links expire after 30 minutes if not used. You can disconnect a channel at any
+          time to stop the bot from responding to that account.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 function BrandingCard({
   business,
   onUpdate,

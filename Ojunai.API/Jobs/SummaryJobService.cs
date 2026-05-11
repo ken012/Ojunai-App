@@ -1,6 +1,8 @@
 using Ojunai.API.Common;
 using Ojunai.API.Data;
 using Ojunai.API.Models;
+using Ojunai.API.Models.Messaging;
+using Ojunai.API.Services.Channels;
 using Ojunai.API.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,17 +13,20 @@ public class SummaryJobService
     private readonly AppDbContext _db;
     private readonly IReportService _reports;
     private readonly IWhatsAppService _whatsApp;
+    private readonly INotificationDispatcher _dispatcher;
     private readonly ILogger<SummaryJobService> _logger;
 
     public SummaryJobService(
         AppDbContext db,
         IReportService reports,
         IWhatsAppService whatsApp,
+        INotificationDispatcher dispatcher,
         ILogger<SummaryJobService> logger)
     {
         _db = db;
         _reports = reports;
         _whatsApp = whatsApp;
+        _dispatcher = dispatcher;
         _logger = logger;
     }
 
@@ -205,7 +210,9 @@ public class SummaryJobService
                               lowStockLine + receivableLine + overdueLine + payableLine + noSalesLine + staffLine +
                               "\n\nReply with any question about your business!";
 
-                await _whatsApp.SendMessageAsync(owner.PhoneNumber, message);
+                // Phase 6 — route to user's preferred channel (User.AlertChannel). Owner who has
+                // opted into Telegram gets the summary in Telegram; default is still WhatsApp.
+                await _dispatcher.SendToUserAsync(owner.Id, new ReplyComposition { Text = message });
             }
             catch (Exception ex)
             {
@@ -270,7 +277,8 @@ public class SummaryJobService
                               topLine + bestSellerChangeLine + lowStockLine + debtorLine +
                               "\n\nReply with any question about your business!";
 
-                await _whatsApp.SendMessageAsync(owner.PhoneNumber, message);
+                // Phase 6 — channel-aware delivery via the dispatcher.
+                await _dispatcher.SendToUserAsync(owner.Id, new ReplyComposition { Text = message });
             }
             catch (Exception ex)
             {

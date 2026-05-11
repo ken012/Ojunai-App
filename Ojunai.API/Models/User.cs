@@ -19,6 +19,37 @@ public class User
     public DateOnly? DateOfBirth { get; set; }
     public bool EmailVerified { get; set; } = false;
     public DateTime? EmailVerifiedAtUtc { get; set; }
+
+    // ── Pricing v2 onboarding fields ─────────────────────────────────────────
+    /// <summary>
+    /// Tier the user clicked through marketing to land on (?plan=lite, ?plan=operator, etc.).
+    /// Captured at registration; drives the dashboard-home upgrade prompt card. Null means
+    /// the user came in cold or registered via WhatsApp.
+    /// </summary>
+    public string? IntendedPlan { get; set; }
+
+    /// <summary>
+    /// Billing cadence the user picked on the marketing site (?period=monthly|yearly). Pre-fills
+    /// the upgrade card's billing-period toggle. Defaults to "monthly" if the param is missing.
+    /// </summary>
+    public string? IntendedBillingPeriod { get; set; }
+
+    /// <summary>
+    /// One-time-per-account counter for the WhatsApp Starter onboarding allowance. Starter
+    /// plan users get 2 free inventory adds via WhatsApp before the bot locks them out and
+    /// prompts upgrade. Capped at 2; never resets, even if the user downgrades from a paid
+    /// plan back to Starter.
+    /// </summary>
+    public int OnboardingInventoryCount { get; set; } = 0;
+
+    /// <summary>
+    /// Where outbound alerts and summaries (daily summary, low stock, large sale, trial reminder,
+    /// renewal warning, etc.) get delivered. <c>"whatsapp"</c> (default, backward-compat) or
+    /// <c>"telegram"</c>. Opt-in via Settings → Alert delivery. Doesn't affect OTPs (always
+    /// WhatsApp) or in-app dashboard bell alerts.
+    /// </summary>
+    public string AlertChannel { get; set; } = "whatsapp";
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     public Business Business { get; set; } = null!;

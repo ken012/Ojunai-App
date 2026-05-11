@@ -1,4 +1,5 @@
 using Ojunai.API.Data;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ojunai.API.Common;
@@ -12,7 +13,9 @@ namespace Ojunai.API.Common;
 ///   4. The token's "tokenVersion" claim matches the user's current TokenVersion
 ///      (tokens are invalidated when the user changes their password or completes a password reset)
 ///
-/// Requests without authentication (anonymous endpoints like /auth/login, webhooks, /health) skip this middleware entirely.
+/// Endpoints decorated with [AllowAnonymous] are skipped entirely — login, register, password
+/// reset, and account recovery flows are designed to handle bad/stale auth state, and blocking
+/// them would prevent the user from recovering once their cookie's tokenVersion goes stale.
 /// </summary>
 public class ActiveUserMiddleware
 {
@@ -22,6 +25,16 @@ public class ActiveUserMiddleware
 
     public async Task InvokeAsync(HttpContext context, AppDbContext db)
     {
+        // Skip for [AllowAnonymous] endpoints. Without this, a user with a stale-but-signature-valid
+        // JWT cookie (typical after a password change on another device) cannot log in — the middleware
+        // would 401 their /auth/login request before the controller ever runs.
+        var endpoint = context.GetEndpoint();
+        if (endpoint?.Metadata.GetMetadata<IAllowAnonymous>() != null)
+        {
+            await _next(context);
+            return;
+        }
+
         // Only authenticated requests need these checks — anonymous endpoints (login, webhooks) flow through.
         if (context.User.Identity?.IsAuthenticated == true)
         {
@@ -68,6 +81,17 @@ public class ActiveUserMiddleware
                 var tokenVersionClaim = context.User.FindFirst("tokenVersion")?.Value;
                 if (int.TryParse(tokenVersionClaim, out var tokenVersion) && tokenVersion != user.TokenVersion)
                 {
+                    // Proactively clear the stale cookie. Without this, every subsequent request
+                    // (including the user's next login attempt if they don't manually clear cookies)
+                    // would re-send the same bad cookie and re-trigger this 401 — which is exactly
+                    // what "I always have to clear cache" reports were about.
+                    context.Response.Cookies.Delete("oj_auth", new CookieOptions
+                    {
+                        HttpOnly = true,
+                        Secure = true,
+                        SameSite = SameSiteMode.Strict,
+                        Path = "/",
+                    });
                     context.Response.StatusCode = 401;
                     context.Response.ContentType = "application/json";
                     await context.Response.WriteAsync("{\"success\":false,\"errors\":[\"Session expired. Please log in again.\"]}");

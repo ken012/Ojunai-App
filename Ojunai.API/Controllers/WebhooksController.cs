@@ -1,5 +1,9 @@
 using System.Security.Cryptography;
 using System.Text;
+using Ojunai.API.Data;
+using Ojunai.API.Models;
+using Ojunai.API.Models.Messaging;
+using Ojunai.API.Services.Channels;
 using Ojunai.API.Services.Interfaces;
 using Hangfire;
 using Microsoft.AspNetCore.Authorization;
@@ -30,6 +34,18 @@ public class WebhooksController : ControllerBase
     [RequestSizeLimit(64 * 1024)] // 64KB — Twilio webhooks are small form posts
     public async Task<IActionResult> Receive([FromForm] TwilioInboundForm form)
     {
+        // Phase 1 multi-channel rollout flag. When OFF, the legacy direct path runs (proven, untouched).
+        // When ON, inbound flows through the new ConversationOrchestrator → still delegates to
+        // IWhatsAppService underneath, but exercises the abstraction layer so we catch regressions
+        // before turning on Telegram/Messenger production traffic. Flip via Multichannel__V1Enabled env.
+        var useV1 = _config.GetValue<bool>("Multichannel:V1Enabled");
+
+        if (useV1)
+        {
+            return await ReceiveViaOrchestratorAsync();
+        }
+
+        // ── Legacy path (default — preserves exact pre-Phase-1 behavior) ────────
         if (!await ValidateTwilioSignatureAsync())
         {
             _logger.LogWarning("Rejected webhook with invalid Twilio signature");
@@ -55,6 +71,222 @@ public class WebhooksController : ControllerBase
 
         return Content("<Response/>", "text/xml");
     }
+
+    /// <summary>
+    /// Phase-1 path: signature-verify + parse via the channel adapter, then hand off to
+    /// the channel-blind orchestrator. Behavior should be observably identical to the legacy
+    /// path while the V1 flag is rolled out.
+    /// </summary>
+    private async Task<IActionResult> ReceiveViaOrchestratorAsync()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var registry = scope.ServiceProvider.GetRequiredService<IChannelRegistry>();
+        var orchestrator = scope.ServiceProvider.GetRequiredService<IConversationOrchestrator>();
+        var adapter = registry.Get(Channel.Whatsapp);
+
+        if (!await adapter.VerifySignatureAsync(Request))
+        {
+            _logger.LogWarning("Rejected WhatsApp webhook (V1 path): bad signature");
+            return Unauthorized();
+        }
+
+        var message = await adapter.ParseInboundAsync(Request);
+        if (message is null)
+            return Content("<Response/>", "text/xml"); // status callback or non-message event
+
+        if (string.IsNullOrEmpty(message.Text))
+        {
+            // Same friendly-error UX as the legacy path — media-only messages get a polite reply.
+            BackgroundJob.Enqueue<IWhatsAppService>(svc =>
+                svc.SendMessageAsync("whatsapp:" + message.SenderIdentity,
+                    "I can only process text messages for now. Please type your request.", null, null));
+            return Content("<Response/>", "text/xml");
+        }
+
+        _logger.LogInformation("Inbound WhatsApp (V1) from {From}: {Body}", message.SenderIdentity, message.Text);
+
+        // Hangfire ensures the orchestrator call is durable and retried on transient failure,
+        // matching the legacy path's reliability semantics.
+        var providerMessageId = message.ProviderMessageId;
+        var senderIdentity = message.SenderIdentity;
+        var text = message.Text;
+        BackgroundJob.Enqueue<IConversationOrchestrator>(o =>
+            o.ProcessInboundAsync(
+                new ConversationMessage
+                {
+                    Channel = Channel.Whatsapp,
+                    ProviderMessageId = providerMessageId,
+                    SenderIdentity = senderIdentity,
+                    Text = text,
+                },
+                CancellationToken.None));
+
+        return Content("<Response/>", "text/xml");
+    }
+
+    // ─── Messenger (Phase 0 stub) ──────────────────────────────────────────────
+    //
+    // Two endpoints required to register a Meta Messenger webhook:
+    //   GET  — Meta's verification handshake. Echo back hub.challenge if our verify_token matches.
+    //   POST — Meta sends messaging events. Phase 0 just logs to MessageLog so we have visibility
+    //          while the app is in Meta's review queue. Phase 3 wires the full MessengerAdapter.
+    //
+    // Setting up on Meta's side requires us to expose this endpoint URL + a verify token.
+    // Verify token is any string we choose — must match between our env file and Meta's dashboard.
+
+    [HttpGet("messenger")]
+    public IActionResult VerifyMessengerWebhook(
+        [FromQuery(Name = "hub.mode")] string? mode,
+        [FromQuery(Name = "hub.challenge")] string? challenge,
+        [FromQuery(Name = "hub.verify_token")] string? verifyToken)
+    {
+        var expected = _config["Messenger:VerifyToken"];
+        if (string.IsNullOrEmpty(expected))
+        {
+            _logger.LogError("Messenger:VerifyToken not configured — handshake will always fail");
+            return StatusCode(500);
+        }
+
+        // Constant-time comparison so the token can't be brute-forced via timing.
+        var ok = mode == "subscribe"
+                 && verifyToken is not null
+                 && CryptographicOperations.FixedTimeEquals(
+                     Encoding.UTF8.GetBytes(verifyToken),
+                     Encoding.UTF8.GetBytes(expected));
+
+        if (!ok)
+        {
+            _logger.LogWarning("Messenger handshake rejected (mode={Mode})", mode);
+            return Forbid();
+        }
+
+        // Meta expects the challenge value echoed back as plain text.
+        return Content(challenge ?? "", "text/plain");
+    }
+
+    [HttpPost("messenger")]
+    [RequestSizeLimit(256 * 1024)]
+    public async Task<IActionResult> ReceiveMessenger()
+    {
+        // Phase 3a wires Messenger through the channel-blind orchestrator. The adapter verifies
+        // X-Hub-Signature-256 internally; controller just buffers + audits + dispatches.
+        using var scope = _scopeFactory.CreateScope();
+        var registry = scope.ServiceProvider.GetRequiredService<IChannelRegistry>();
+        if (!registry.TryGet(Channel.Messenger, out var adapter))
+        {
+            _logger.LogError("No Messenger adapter registered — accepting and dropping update");
+            return Ok();
+        }
+
+        // Body has to be buffered before signature verification (HMAC over raw bytes) AND parse —
+        // we read the stream twice. EnableBuffering lets us seek back to start.
+        Request.EnableBuffering();
+        Request.Body.Position = 0;
+        using var reader = new StreamReader(Request.Body, leaveOpen: true);
+        var body = await reader.ReadToEndAsync();
+        Request.Body.Position = 0;
+
+        if (!await adapter.VerifySignatureAsync(Request))
+        {
+            _logger.LogWarning("Rejected Messenger webhook (bad X-Hub-Signature-256)");
+            return Unauthorized();
+        }
+
+        // Audit log every inbound, post-verification. Mid-flight failures still have a paper trail.
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.MessageLogs.Add(new MessageLog
+        {
+            Channel = "Messenger",
+            Direction = MessageDirection.Inbound,
+            RawMessage = Truncate(body, 4000),
+            ProcessingStatus = MessageProcessingStatus.Received,
+        });
+        await db.SaveChangesAsync();
+        Request.Body.Position = 0;
+
+        var message = await adapter.ParseInboundAsync(Request);
+        if (message is null)
+        {
+            // Non-message event (delivery receipt, read receipt, etc.) — already logged, ignore.
+            return Ok();
+        }
+
+        // Hangfire enqueue for durability and async handling — Meta wants a 200 within 5s.
+        var msg = message;
+        BackgroundJob.Enqueue<IConversationOrchestrator>(o =>
+            o.ProcessInboundAsync(msg, CancellationToken.None));
+
+        return Ok();
+    }
+
+    // ─── Telegram (Phase 0 stub) ───────────────────────────────────────────────
+    //
+    // Telegram's webhook is a single POST endpoint. We verify the secret_token we set when
+    // calling setWebhook so only Telegram (or someone who knows our secret) can hit this URL.
+    //
+    // Phase 0 just logs. Phase 2 wires the full TelegramAdapter with command parsing,
+    // identity binding (/start <token>), and reply rendering with inline keyboards.
+
+    [HttpPost("telegram")]
+    [RequestSizeLimit(256 * 1024)]
+    public async Task<IActionResult> ReceiveTelegram()
+    {
+        // Phase 2 wires Telegram through the channel-blind orchestrator. Adapter verifies the
+        // X-Telegram-Bot-Api-Secret-Token header internally; controller stays thin.
+        using var scope = _scopeFactory.CreateScope();
+        var registry = scope.ServiceProvider.GetRequiredService<IChannelRegistry>();
+        if (!registry.TryGet(Channel.Telegram, out var adapter))
+        {
+            // Should never happen if DI is wired; degrade gracefully so Telegram doesn't keep retrying.
+            _logger.LogError("No Telegram adapter registered — accepting and dropping update");
+            return Ok();
+        }
+
+        if (!await adapter.VerifySignatureAsync(Request))
+        {
+            _logger.LogWarning("Rejected Telegram webhook (bad secret token)");
+            return Unauthorized();
+        }
+
+        // Always buffer so we can both log and parse — orchestrator may want the raw payload too
+        // for debugging post-mortems.
+        Request.EnableBuffering();
+        Request.Body.Position = 0;
+        using var reader = new StreamReader(Request.Body, leaveOpen: true);
+        var body = await reader.ReadToEndAsync();
+        Request.Body.Position = 0;
+
+        // Audit log every inbound update. Useful when a user reports "the bot ignored me" —
+        // we have ground truth of what arrived even if the parse later fails.
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.MessageLogs.Add(new MessageLog
+        {
+            Channel = "Telegram",
+            Direction = MessageDirection.Inbound,
+            RawMessage = Truncate(body, 4000),
+            ProcessingStatus = MessageProcessingStatus.Received,
+        });
+        await db.SaveChangesAsync();
+        Request.Body.Position = 0;
+
+        var message = await adapter.ParseInboundAsync(Request);
+        if (message is null)
+        {
+            // Non-message update (channel post, my_chat_member event, etc.) — ignore.
+            return Ok();
+        }
+
+        // Hangfire-enqueue the orchestrator call so processing is durable across restarts and
+        // automatically retried on transient failure. Telegram considers anything other than 200
+        // a failure and will retry the whole update — we want to ack fast, do work async.
+        var msg = message;
+        BackgroundJob.Enqueue<IConversationOrchestrator>(o =>
+            o.ProcessInboundAsync(msg, CancellationToken.None));
+
+        return Ok();
+    }
+
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
 
     private async Task<bool> ValidateTwilioSignatureAsync()
     {

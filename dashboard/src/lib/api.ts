@@ -41,9 +41,9 @@ api.interceptors.response.use(
       const skipRedirect = ["/login", "/register", "/forgot-password", "/change-password", "/admin"];
       const shouldSkip = skipRedirect.some((p) => path.startsWith(p));
       if (!shouldSkip) {
-        localStorage.removeItem("bp_user");
-        localStorage.removeItem("bp_business");
-        localStorage.removeItem("bp_auth_time");
+        localStorage.removeItem("oj_user");
+        localStorage.removeItem("oj_business");
+        localStorage.removeItem("oj_auth_time");
         window.location.href = "/login";
       }
     }

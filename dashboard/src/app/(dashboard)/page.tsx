@@ -84,6 +84,15 @@ function PulseCard({
     bad: "text-rose-300",
   }[tone];
 
+  // Auto-shrink the value text so big amounts (e.g. NGN 677,176,179) fit inside
+  // the card on both desktop and mobile. The card is otherwise fixed-width
+  // (4-up grid on desktop, 2-up on mobile), and a 17-character value at text-2xl
+  // overflows the card boundary. We pick a smaller class for longer strings.
+  const valueLen = value.length;
+  const valueSize = featured
+    ? valueLen > 16 ? "text-2xl" : valueLen > 13 ? "text-3xl" : "text-4xl"
+    : valueLen > 16 ? "text-base" : valueLen > 13 ? "text-lg" : valueLen > 10 ? "text-xl" : "text-2xl";
+
   if (featured) {
     return (
       <button
@@ -96,7 +105,7 @@ function PulseCard({
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
               {label}
             </p>
-            <p className={`text-4xl font-bold mt-2 tabular-nums tracking-tight ${featuredToneClass}`}>
+            <p className={`${valueSize} font-bold mt-2 tabular-nums tracking-tight whitespace-nowrap ${featuredToneClass}`}>
               {value}
             </p>
             {delta && (
@@ -143,7 +152,7 @@ function PulseCard({
           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
             {label}
           </p>
-          <p className={`text-2xl font-bold mt-1.5 tabular-nums tracking-tight ${lightToneClass}`}>
+          <p className={`${valueSize} font-bold mt-1.5 tabular-nums tracking-tight whitespace-nowrap ${lightToneClass}`}>
             {value}
           </p>
           {delta && (

@@ -22,13 +22,13 @@ function cacheableUser(user: UserDto): Partial<UserDto> {
 }
 
 function storeAuth(auth: AuthResponse) {
-  localStorage.setItem("bp_user", JSON.stringify(cacheableUser(auth.user)));
-  localStorage.setItem("bp_business", JSON.stringify(auth.business));
-  localStorage.setItem("bp_auth_time", Date.now().toString());
+  localStorage.setItem("oj_user", JSON.stringify(cacheableUser(auth.user)));
+  localStorage.setItem("oj_business", JSON.stringify(auth.business));
+  localStorage.setItem("oj_auth_time", Date.now().toString());
 }
 
 function isSessionExpired(): boolean {
-  const authTime = localStorage.getItem("bp_auth_time");
+  const authTime = localStorage.getItem("oj_auth_time");
   if (!authTime) return true;
   const elapsed = Date.now() - parseInt(authTime, 10);
   return elapsed > SESSION_TIMEOUT_MS;
@@ -37,7 +37,7 @@ function isSessionExpired(): boolean {
 export function getStoredUser(): UserDto | null {
   if (typeof window === "undefined") return null;
   if (isSessionExpired()) { clearAuth(); return null; }
-  const raw = localStorage.getItem("bp_user");
+  const raw = localStorage.getItem("oj_user");
   if (!raw) return null;
   const parsed = JSON.parse(raw) as UserDto;
   // Self-heal legacy cache entries written before the PII-strip policy: if
@@ -45,7 +45,7 @@ export function getStoredUser(): UserDto | null {
   // existing sessions get scrubbed without waiting for next sync.
   if (parsed.phoneNumber || parsed.dateOfBirth) {
     const cleaned = cacheableUser(parsed);
-    localStorage.setItem("bp_user", JSON.stringify(cleaned));
+    localStorage.setItem("oj_user", JSON.stringify(cleaned));
     return cleaned as UserDto;
   }
   return parsed;
@@ -54,13 +54,13 @@ export function getStoredUser(): UserDto | null {
 export function getStoredBusiness(): BusinessDto | null {
   if (typeof window === "undefined") return null;
   if (isSessionExpired()) { clearAuth(); return null; }
-  const raw = localStorage.getItem("bp_business");
+  const raw = localStorage.getItem("oj_business");
   return raw ? JSON.parse(raw) : null;
 }
 
 export function isAuthenticated(): boolean {
   if (typeof window === "undefined") return false;
-  if (!localStorage.getItem("bp_user")) return false;
+  if (!localStorage.getItem("oj_user")) return false;
   if (isSessionExpired()) { clearAuth(); return false; }
   return true;
 }
@@ -116,12 +116,12 @@ export async function requestEmailVerification(): Promise<{ expiresAtUtc: string
 export async function verifyEmail(token: string): Promise<void> {
   await api.post("/auth/verify-email", { token });
   // Refresh stored user so EmailVerified flag updates everywhere — UserDto is what powers the banner.
-  if (typeof window !== "undefined" && localStorage.getItem("bp_user")) {
+  if (typeof window !== "undefined" && localStorage.getItem("oj_user")) {
     try {
       const { data } = await api.get<{ data: UserDto }>("/auth/me");
       const me = data.data!;
       // Cache only the safe subset — same policy as storeAuth.
-      localStorage.setItem("bp_user", JSON.stringify(cacheableUser(me)));
+      localStorage.setItem("oj_user", JSON.stringify(cacheableUser(me)));
     } catch {
       // Best-effort refresh — banner will sync on next page load anyway.
     }
@@ -180,9 +180,9 @@ export async function recoverAccountChangePhone(
 }
 
 function clearAuth() {
-  localStorage.removeItem("bp_user");
-  localStorage.removeItem("bp_business");
-  localStorage.removeItem("bp_auth_time");
+  localStorage.removeItem("oj_user");
+  localStorage.removeItem("oj_business");
+  localStorage.removeItem("oj_auth_time");
 }
 
 export async function logout() {

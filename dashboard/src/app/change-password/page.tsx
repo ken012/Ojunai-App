@@ -36,11 +36,11 @@ export default function ChangePasswordPage() {
       });
       // Update localStorage to clear mustChangePassword
       if (typeof window !== "undefined") {
-        const stored = localStorage.getItem("bp_auth");
+        const stored = localStorage.getItem("oj_auth");
         if (stored) {
           const parsed = JSON.parse(stored);
           parsed.mustChangePassword = false;
-          localStorage.setItem("bp_auth", JSON.stringify(parsed));
+          localStorage.setItem("oj_auth", JSON.stringify(parsed));
         }
       }
       router.push("/");

@@ -19,9 +19,12 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 const STORAGE_KEY = "ojunai-theme";
 
 function readStoredTheme(): Theme {
-  if (typeof window === "undefined") return "system";
+  // Default to "dark" so the app matches the marketing site (ojunai.com) for
+  // anyone who hasn't explicitly picked a theme. Existing users with an explicit
+  // preference saved in localStorage still get what they chose.
+  if (typeof window === "undefined") return "dark";
   const v = window.localStorage.getItem(STORAGE_KEY);
-  return v === "dark" || v === "light" || v === "system" ? v : "system";
+  return v === "dark" || v === "light" || v === "system" ? v : "dark";
 }
 
 function systemPrefersDark(): boolean {
@@ -39,8 +42,8 @@ function applyClass(resolved: ResolvedTheme) {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("system");
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("light");
+  const [theme, setThemeState] = useState<Theme>("dark");
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>("dark");
 
   // Initial sync (after mount; the inline <head> script already set the class to avoid FOUC)
   useEffect(() => {
@@ -101,11 +104,15 @@ export const themeBootScript = `
   try {
     var k = "ojunai-theme";
     var v = localStorage.getItem(k);
-    var resolved = v === "dark" || v === "light"
-      ? v
-      : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    // Default to "dark" so first-time visitors match the marketing site.
+    // Only resolve to "system" / "light" when the user has explicitly opted in.
+    var resolved = v === "light"
+      ? "light"
+      : v === "system"
+        ? (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+        : "dark";
     if (resolved === "dark") document.documentElement.classList.add("dark");
     document.documentElement.style.colorScheme = resolved;
-  } catch (_) {}
+  } catch (_) { document.documentElement.classList.add("dark"); }
 })();
 `;

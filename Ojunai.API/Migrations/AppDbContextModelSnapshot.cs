@@ -53,7 +53,29 @@ namespace Ojunai.API.Migrations
 
                     b.HasIndex("UserId", "ExpiresAtUtc");
 
-                    b.ToTable("AccountRecoveryTokens");
+                    b.ToTable("AccountRecoveryTokens", (string)null);
+                });
+
+            modelBuilder.Entity("Ojunai.API.Models.ActionUsage", b =>
+                {
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ProductLine")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("PeriodStartUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Count")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("LastIncrementedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("BusinessId", "ProductLine", "PeriodStartUtc");
+
+                    b.ToTable("ActionUsages", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.Alert", b =>
@@ -113,7 +135,7 @@ namespace Ojunai.API.Migrations
 
                     b.HasIndex("BusinessId", "UserId", "ReadAtUtc");
 
-                    b.ToTable("Alerts");
+                    b.ToTable("Alerts", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.BillingEvent", b =>
@@ -178,7 +200,7 @@ namespace Ojunai.API.Migrations
 
                     b.HasIndex("BusinessId", "CreatedAtUtc");
 
-                    b.ToTable("BillingEvents");
+                    b.ToTable("BillingEvents", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.Business", b =>
@@ -321,6 +343,9 @@ namespace Ojunai.API.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<bool>("PricingV2Enabled")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("ReceiptAccentColor")
                         .HasColumnType("text");
 
@@ -399,7 +424,106 @@ namespace Ojunai.API.Migrations
                     b.HasIndex("AccountNumber")
                         .IsUnique();
 
-                    b.ToTable("Businesses");
+                    b.ToTable("Businesses", (string)null);
+                });
+
+            modelBuilder.Entity("Ojunai.API.Models.BusinessAddOn", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AddOnCode")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<DateTime>("AddedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("BilledAmount")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("BilledCurrency")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("CancelledAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("NextBillingAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessId", "Status");
+
+                    b.ToTable("BusinessAddOns", (string)null);
+                });
+
+            modelBuilder.Entity("Ojunai.API.Models.BusinessOverride", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("LegacyPriceAmount")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("LegacyPriceCurrency")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("LegacyTier")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("OverrideType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("ReasonNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("RevokedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.HasIndex("BusinessId", "OverrideType");
+
+                    b.ToTable("BusinessOverrides", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.Contact", b =>
@@ -440,7 +564,52 @@ namespace Ojunai.API.Migrations
 
                     b.HasIndex("BusinessId", "Name");
 
-                    b.ToTable("Contacts");
+                    b.ToTable("Contacts", (string)null);
+                });
+
+            modelBuilder.Entity("Ojunai.API.Models.ContactIdentity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("BusinessId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Channel")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ChannelIdentityValue")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LastSeenAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("LinkedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("Channel", "ChannelIdentityValue")
+                        .IsUnique();
+
+                    b.ToTable("ContactIdentities", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.DailySummary", b =>
@@ -486,7 +655,7 @@ namespace Ojunai.API.Migrations
                     b.HasIndex("BusinessId", "Date")
                         .IsUnique();
 
-                    b.ToTable("DailySummaries");
+                    b.ToTable("DailySummaries", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.EmailVerificationToken", b =>
@@ -516,7 +685,7 @@ namespace Ojunai.API.Migrations
 
                     b.HasIndex("UserId", "ExpiresAtUtc");
 
-                    b.ToTable("EmailVerificationTokens");
+                    b.ToTable("EmailVerificationTokens", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.Expense", b =>
@@ -585,7 +754,7 @@ namespace Ojunai.API.Migrations
 
                     b.HasIndex("BusinessId", "CreatedAtUtc");
 
-                    b.ToTable("Expenses");
+                    b.ToTable("Expenses", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.ImportJob", b =>
@@ -654,7 +823,7 @@ namespace Ojunai.API.Migrations
 
                     b.HasIndex("BusinessId", "CreatedAtUtc");
 
-                    b.ToTable("ImportJobs");
+                    b.ToTable("ImportJobs", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.InventoryTransaction", b =>
@@ -700,7 +869,7 @@ namespace Ojunai.API.Migrations
 
                     b.HasIndex("BusinessId", "ProductId");
 
-                    b.ToTable("InventoryTransactions");
+                    b.ToTable("InventoryTransactions", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.LedgerEntry", b =>
@@ -755,7 +924,7 @@ namespace Ojunai.API.Migrations
 
                     b.HasIndex("BusinessId", "EntryType");
 
-                    b.ToTable("LedgerEntries");
+                    b.ToTable("LedgerEntries", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.MessageLog", b =>
@@ -812,7 +981,7 @@ namespace Ojunai.API.Migrations
 
                     b.HasIndex("WhatsAppMessageId");
 
-                    b.ToTable("MessageLogs");
+                    b.ToTable("MessageLogs", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.MobileEvent", b =>
@@ -845,7 +1014,7 @@ namespace Ojunai.API.Migrations
 
                     b.HasIndex("Name", "CreatedAtUtc");
 
-                    b.ToTable("MobileEvents");
+                    b.ToTable("MobileEvents", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.OnboardingState", b =>
@@ -892,7 +1061,7 @@ namespace Ojunai.API.Migrations
                     b.HasIndex("PhoneNumber")
                         .IsUnique();
 
-                    b.ToTable("OnboardingStates");
+                    b.ToTable("OnboardingStates", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.PaystackEventLog", b =>
@@ -919,7 +1088,7 @@ namespace Ojunai.API.Migrations
                     b.HasIndex("EventId")
                         .IsUnique();
 
-                    b.ToTable("PaystackEventLogs");
+                    b.ToTable("PaystackEventLogs", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.PendingAction", b =>
@@ -964,7 +1133,7 @@ namespace Ojunai.API.Migrations
                     b.HasIndex("BusinessId", "UserId")
                         .IsUnique();
 
-                    b.ToTable("PendingActions");
+                    b.ToTable("PendingActions", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.PhoneVerificationCode", b =>
@@ -1004,7 +1173,7 @@ namespace Ojunai.API.Migrations
 
                     b.HasIndex("PhoneNumber", "Purpose", "ExpiresAtUtc");
 
-                    b.ToTable("PhoneVerificationCodes");
+                    b.ToTable("PhoneVerificationCodes", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.Product", b =>
@@ -1094,7 +1263,7 @@ namespace Ojunai.API.Migrations
 
                     b.HasIndex("BusinessId", "Name");
 
-                    b.ToTable("Products", t =>
+                    b.ToTable("Products", null, t =>
                         {
                             t.HasCheckConstraint("CK_Product_CurrentStock_NonNegative", "\"CurrentStock\" >= 0");
                         });
@@ -1164,7 +1333,7 @@ namespace Ojunai.API.Migrations
 
                     b.HasIndex("BusinessId", "CreatedAtUtc");
 
-                    b.ToTable("Sales");
+                    b.ToTable("Sales", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.SaleItem", b =>
@@ -1197,7 +1366,7 @@ namespace Ojunai.API.Migrations
 
                     b.HasIndex("SaleId");
 
-                    b.ToTable("SaleItems");
+                    b.ToTable("SaleItems", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.StockHold", b =>
@@ -1251,7 +1420,84 @@ namespace Ojunai.API.Migrations
 
                     b.HasIndex("BusinessId", "Status");
 
-                    b.ToTable("StockHolds");
+                    b.ToTable("StockHolds", (string)null);
+                });
+
+            modelBuilder.Entity("Ojunai.API.Models.Subscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BillingCurrency")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("BillingCycle")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<Guid>("BusinessId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("CancelledAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("CurrentPeriodEndsAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("CurrentPeriodStartsAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("GraceDays")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsAutoRenew")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("ProductLine")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("ProviderSubscriptionId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Tier")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime?>("TrialEndsAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProviderSubscriptionId");
+
+                    b.HasIndex("BusinessId", "ProductLine", "Status");
+
+                    b.ToTable("Subscriptions", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.User", b =>
@@ -1287,6 +1533,12 @@ namespace Ojunai.API.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<string>("IntendedBillingPeriod")
+                        .HasColumnType("text");
+
+                    b.Property<string>("IntendedPlan")
+                        .HasColumnType("text");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
@@ -1295,6 +1547,9 @@ namespace Ojunai.API.Migrations
 
                     b.Property<bool>("MustChangePassword")
                         .HasColumnType("boolean");
+
+                    b.Property<int>("OnboardingInventoryCount")
+                        .HasColumnType("integer");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()
@@ -1326,7 +1581,7 @@ namespace Ojunai.API.Migrations
                     b.HasIndex("PhoneNumber")
                         .IsUnique();
 
-                    b.ToTable("Users");
+                    b.ToTable("Users", (string)null);
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.AccountRecoveryToken", b =>

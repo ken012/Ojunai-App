@@ -53,19 +53,19 @@ public class PaymentReconciliationJobService
                 CreatedAtUtc = DateTime.UtcNow
             });
 
-            // Notify business owner via WhatsApp
+            // Notify business owner — channel-aware delivery (Phase 6 dispatcher).
             try
             {
                 var owner = biz.Users.FirstOrDefault(u => u.Role == UserRole.Owner && u.IsActive);
                 if (owner != null)
                 {
                     var planLabel = biz.Plan[0..1].ToUpper() + biz.Plan[1..];
-                    var whatsApp = _serviceProvider.GetRequiredService<IWhatsAppService>();
-                    await whatsApp.SendMessageAsync(
-                        $"whatsapp:{owner.PhoneNumber}",
-                        $"Your *{planLabel}* plan renewal could not be processed. " +
-                        $"Please visit app.ojunai.com/settings to resubscribe and keep your features.",
-                        biz.Id, owner.Id);
+                    var dispatcher = _serviceProvider.GetRequiredService<Ojunai.API.Services.Channels.INotificationDispatcher>();
+                    await dispatcher.SendToUserAsync(owner.Id, new Ojunai.API.Models.Messaging.ReplyComposition
+                    {
+                        Text = $"Your *{planLabel}* plan renewal could not be processed. " +
+                               $"Please visit app.ojunai.com/settings to resubscribe and keep your features.",
+                    });
                 }
             }
             catch (Exception ex)
