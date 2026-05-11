@@ -8,6 +8,7 @@ using Ojunai.API.Services.Interfaces;
 using Hangfire;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Ojunai.API.Controllers;
 
@@ -194,13 +195,14 @@ public class WebhooksController : ControllerBase
 
         // Audit log every inbound, post-verification. Mid-flight failures still have a paper trail.
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        db.MessageLogs.Add(new MessageLog
+        var auditLog = new MessageLog
         {
             Channel = "Messenger",
             Direction = MessageDirection.Inbound,
             RawMessage = Truncate(body, 4000),
             ProcessingStatus = MessageProcessingStatus.Received,
-        });
+        };
+        db.MessageLogs.Add(auditLog);
         await db.SaveChangesAsync();
         Request.Body.Position = 0;
 
@@ -209,6 +211,27 @@ public class WebhooksController : ControllerBase
         {
             // Non-message event (delivery receipt, read receipt, etc.) — already logged, ignore.
             return Ok();
+        }
+
+        // Idempotency — Meta retries on 5xx or slow 2xx responses, which means the same mid can
+        // arrive multiple times. Without this check we'd Claude-parse twice and (worse) potentially
+        // record a duplicate sale. Match the same dedup pattern WhatsApp uses (WhatsAppService.cs:297).
+        if (!string.IsNullOrEmpty(message.ProviderMessageId))
+        {
+            var seenBefore = await db.MessageLogs.AnyAsync(l =>
+                l.Channel == "Messenger"
+                && l.Direction == MessageDirection.Inbound
+                && l.WhatsAppMessageId == message.ProviderMessageId
+                && l.Id != auditLog.Id);
+            if (seenBefore)
+            {
+                _logger.LogInformation("Dropping duplicate Messenger webhook for mid {Mid}", message.ProviderMessageId);
+                return Ok();
+            }
+
+            // Persist the mid on the audit log so the next retry's check finds it.
+            auditLog.WhatsAppMessageId = message.ProviderMessageId;
+            await db.SaveChangesAsync();
         }
 
         // Hangfire enqueue for durability and async handling — Meta wants a 200 within 5s.
@@ -259,13 +282,14 @@ public class WebhooksController : ControllerBase
         // Audit log every inbound update. Useful when a user reports "the bot ignored me" —
         // we have ground truth of what arrived even if the parse later fails.
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        db.MessageLogs.Add(new MessageLog
+        var auditLog = new MessageLog
         {
             Channel = "Telegram",
             Direction = MessageDirection.Inbound,
             RawMessage = Truncate(body, 4000),
             ProcessingStatus = MessageProcessingStatus.Received,
-        });
+        };
+        db.MessageLogs.Add(auditLog);
         await db.SaveChangesAsync();
         Request.Body.Position = 0;
 
@@ -274,6 +298,26 @@ public class WebhooksController : ControllerBase
         {
             // Non-message update (channel post, my_chat_member event, etc.) — ignore.
             return Ok();
+        }
+
+        // Idempotency — Telegram retries on non-2xx and any timeout, so the same update_id /
+        // message_id can arrive multiple times. Without this check we'd Claude-parse twice and
+        // (worse) potentially record a duplicate sale. Same pattern as WhatsApp's dedup.
+        if (!string.IsNullOrEmpty(message.ProviderMessageId))
+        {
+            var seenBefore = await db.MessageLogs.AnyAsync(l =>
+                l.Channel == "Telegram"
+                && l.Direction == MessageDirection.Inbound
+                && l.WhatsAppMessageId == message.ProviderMessageId
+                && l.Id != auditLog.Id);
+            if (seenBefore)
+            {
+                _logger.LogInformation("Dropping duplicate Telegram webhook for message {Mid}", message.ProviderMessageId);
+                return Ok();
+            }
+
+            auditLog.WhatsAppMessageId = message.ProviderMessageId;
+            await db.SaveChangesAsync();
         }
 
         // Hangfire-enqueue the orchestrator call so processing is durable across restarts and

@@ -38,6 +38,25 @@ public class ClaudeParsingService : IClaudeParsingService
             return new ParsedMessage { Intent = "unknown", Confidence = 0 };
         }
 
+        // Short-circuit canonical commands ("help", "stock", "today's sales", etc.) before
+        // touching the Anthropic API. These are unambiguous single-word or fixed-phrase queries
+        // that Claude would always classify the same way — there's no point paying for a model
+        // round-trip. Skipped when there's a pending action because the user's reply might be
+        // answering an earlier question rather than starting a new command. Anything with
+        // numbers, products, or modifiers ("3 bags of rice", "show me my rice stock") still
+        // goes to Claude — the dictionary is intentionally exact-match only.
+        if (context.PendingAction == null && TryMatchSimpleCommand(message, out var quickIntent))
+        {
+            _logger.LogInformation("Short-circuit hit: {Intent} (saved Claude call)", quickIntent);
+            return new ParsedMessage
+            {
+                Intent = quickIntent,
+                Confidence = 1.0,
+                NeedsClarification = false,
+                BusinessAction = EmptyBusinessAction(),
+            };
+        }
+
         var systemPrompt = BuildSystemPrompt(context);
         var primaryModel = _config["Claude:Model"] ?? "claude-sonnet-4-6";
         var fastModel = _config["Claude:FastModel"] ?? "claude-haiku-4-5-20251001";
@@ -167,6 +186,101 @@ public class ClaudeParsingService : IClaudeParsingService
         {
             return new ParsedMessage { Intent = "unknown", Confidence = 0 };
         }
+    }
+
+    // ── Short-circuit table (Phase 7 cost reduction) ───────────────────────────
+    //
+    // Each key is matched EXACTLY against the trimmed, lowercased, punctuation-stripped user
+    // message. Adding new entries is safe as long as the key is unambiguous — anything that
+    // could plausibly mean two different things should stay in Claude's hands.
+    //
+    // Keys must be lowercase; the lookup is case-insensitive but normalization happens before
+    // we hit the dictionary anyway.
+    private static readonly Dictionary<string, string> SimpleCommandIntents = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Help + greet
+        ["help"] = "help",
+        ["/help"] = "help",
+        ["?"] = "help",
+        ["hi"] = "greet",
+        ["hello"] = "greet",
+        ["hey"] = "greet",
+        ["yo"] = "greet",
+
+        // Stock / inventory
+        ["stock"] = "get_all_stock",
+        ["inventory"] = "get_all_stock",
+        ["show stock"] = "get_all_stock",
+        ["show inventory"] = "get_all_stock",
+        ["current stock"] = "get_all_stock",
+        ["my stock"] = "get_all_stock",
+        ["my inventory"] = "get_all_stock",
+        ["low stock"] = "get_low_stock",
+        ["whats low"] = "get_low_stock",
+        ["what is low"] = "get_low_stock",
+        ["out of stock"] = "get_low_stock",
+
+        // Today / week / month metrics
+        ["today's sales"] = "get_today_sales",
+        ["todays sales"] = "get_today_sales",
+        ["today sales"] = "get_today_sales",
+        ["sales today"] = "get_today_sales",
+        ["today's expenses"] = "get_today_expenses",
+        ["todays expenses"] = "get_today_expenses",
+        ["today expenses"] = "get_today_expenses",
+        ["expenses today"] = "get_today_expenses",
+        ["this week"] = "get_week_sales",
+        ["weekly"] = "get_week_sales",
+        ["week sales"] = "get_week_sales",
+        ["this month"] = "get_profit_estimate",
+        ["monthly"] = "get_profit_estimate",
+
+        // Summary
+        ["summary"] = "get_daily_summary",
+        ["daily summary"] = "get_daily_summary",
+        ["today summary"] = "get_daily_summary",
+
+        // Debts
+        ["who owes me"] = "get_outstanding_receivables",
+        ["outstanding"] = "get_outstanding_receivables",
+        ["receivables"] = "get_outstanding_receivables",
+        ["outstanding receivables"] = "get_outstanding_receivables",
+        ["who do i owe"] = "get_outstanding_payables",
+        ["payables"] = "get_outstanding_payables",
+        ["outstanding payables"] = "get_outstanding_payables",
+
+        // Account / plan
+        ["my plan"] = "get_my_plan",
+        ["current plan"] = "get_my_plan",
+        ["plan"] = "get_my_plan",
+        ["plans"] = "get_plans",
+        ["show plans"] = "get_plans",
+        ["available plans"] = "get_plans",
+        ["my account"] = "get_my_account",
+        ["account"] = "get_my_account",
+
+        // Discoverability
+        ["roles"] = "show_roles",
+        ["show roles"] = "show_roles",
+        ["reports"] = "show_reports",
+        ["show reports"] = "show_reports",
+    };
+
+    private static bool TryMatchSimpleCommand(string message, out string intent)
+    {
+        // Trim → strip trailing punctuation → lowercase. The dictionary keys are lowercase, so
+        // even with OrdinalIgnoreCase comparison we normalize for predictable equality checks.
+        var normalized = message.Trim().TrimEnd('?', '.', '!', ',').Trim();
+        return SimpleCommandIntents.TryGetValue(normalized, out intent!);
+    }
+
+    private static JsonElement EmptyBusinessAction()
+    {
+        // ParsedMessage.BusinessAction is JsonElement, can't default-construct meaningfully.
+        // Parse "{}" once per call — JsonDocument is cheap and the document goes out of scope
+        // immediately so memory pressure is negligible.
+        using var doc = JsonDocument.Parse("{}");
+        return doc.RootElement.Clone();
     }
 
     private static string SanitizeForPrompt(string? input)
