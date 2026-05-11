@@ -18,7 +18,7 @@ public class ExpensesController : OjunaiBaseController
     public async Task<ActionResult<ApiResponse<ExpenseDto>>> Create([FromBody] CreateExpenseRequest request)
     {
         var user = await _db.Users.FindAsync(UserId);
-        var result = await _expenses.CreateAsync(BusinessId, request, "Manual", user?.Id, user?.FullName);
+        var result = await _expenses.CreateAsync(BusinessId, request, EntrySource.Dashboard, user?.Id, user?.FullName);
         return Ok(ApiResponse<ExpenseDto>.Ok(result, "Expense recorded."));
     }
 

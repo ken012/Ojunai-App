@@ -130,10 +130,23 @@ public class AlertService : IAlertService
         await _db.SaveChangesAsync();
     }
 
-    public async Task EmitPostSaleAlertsAsync(Guid businessId, decimal saleAmount, Guid? saleId = null)
+    public async Task EmitPostSaleAlertsAsync(Guid businessId, decimal saleAmount, Guid? saleId = null, string? sourceChannel = null)
     {
         var business = await _db.Businesses.FindAsync(businessId);
         if (business == null) return;
+
+        // Per-source large-sale toggle. When sourceChannel is null we treat it as "any" (legacy)
+        // and only check the global AlertDashboardLargeSale flag. When the channel is known we
+        // ALSO require the matching LargeSaleAlert{Channel} bool — gives owners control over
+        // which channels can trigger the alert.
+        var largeSaleAllowedBySource = sourceChannel switch
+        {
+            Common.EntrySource.WhatsApp => business.LargeSaleAlertWhatsApp,
+            Common.EntrySource.Telegram => business.LargeSaleAlertTelegram,
+            Common.EntrySource.Messenger => business.LargeSaleAlertMessenger,
+            Common.EntrySource.Dashboard or Common.EntrySource.Manual => business.LargeSaleAlertDashboard,
+            _ => true,  // Voice, Import, or anything we don't recognize defaults to allowed
+        };
 
         // Low stock — one alert per low product, dedup'd per product per ~20h
         if (business.AlertDashboardLowStock)
@@ -162,7 +175,8 @@ public class AlertService : IAlertService
         }
 
         // Large sale — fire once per qualifying sale; the alert ID itself prevents pile-up.
-        if (business.AlertDashboardLargeSale && business.LargeSaleThreshold > 0 && saleAmount >= business.LargeSaleThreshold)
+        // Honors both the global toggle and the per-source toggle resolved above.
+        if (business.AlertDashboardLargeSale && largeSaleAllowedBySource && business.LargeSaleThreshold > 0 && saleAmount >= business.LargeSaleThreshold)
         {
             var cs = Common.BillingConfig.Symbol(business.Currency);
             await CreateAsync(

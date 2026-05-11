@@ -39,5 +39,11 @@ public interface IAlertService
     /// large-sale alert dedups per-sale instead of per-call (caller may invoke us
     /// multiple times for the same sale via different code paths).
     /// </summary>
-    Task EmitPostSaleAlertsAsync(Guid businessId, decimal saleAmount, Guid? saleId = null);
+    /// <param name="sourceChannel">
+    /// The channel that recorded the sale ("WhatsApp" / "Telegram" / "Messenger" / "Dashboard").
+    /// Drives the per-source large-sale toggle on the Business record — owners can mute
+    /// large-sale alerts from individual channels. Null treats it as "all-source enabled",
+    /// the pre-3.7 behavior.
+    /// </param>
+    Task EmitPostSaleAlertsAsync(Guid businessId, decimal saleAmount, Guid? saleId = null, string? sourceChannel = null);
 }

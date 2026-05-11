@@ -42,6 +42,12 @@ public class WhatsAppService : IWhatsAppService
     private string _cs = "{_cs}";
     private TimeZoneInfo _tz = TimeZoneInfo.Utc;
 
+    // Source string baked into records when an intent handler creates a Sale/Expense/etc.
+    // Default is WhatsApp (legacy path); ExecuteIntentForUserAsync overrides to "Telegram" or
+    // "Messenger" when those channels delegate through this service so attribution stays correct.
+    // Scoped DI means each request gets its own service instance — no cross-request bleed.
+    private string _currentSource = EntrySource.WhatsApp;
+
     /// <summary>
     /// Returns an error message safe to show to end users over WhatsApp. Business-logic exceptions
     /// (our own InvalidOperationException/KeyNotFoundException/ArgumentException) carry meaningful
@@ -699,7 +705,8 @@ public class WhatsAppService : IWhatsAppService
             await alertSvc.EmitPostSaleAlertsAsync(
                 businessId,
                 recentSale?.TotalAmount ?? 0m,
-                recentSale?.Id);
+                recentSale?.Id,
+                _currentSource);
         }
         catch (Exception ex)
         {
@@ -778,13 +785,14 @@ public class WhatsAppService : IWhatsAppService
     /// attribution, pending-action flows) — callers should restrict which intents they route
     /// here to avoid those edge cases.
     /// </summary>
-    public async Task<string> ExecuteIntentForUserAsync(User user, ParsedMessage parsed)
+    public async Task<string> ExecuteIntentForUserAsync(User user, ParsedMessage parsed, string? sourceChannel = null)
     {
         if (user.Business is null)
             throw new InvalidOperationException("ExecuteIntentForUserAsync requires user.Business to be loaded — eager-load with Include(u => u.Business).");
 
         _cs = BillingConfig.Symbol(user.Business.Currency);
         _tz = TimeZoneInfo.FindSystemTimeZoneById(user.Business.Timezone ?? "Africa/Lagos");
+        _currentSource = sourceChannel ?? EntrySource.WhatsApp;
         return await ExecuteIntentAsync(user, parsed);
     }
 
@@ -900,7 +908,7 @@ public class WhatsAppService : IWhatsAppService
             ContactId = contactId,
             Amount = amount,
             PaymentType = paymentType
-        }, EntrySource.WhatsApp, recordedBy.Id, recordedBy.FullName);
+        }, _currentSource, recordedBy.Id, recordedBy.FullName);
 
         var direction = paymentType == "receivable" ? $"{contactName} paid you" : $"You paid {contactName}";
         return $"✅ Payment recorded with credit balance: {direction} {_cs}{amount:N0}";
@@ -938,7 +946,7 @@ public class WhatsAppService : IWhatsAppService
             ContactId = contactId,
             PaymentStatus = paymentStatus,
             PaymentMethod = paymentMethod
-        }, EntrySource.WhatsApp, recordedBy.Id, recordedBy.FullName);
+        }, _currentSource, recordedBy.Id, recordedBy.FullName);
 
         var lines = sale.Items.Select(i => $"• {i.Quantity} {i.Unit} of {i.ProductName} @ {_cs}{i.UnitPrice:N0} = {_cs}{i.TotalPrice:N0}");
         var debtNote = "";
@@ -1114,7 +1122,7 @@ public class WhatsAppService : IWhatsAppService
             ContactId = contactId,
             PaymentStatus = paymentStatus,
             PaymentMethod = paymentMethod
-        }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
+        }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
 
         var lines = sale.Items.Select(i => $"• {i.Quantity} {i.Unit} of {i.ProductName} @ {_cs}{i.UnitPrice:N0} = {_cs}{i.TotalPrice:N0}");
         var debtNote = "";
@@ -1150,7 +1158,7 @@ public class WhatsAppService : IWhatsAppService
             Amount = amount.Value,
             Notes = ba.GetStringOrNull("notes"),
             PaidTo = ba.GetStringOrNull("paidTo")
-        }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
+        }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
 
         return $"✅ Expense recorded: {_cs}{expense.Amount:N0} for {expense.Category}" +
                (expense.PaidTo != null ? $" (paid to {expense.PaidTo})" : "");
@@ -1223,7 +1231,7 @@ public class WhatsAppService : IWhatsAppService
                             LowStockThreshold = 5,
                             Category = category,
                             Subcategory = subcategory,
-                            Source = EntrySource.WhatsApp,
+                            Source = _currentSource,
                             RecordedByUserId = recordedBy?.Id,
                             RecordedByName = recordedBy?.FullName
                         };
@@ -1257,7 +1265,7 @@ public class WhatsAppService : IWhatsAppService
                             Category = "Inventory",
                             Amount = purchaseTotal,
                             Notes = $"Bought {qty.Value:0.##} {product.Unit} of {product.Name} @ {_cs}{effectiveCost.Value:N0}",
-                        }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
+                        }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
                     }
 
                     var newTag = isNew ? " 🆕" : "";
@@ -1315,7 +1323,7 @@ public class WhatsAppService : IWhatsAppService
                 LowStockThreshold = 5,
                 Category = category,
                 Subcategory = subcategory,
-                Source = EntrySource.WhatsApp,
+                Source = _currentSource,
                 RecordedByUserId = recordedBy?.Id,
                 RecordedByName = recordedBy?.FullName
             };
@@ -1353,7 +1361,7 @@ public class WhatsAppService : IWhatsAppService
                     Amount = purchaseTotal,
                     Notes = $"Bought {qty:0.##} {product.Unit} of {product.Name} @ {_cs}{effectiveCost.Value:N0}/{product.Unit}",
                     PaidTo = paidTo
-                }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
+                }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
             }
 
             await tx.CommitAsync();
@@ -1383,7 +1391,7 @@ public class WhatsAppService : IWhatsAppService
                 ContactId = contact.Id,
                 Amount = totalOwed,
                 Notes = totalOwed > 0 ? $"Credit purchase: {qty:0.##} {product.Unit} of {product.Name} @ {_cs}{payLaterCost!.Value:N0}" : $"PAY_LATER:{product.Name}:{qty:0.##}"
-            }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
+            }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
 
             if (totalOwed > 0)
                 debtNote = $"\n💳 You owe *{sName}* {_cs}{totalOwed:N0}" + (unitCost == null ? " (using stored cost price)" : "");
@@ -1524,7 +1532,7 @@ public class WhatsAppService : IWhatsAppService
         await _ledger.CreateReceivableAsync(businessId, new CreateReceivableRequest
         {
             ContactId = contact!.Id, Amount = amount.Value, Notes = ba.GetStringOrNull("notes")
-        }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
+        }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
 
         return $"✅ Recorded: {contact.Name} owes you {_cs}{amount.Value:N0}";
     }
@@ -1550,7 +1558,7 @@ public class WhatsAppService : IWhatsAppService
         await _ledger.CreatePayableAsync(businessId, new CreatePayableRequest
         {
             ContactId = contact!.Id, Amount = amount.Value, Notes = ba.GetStringOrNull("notes")
-        }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
+        }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
 
         return $"✅ Recorded: You owe {contact.Name} {_cs}{amount.Value:N0}";
     }
@@ -1596,7 +1604,7 @@ public class WhatsAppService : IWhatsAppService
                 await _ledger.RecordPaymentAsync(businessId, new RecordPaymentRequest
                 {
                     ContactId = c.Contact.Id, Amount = c.Outstanding, PaymentType = type
-                }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
+                }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
                 cleared.Add($"• {c.Contact.Name}: {_cs}{c.Outstanding:N0}");
             }
 
@@ -1678,7 +1686,7 @@ public class WhatsAppService : IWhatsAppService
             await _ledger.RecordPaymentAsync(businessId, new RecordPaymentRequest
             {
                 ContactId = contact.Id, Amount = amount.Value, PaymentType = type
-            }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
+            }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
 
             var remaining = outstanding - amount.Value;
             var suffix = remaining > 0 ? $"\nRemaining balance: {_cs}{remaining:N0}" : "\nBalance fully cleared ✅";
@@ -1715,7 +1723,7 @@ public class WhatsAppService : IWhatsAppService
             LowStockThreshold = 5,
             Category = ba.GetStringOrNull("category"),
             Subcategory = ba.GetStringOrNull("subcategory"),
-            Source = EntrySource.WhatsApp,
+            Source = _currentSource,
             RecordedByUserId = recordedBy?.Id,
             RecordedByName = recordedBy?.FullName
         };
@@ -2581,7 +2589,7 @@ public class WhatsAppService : IWhatsAppService
 
         try
         {
-            var hold = await _holds.CreateHoldAsync(businessId, product.Id, contactName ?? "Customer", qty.Value, ba.GetStringOrNull("notes"), Common.EntrySource.WhatsApp);
+            var hold = await _holds.CreateHoldAsync(businessId, product.Id, contactName ?? "Customer", qty.Value, ba.GetStringOrNull("notes"), _currentSource);
             return $"✅ Held {qty.Value:0.##} {product.Unit} of {product.Name} for *{hold.ContactName}*.\n\nWhen they arrive, say \"{hold.ContactName} came for her {product.Name.ToLower()}\" to convert to a sale, or \"Release {hold.ContactName}'s hold\" to cancel.";
         }
         catch (InvalidOperationException ex)
@@ -2701,7 +2709,7 @@ public class WhatsAppService : IWhatsAppService
                 Amount = amt,
                 PaidTo = paidTo,
                 Notes = $"{notes ?? cat} (corrected from {oldRef}: {_cs}{lastExpense.Amount:N0} {lastExpense.Category})"
-            }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
+            }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
 
             var paidToNote = !string.IsNullOrEmpty(paidTo) ? $" to {paidTo}" : "";
             results.Add($"{_cs}{amt:N0} for {cat}{paidToNote}");
@@ -3107,7 +3115,7 @@ public class WhatsAppService : IWhatsAppService
                 EntryType = paymentType,
                 Amount = outstanding,
                 Notes = $"Debt cleared (adjusted from {_cs}{outstanding:N0} to {_cs}0)",
-                Source = EntrySource.WhatsApp,
+                Source = _currentSource,
                 RecordedByUserId = recordedBy?.Id,
                 RecordedByName = recordedBy?.FullName
             });
@@ -3194,7 +3202,7 @@ public class WhatsAppService : IWhatsAppService
             Name = name.Trim(),
             PhoneNumber = string.IsNullOrWhiteSpace(phone) ? null : phone.Trim(),
             Type = contactType,
-            Source = EntrySource.WhatsApp
+            Source = _currentSource
         };
         _db.Contacts.Add(contact);
         await _db.SaveChangesAsync();
@@ -3242,7 +3250,7 @@ public class WhatsAppService : IWhatsAppService
         if (partial != null) return partial;
 
         // 5. No match — create new with normalized name so future lookups don't drift.
-        contact = new Contact { BusinessId = businessId, Name = normalized, Type = type, Source = EntrySource.WhatsApp };
+        contact = new Contact { BusinessId = businessId, Name = normalized, Type = type, Source = _currentSource };
         _db.Contacts.Add(contact);
         await _db.SaveChangesAsync();
         return contact;
@@ -3287,7 +3295,7 @@ public class WhatsAppService : IWhatsAppService
         if (partials.Count > 1) return (null, partials);
 
         // 5. No match — create new with normalized name.
-        var contact = new Contact { BusinessId = businessId, Name = normalized, Type = type, Source = EntrySource.WhatsApp };
+        var contact = new Contact { BusinessId = businessId, Name = normalized, Type = type, Source = _currentSource };
         _db.Contacts.Add(contact);
         await _db.SaveChangesAsync();
         return (contact, null);
@@ -3474,7 +3482,7 @@ public class WhatsAppService : IWhatsAppService
                     await _ledger.CreateReceivableAsync(businessId, new DTOs.Ledger.CreateReceivableRequest
                     {
                         ContactId = cId.Value, Amount = lastSale.TotalAmount, Notes = "Credit sale (updated)"
-                    }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
+                    }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
                     var cName = lastSale.Contact?.Name ?? ba.GetStringOrNull("contactName") ?? "Customer";
                     changes.Add($"{cName} now owes {_cs}{lastSale.TotalAmount:N0}");
                 }
@@ -3964,7 +3972,7 @@ public class WhatsAppService : IWhatsAppService
             ContactId = lastSale.ContactId,
             PaymentStatus = lastSale.PaymentStatus,
             PaymentMethod = lastSale.PaymentMethod
-        }, EntrySource.WhatsApp, recordedBy?.Id, recordedBy?.FullName);
+        }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
 
         var lines = sale.Items.Select(i => $"• {i.Quantity} {i.Unit} of {i.ProductName} @ {_cs}{i.UnitPrice:N0} = {_cs}{i.TotalPrice:N0}");
         var skippedNote = skipped.Count > 0 ? $"\n\n⚠️ Skipped: {string.Join(", ", skipped)}" : "";

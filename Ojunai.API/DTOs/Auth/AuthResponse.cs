@@ -40,6 +40,10 @@ public class BusinessDto
     public bool AlertLowStock { get; set; } = true;
     public bool AlertDailySummary { get; set; } = true;
     public bool AlertLargeSale { get; set; } = true;
+    public bool LargeSaleAlertWhatsApp { get; set; } = true;
+    public bool LargeSaleAlertTelegram { get; set; } = true;
+    public bool LargeSaleAlertMessenger { get; set; } = true;
+    public bool LargeSaleAlertDashboard { get; set; } = true;
     public bool AlertDashboardLowStock { get; set; } = true;
     public bool AlertDashboardDailySummary { get; set; } = true;
     public bool AlertDashboardLargeSale { get; set; } = true;

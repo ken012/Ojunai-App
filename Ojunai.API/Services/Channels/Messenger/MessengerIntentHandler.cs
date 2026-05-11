@@ -44,6 +44,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
     private readonly IPendingTelegramActionService _pending;
     private readonly MessengerAdapter _messenger;
     private readonly IWhatsAppService _whatsappDispatch;
+    private readonly IAlertService _alerts;
     private readonly ILogger<MessengerIntentHandler> _logger;
 
     public MessengerIntentHandler(
@@ -57,6 +58,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         IPendingTelegramActionService pending,
         MessengerAdapter messenger,
         IWhatsAppService whatsappDispatch,
+        IAlertService alerts,
         ILogger<MessengerIntentHandler> logger)
     {
         _db = db;
@@ -69,6 +71,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         _pending = pending;
         _messenger = messenger;
         _whatsappDispatch = whatsappDispatch;
+        _alerts = alerts;
         _logger = logger;
     }
 
@@ -197,7 +200,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         }
         try
         {
-            var reply = await _whatsappDispatch.ExecuteIntentForUserAsync(user, parsed);
+            var reply = await _whatsappDispatch.ExecuteIntentForUserAsync(user, parsed, EntrySource.Messenger);
             await Reply(inbound, reply, ct);
         }
         catch (Exception ex)
@@ -336,7 +339,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         SaleDto sale;
         try
         {
-            sale = await _sales.CreateAsync(businessId, request, source: "Messenger", recordedByUserId: userId);
+            sale = await _sales.CreateAsync(businessId, request, source: EntrySource.Messenger, recordedByUserId: userId);
         }
         catch (Exception ex)
         {
@@ -344,6 +347,9 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
             await Reply(inbound, $"Couldn't record the sale: {FriendlyErrorMessage(ex)}", ct);
             return;
         }
+
+        try { await _alerts.EmitPostSaleAlertsAsync(businessId, sale.TotalAmount, sale.Id, EntrySource.Messenger); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Post-sale alert emit failed (Messenger)"); }
 
         var customerLine = contactId.HasValue && !string.IsNullOrEmpty(sale.CustomerName)
             ? $" to {sale.CustomerName}"
@@ -473,7 +479,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         ExpenseDto expense;
         try
         {
-            expense = await _expenses.CreateAsync(businessId, request, source: "Messenger", recordedByUserId: userId);
+            expense = await _expenses.CreateAsync(businessId, request, source: EntrySource.Messenger, recordedByUserId: userId);
         }
         catch (Exception ex)
         {
@@ -519,7 +525,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
 
         try
         {
-            await _ledger.RecordPaymentAsync(businessId, request, source: "Messenger", recordedByUserId: userId);
+            await _ledger.RecordPaymentAsync(businessId, request, source: EntrySource.Messenger, recordedByUserId: userId);
         }
         catch (Exception ex)
         {
@@ -754,7 +760,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         SaleDto sale;
         try
         {
-            sale = await _sales.CreateAsync(consumed.BusinessId, request, source: "Messenger", recordedByUserId: consumed.UserId);
+            sale = await _sales.CreateAsync(consumed.BusinessId, request, source: EntrySource.Messenger, recordedByUserId: consumed.UserId);
         }
         catch (Exception ex)
         {
@@ -762,6 +768,9 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
             await Reply(inbound, $"Created the product(s) but couldn't record the sale: {FriendlyErrorMessage(ex)}", ct);
             return;
         }
+
+        try { await _alerts.EmitPostSaleAlertsAsync(consumed.BusinessId, sale.TotalAmount, sale.Id, EntrySource.Messenger); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Post-sale alert emit failed (Messenger resume)"); }
 
         var customerLine = contactId.HasValue && !string.IsNullOrEmpty(sale.CustomerName)
             ? $" to {sale.CustomerName}"

@@ -42,7 +42,7 @@ public class LedgerController : OjunaiBaseController
     public async Task<ActionResult<ApiResponse<LedgerEntryDto>>> RecordPayment([FromBody] RecordPaymentRequest request)
     {
         var user = await _db.Users.FindAsync(UserId);
-        var result = await _ledger.RecordPaymentAsync(BusinessId, request, "Manual", user?.Id, user?.FullName);
+        var result = await _ledger.RecordPaymentAsync(BusinessId, request, Common.EntrySource.Dashboard, user?.Id, user?.FullName);
         return Ok(ApiResponse<LedgerEntryDto>.Ok(result, "Payment recorded."));
     }
 

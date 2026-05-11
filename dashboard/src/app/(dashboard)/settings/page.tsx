@@ -370,26 +370,66 @@ function SettingsPage() {
                 </div>
               </label>
               {business?.alertLargeSale && (
-                <div className="ml-7">
-                  <Label className="text-xs">Alert Threshold</Label>
-                  <Input
-                    type="number"
-                    value={business?.largeSaleThreshold?.toString() ?? "100000"}
-                    placeholder="e.g. 100000"
-                    onChange={async (e) => {
-                      const val = Number(e.target.value);
-                      try {
-                        const { data } = await api.put<{ data: typeof business }>("/business", { largeSaleThreshold: val || 100000 });
-                        const updated = data.data!;
-                        setBusiness(updated);
-                        if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
-                      } catch (err: unknown) {
-                        const ax = err as { response?: { data?: { errors?: string[] } } };
-                        toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
-                      }
-                    }}
-                  />
-                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Alert when a sale exceeds {cs}{(business?.largeSaleThreshold ?? 100000).toLocaleString()}</p>
+                <div className="ml-7 space-y-3">
+                  <div>
+                    <Label className="text-xs">Alert Threshold</Label>
+                    <Input
+                      type="number"
+                      value={business?.largeSaleThreshold?.toString() ?? "100000"}
+                      placeholder="e.g. 100000"
+                      onChange={async (e) => {
+                        const val = Number(e.target.value);
+                        try {
+                          const { data } = await api.put<{ data: typeof business }>("/business", { largeSaleThreshold: val || 100000 });
+                          const updated = data.data!;
+                          setBusiness(updated);
+                          if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
+                        } catch (err: unknown) {
+                          const ax = err as { response?: { data?: { errors?: string[] } } };
+                          toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+                        }
+                      }}
+                    />
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Alert when a sale exceeds {cs}{(business?.largeSaleThreshold ?? 100000).toLocaleString()}</p>
+                  </div>
+
+                  {/* Per-source toggles: which sales channels should trigger the alert?
+                      Defaults on the API are all true so existing behavior (alert on any channel)
+                      is preserved. Owners can untoggle individual channels to mute noisy ones. */}
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <p className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">Trigger alerts from</p>
+                    <div className="space-y-1.5">
+                      {([
+                        { key: "largeSaleAlertWhatsApp", label: "WhatsApp" },
+                        { key: "largeSaleAlertTelegram", label: "Telegram" },
+                        { key: "largeSaleAlertMessenger", label: "Facebook Messenger" },
+                        { key: "largeSaleAlertDashboard", label: "Dashboard" },
+                      ] as const).map(({ key, label }) => {
+                        const current = (business as unknown as Record<string, boolean | undefined> | undefined)?.[key];
+                        return (
+                          <label key={key} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
+                              checked={current ?? true}
+                              onChange={async (e) => {
+                                try {
+                                  const { data } = await api.put<{ data: typeof business }>("/business", { [key]: e.target.checked });
+                                  const updated = data.data!;
+                                  setBusiness(updated);
+                                  if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
+                                } catch (err: unknown) {
+                                  const ax = err as { response?: { data?: { errors?: string[] } } };
+                                  toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+                                }
+                              }}
+                            />
+                            <span className="text-xs text-slate-700 dark:text-slate-300">{label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1173,6 +1213,10 @@ type BusinessShape = {
   alertLowStock?: boolean;
   alertDailySummary?: boolean;
   alertLargeSale?: boolean;
+  largeSaleAlertWhatsApp?: boolean;
+  largeSaleAlertTelegram?: boolean;
+  largeSaleAlertMessenger?: boolean;
+  largeSaleAlertDashboard?: boolean;
   confirmLargeSales?: boolean;
   confirmLargeSaleThreshold?: number;
   vatEnabled?: boolean;

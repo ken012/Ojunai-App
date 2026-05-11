@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Ojunai.API.Data;
 using Ojunai.API.Models.Messaging;
 using Microsoft.EntityFrameworkCore;
@@ -212,7 +213,7 @@ public sealed class MessengerAdapter : IChannelAdapter
             Tag = tagString,
             Message = new MessengerOutboundMessage
             {
-                Text = TruncateIfNeeded(reply.Text, 2000),
+                Text = TruncateIfNeeded(StripWhatsAppMarkdown(reply.Text), 2000),
                 QuickReplies = BuildQuickReplies(reply.QuickReplies),
             },
         };
@@ -308,4 +309,23 @@ public sealed class MessengerAdapter : IChannelAdapter
 
     private static string TruncateIfNeeded(string text, int max)
         => text.Length <= max ? text : text[..(max - 1)] + "…";
+
+    // WhatsApp uses *bold*, _italic_, ~strike~, `code` markers. Messenger renders them literally
+    // (as actual asterisks/underscores) which looks broken. Strip them at the boundary so the
+    // shared formatters (which target WhatsApp) still produce readable text on Messenger. We
+    // match each pair non-greedily on a single line so legitimate stray markers don't disappear.
+    private static readonly Regex BoldPattern = new(@"\*([^*\n]+)\*", RegexOptions.Compiled);
+    private static readonly Regex ItalicPattern = new(@"(?<=^|\s)_([^_\n]+)_(?=\s|$|[.,!?;:])", RegexOptions.Compiled | RegexOptions.Multiline);
+    private static readonly Regex StrikePattern = new(@"~([^~\n]+)~", RegexOptions.Compiled);
+    private static readonly Regex CodePattern = new(@"`([^`\n]+)`", RegexOptions.Compiled);
+
+    private static string StripWhatsAppMarkdown(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+        text = BoldPattern.Replace(text, "$1");
+        text = ItalicPattern.Replace(text, "$1");
+        text = StrikePattern.Replace(text, "$1");
+        text = CodePattern.Replace(text, "$1");
+        return text;
+    }
 }

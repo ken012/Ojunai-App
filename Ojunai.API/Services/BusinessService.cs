@@ -43,6 +43,10 @@ public class BusinessService : IBusinessService
         if (request.AlertLargeSale.HasValue) business.AlertLargeSale = request.AlertLargeSale.Value;
         if (request.ConfirmLargeSales.HasValue) business.ConfirmLargeSales = request.ConfirmLargeSales.Value;
         if (request.ConfirmLargeSaleThreshold.HasValue) business.ConfirmLargeSaleThreshold = request.ConfirmLargeSaleThreshold.Value;
+        if (request.LargeSaleAlertWhatsApp.HasValue) business.LargeSaleAlertWhatsApp = request.LargeSaleAlertWhatsApp.Value;
+        if (request.LargeSaleAlertTelegram.HasValue) business.LargeSaleAlertTelegram = request.LargeSaleAlertTelegram.Value;
+        if (request.LargeSaleAlertMessenger.HasValue) business.LargeSaleAlertMessenger = request.LargeSaleAlertMessenger.Value;
+        if (request.LargeSaleAlertDashboard.HasValue) business.LargeSaleAlertDashboard = request.LargeSaleAlertDashboard.Value;
         if (request.AlertDashboardLowStock.HasValue) business.AlertDashboardLowStock = request.AlertDashboardLowStock.Value;
         if (request.AlertDashboardDailySummary.HasValue) business.AlertDashboardDailySummary = request.AlertDashboardDailySummary.Value;
         if (request.AlertDashboardLargeSale.HasValue) business.AlertDashboardLargeSale = request.AlertDashboardLargeSale.Value;
@@ -99,6 +103,10 @@ public class BusinessService : IBusinessService
         AlertLargeSale = b.AlertLargeSale,
         ConfirmLargeSales = b.ConfirmLargeSales,
         ConfirmLargeSaleThreshold = b.ConfirmLargeSaleThreshold,
+        LargeSaleAlertWhatsApp = b.LargeSaleAlertWhatsApp,
+        LargeSaleAlertTelegram = b.LargeSaleAlertTelegram,
+        LargeSaleAlertMessenger = b.LargeSaleAlertMessenger,
+        LargeSaleAlertDashboard = b.LargeSaleAlertDashboard,
         AlertDashboardLowStock = b.AlertDashboardLowStock,
         AlertDashboardDailySummary = b.AlertDashboardDailySummary,
         AlertDashboardLargeSale = b.AlertDashboardLargeSale,

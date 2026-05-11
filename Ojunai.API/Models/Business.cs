@@ -36,6 +36,16 @@ public class Business
     public bool ConfirmLargeSales { get; set; } = false;
     public decimal ConfirmLargeSaleThreshold { get; set; } = 0;
 
+    // ── Per-source large-sale alert toggles ────────────────────────────────
+    // Owners can turn large-sale alerts on/off independently by source so a quiet sales
+    // channel doesn't get the same treatment as their main channel. Default all true to
+    // preserve existing behavior — owner enabled large-sale alerts globally, they want
+    // alerts everywhere. Untoggling per-source narrows the scope.
+    public bool LargeSaleAlertWhatsApp { get; set; } = true;
+    public bool LargeSaleAlertTelegram { get; set; } = true;
+    public bool LargeSaleAlertMessenger { get; set; } = true;
+    public bool LargeSaleAlertDashboard { get; set; } = true;
+
     // ── Dashboard alert toggles ────────────────────────────────────────────
     // Mirror of the WhatsApp toggles above but for in-app notifications. Security
     // and billing alerts (login from new device, payment failed, trial ending,

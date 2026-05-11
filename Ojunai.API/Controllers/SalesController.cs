@@ -44,7 +44,7 @@ public class SalesController : OjunaiBaseController
     public async Task<ActionResult<ApiResponse<SaleDto>>> Create([FromBody] CreateSaleRequest request)
     {
         var user = await _db.Users.FindAsync(UserId);
-        var result = await _sales.CreateAsync(BusinessId, request, "Manual", user?.Id, user?.FullName);
+        var result = await _sales.CreateAsync(BusinessId, request, EntrySource.Dashboard, user?.Id, user?.FullName);
 
         // Fire alerts (low stock + large sale + sales goal hit) — fire in background so a slow
         // alert never blocks the sale response. Open a fresh DI scope inside the task because
@@ -59,7 +59,7 @@ public class SalesController : OjunaiBaseController
             {
                 using var scope = _scopeFactory.CreateScope();
                 var alerts = scope.ServiceProvider.GetRequiredService<IAlertService>();
-                await alerts.EmitPostSaleAlertsAsync(businessId, saleAmount, saleId);
+                await alerts.EmitPostSaleAlertsAsync(businessId, saleAmount, saleId, EntrySource.Dashboard);
                 // WhatsApp side (existing) — keep firing the WhatsApp messages too
                 var ctrl = scope.ServiceProvider.GetService<Microsoft.Extensions.Logging.ILogger<SalesController>>();
                 await FireWhatsAppAlertsAsync(scope.ServiceProvider, businessId, saleAmount, ctrl);

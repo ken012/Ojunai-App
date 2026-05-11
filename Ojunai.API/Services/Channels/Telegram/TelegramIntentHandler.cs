@@ -40,6 +40,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
     private readonly IPendingTelegramActionService _pending;
     private readonly TelegramAdapter _telegram;
     private readonly IWhatsAppService _whatsappDispatch;
+    private readonly IAlertService _alerts;
     private readonly ILogger<TelegramIntentHandler> _logger;
 
     public TelegramIntentHandler(
@@ -54,6 +55,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         IPendingTelegramActionService pending,
         TelegramAdapter telegram,
         IWhatsAppService whatsappDispatch,
+        IAlertService alerts,
         ILogger<TelegramIntentHandler> logger)
     {
         _db = db;
@@ -67,6 +69,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         _pending = pending;
         _telegram = telegram;
         _whatsappDispatch = whatsappDispatch;
+        _alerts = alerts;
         _logger = logger;
     }
 
@@ -229,7 +232,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         }
         try
         {
-            var reply = await _whatsappDispatch.ExecuteIntentForUserAsync(user, parsed);
+            var reply = await _whatsappDispatch.ExecuteIntentForUserAsync(user, parsed, EntrySource.Telegram);
             await Reply(inbound, reply, ct);
         }
         catch (Exception ex)
@@ -398,7 +401,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         SaleDto sale;
         try
         {
-            sale = await _sales.CreateAsync(businessId, request, source: "Telegram", recordedByUserId: userId);
+            sale = await _sales.CreateAsync(businessId, request, source: EntrySource.Telegram, recordedByUserId: userId);
         }
         catch (Exception ex)
         {
@@ -406,6 +409,11 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
             await Reply(inbound, $"Couldn't record the sale: {FriendlyErrorMessage(ex)}", ct);
             return;
         }
+
+        // Fire post-sale alerts (low stock, large sale, daily goal) — channel-aware so the per-source
+        // large-sale toggle on Business kicks in. Best-effort: failure here doesn't roll back the sale.
+        try { await _alerts.EmitPostSaleAlertsAsync(businessId, sale.TotalAmount, sale.Id, EntrySource.Telegram); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Post-sale alert emit failed (Telegram)"); }
 
         // Text confirmation + PDF receipt as native Telegram document attachment. Multi-line sales
         // get each item on its own row so the user can verify the bot understood correctly.
@@ -581,7 +589,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         ExpenseDto expense;
         try
         {
-            expense = await _expenses.CreateAsync(businessId, request, source: "Telegram", recordedByUserId: userId);
+            expense = await _expenses.CreateAsync(businessId, request, source: EntrySource.Telegram, recordedByUserId: userId);
         }
         catch (Exception ex)
         {
@@ -627,7 +635,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
 
         try
         {
-            await _ledger.RecordPaymentAsync(businessId, request, source: "Telegram", recordedByUserId: userId);
+            await _ledger.RecordPaymentAsync(businessId, request, source: EntrySource.Telegram, recordedByUserId: userId);
         }
         catch (Exception ex)
         {
@@ -944,7 +952,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         SaleDto sale;
         try
         {
-            sale = await _sales.CreateAsync(consumed.BusinessId, request, source: "Telegram", recordedByUserId: consumed.UserId);
+            sale = await _sales.CreateAsync(consumed.BusinessId, request, source: EntrySource.Telegram, recordedByUserId: consumed.UserId);
         }
         catch (Exception ex)
         {
@@ -952,6 +960,9 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
             await Reply(inbound, $"Created the product(s) but couldn't record the sale: {FriendlyErrorMessage(ex)}", ct);
             return;
         }
+
+        try { await _alerts.EmitPostSaleAlertsAsync(consumed.BusinessId, sale.TotalAmount, sale.Id, EntrySource.Telegram); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Post-sale alert emit failed (Telegram resume)"); }
 
         var customerLine = contactId.HasValue && !string.IsNullOrEmpty(sale.CustomerName)
             ? $" to {sale.CustomerName}"
