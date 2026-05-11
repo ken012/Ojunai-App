@@ -769,6 +769,25 @@ public class WhatsAppService : IWhatsAppService
     };
     // Query intents (get_*) → no permission check needed, all roles can query
 
+    /// <summary>
+    /// Public entry point so non-WhatsApp channels (Telegram, Messenger) can delegate intent
+    /// dispatch through WhatsApp's existing handlers. Sets up per-call currency/timezone
+    /// instance state, then delegates to the private dispatcher.
+    ///
+    /// See <see cref="IWhatsAppService.ExecuteIntentForUserAsync"/> for caveats (source
+    /// attribution, pending-action flows) — callers should restrict which intents they route
+    /// here to avoid those edge cases.
+    /// </summary>
+    public async Task<string> ExecuteIntentForUserAsync(User user, ParsedMessage parsed)
+    {
+        if (user.Business is null)
+            throw new InvalidOperationException("ExecuteIntentForUserAsync requires user.Business to be loaded — eager-load with Include(u => u.Business).");
+
+        _cs = BillingConfig.Symbol(user.Business.Currency);
+        _tz = TimeZoneInfo.FindSystemTimeZoneById(user.Business.Timezone ?? "Africa/Lagos");
+        return await ExecuteIntentAsync(user, parsed);
+    }
+
     private async Task<string> ExecuteIntentAsync(User user, ParsedMessage parsed)
     {
         // Permission check

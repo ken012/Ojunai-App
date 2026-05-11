@@ -142,7 +142,6 @@ builder.Services.AddScoped<Ojunai.API.Services.Channels.Telegram.TelegramAdapter
 builder.Services.AddScoped<Ojunai.API.Services.Channels.Messenger.MessengerAdapter>(); // For direct injection by MessengerIntentHandler
 builder.Services.AddScoped<Ojunai.API.Services.Channels.IChannelRegistry, Ojunai.API.Services.Channels.ChannelRegistry>();
 builder.Services.AddScoped<Ojunai.API.Services.Channels.IChannelLinkingService, Ojunai.API.Services.Channels.ChannelLinkingService>();
-builder.Services.AddScoped<Ojunai.API.Services.Channels.IChatQueryService, Ojunai.API.Services.Channels.ChatQueryService>();
 builder.Services.AddScoped<Ojunai.API.Services.Channels.INotificationDispatcher, Ojunai.API.Services.Channels.NotificationDispatcher>();
 builder.Services.AddScoped<Ojunai.API.Services.Channels.Telegram.IPendingTelegramActionService, Ojunai.API.Services.Channels.Telegram.PendingTelegramActionService>();
 builder.Services.AddScoped<Ojunai.API.Services.Channels.Telegram.ITelegramIntentHandler, Ojunai.API.Services.Channels.Telegram.TelegramIntentHandler>();

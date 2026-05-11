@@ -43,7 +43,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
     private readonly IProductService _products;
     private readonly IPendingTelegramActionService _pending;
     private readonly MessengerAdapter _messenger;
-    private readonly IChatQueryService _queries;
+    private readonly IWhatsAppService _whatsappDispatch;
     private readonly ILogger<MessengerIntentHandler> _logger;
 
     public MessengerIntentHandler(
@@ -56,7 +56,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         IProductService products,
         IPendingTelegramActionService pending,
         MessengerAdapter messenger,
-        IChatQueryService queries,
+        IWhatsAppService whatsappDispatch,
         ILogger<MessengerIntentHandler> logger)
     {
         _db = db;
@@ -68,9 +68,45 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         _products = products;
         _pending = pending;
         _messenger = messenger;
-        _queries = queries;
+        _whatsappDispatch = whatsappDispatch;
         _logger = logger;
     }
+
+    /// <summary>
+    /// Same delegation set as TelegramIntentHandler — see that file for the rationale. Mirror
+    /// changes here when adding/removing intents so the two channels behave identically.
+    /// </summary>
+    private static readonly HashSet<string> DelegatedIntents = new()
+    {
+        "get_today_sales", "get_today_sales_detail",
+        "get_week_sales", "get_week_comparison",
+        "get_daily_summary",
+        "get_all_stock", "get_specific_stock", "get_low_stock",
+        "get_dead_stock", "get_stock_value", "get_stockout_prediction",
+        "get_outstanding_receivables", "get_outstanding_payables",
+        "get_customer_balance", "get_supplier_balance",
+        "get_profit_estimate", "get_profit_by_product", "get_product_profit",
+        "get_top_products", "get_product_sales_today",
+        "get_product_staff", "get_product_buyers",
+        "get_today_expenses", "get_recent_expenses",
+        "get_transaction_history",
+        "get_staff_sales", "get_staff_list",
+        "get_active_holds",
+        "get_my_account", "get_my_plan", "get_plans",
+        "get_export_link",
+        "show_roles", "show_reports",
+        "help", "greet",
+        "add_inventory", "remove_inventory", "mark_damaged_inventory",
+        "create_product", "update_product_price", "delete_product",
+        "create_receivable", "create_payable", "record_payable_payment",
+        "correct_last_sale", "update_last_sale", "correct_last_expense",
+        "correct_debt", "undo_last_action", "return_product", "stocktake",
+        "repeat_last_sale", "add_to_last_sale",
+        "hold_stock", "release_hold",
+        "update_low_stock_threshold",
+        "create_contact", "add_staff",
+        "subscribe", "cancel_subscription", "cancel_plan_change",
+    };
 
     public async Task HandleAsync(ConversationMessage message, ContactIdentity boundIdentity, CancellationToken ct = default)
     {
@@ -122,95 +158,52 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         {
             case "create_sale":
                 await HandleSaleAsync(parsed, businessId, userId, message, ct);
-                break;
+                return;
 
             case "create_expense":
                 await HandleExpenseAsync(parsed, businessId, userId, message, ct);
-                break;
+                return;
 
             case "record_receivable_payment":
                 await HandlePaymentAsync(parsed, businessId, userId, message, ct);
-                break;
+                return;
+        }
 
-            // ── Read intents (Phase 3.6 — parity with WhatsApp's read commands) ──
-            // Mirror of the case block in TelegramIntentHandler. Add new read intents in both
-            // handlers (or refactor to a shared base — tracked as Phase 7 cleanup).
-            case "get_today_sales":
-            case "get_today_sales_detail":
-                await Reply(message, await _queries.GetTodaySalesAsync(businessId, ct), ct);
-                break;
+        if (DelegatedIntents.Contains(parsed.Intent))
+        {
+            await DelegateToWhatsAppDispatcherAsync(parsed, userId, message, ct);
+            return;
+        }
 
-            case "get_week_sales":
-                await Reply(message, await _queries.GetWeekSalesAsync(businessId, ct), ct);
-                break;
+        // Unknown / smalltalk falls through to WhatsApp's HandleUnknown / HandleGreet — consistent
+        // wording across channels.
+        await DelegateToWhatsAppDispatcherAsync(parsed, userId, message, ct);
+    }
 
-            case "get_all_stock":
-                await Reply(message, await _queries.GetAllStockAsync(businessId, showPrices: false, ct), ct);
-                break;
-
-            case "get_low_stock":
-                await Reply(message, await _queries.GetLowStockAsync(businessId, ct), ct);
-                break;
-
-            case "get_today_expenses":
-                await Reply(message, await _queries.GetTodayExpensesAsync(businessId, ct), ct);
-                break;
-
-            case "get_recent_expenses":
-                await Reply(message, await _queries.GetRecentExpensesAsync(businessId, ct), ct);
-                break;
-
-            case "get_outstanding_receivables":
-                await Reply(message, await _queries.GetOutstandingAsync(businessId, "receivable", ct), ct);
-                break;
-
-            case "get_outstanding_payables":
-                await Reply(message, await _queries.GetOutstandingAsync(businessId, "payable", ct), ct);
-                break;
-
-            case "get_customer_balance":
-            case "get_supplier_balance":
-                {
-                    var contactName = parsed.BusinessAction.ValueKind == JsonValueKind.Object
-                        && parsed.BusinessAction.TryGetProperty("contactName", out var cn)
-                        && cn.ValueKind == JsonValueKind.String
-                        ? cn.GetString()
-                        : null;
-                    await Reply(message, await _queries.GetContactBalanceAsync(businessId, contactName, ct), ct);
-                    break;
-                }
-
-            case "get_daily_summary":
-                await Reply(message, await _queries.GetDailySummaryAsync(businessId, ct), ct);
-                break;
-
-            case "get_profit_estimate":
-                await Reply(message, await _queries.GetCashPositionAsync(businessId, ct), ct);
-                break;
-
-            case "help":
-                await Reply(message, _queries.GetHelpText(), ct);
-                break;
-
-            case "greet":
-                {
-                    var businessName = await _db.Businesses
-                        .AsNoTracking()
-                        .Where(b => b.Id == businessId)
-                        .Select(b => b.Name)
-                        .FirstOrDefaultAsync(ct);
-                    await Reply(message, _queries.GetGreetText(businessName), ct);
-                    break;
-                }
-
-            case "unknown":
-            case "smalltalk":
-            default:
-                await Reply(message,
-                    "I can record sales, expenses, and customer payments, and answer questions " +
-                    "like \"today's sales\", \"stock\", or \"who owes me\". Say \"help\" for the full list.",
-                    ct);
-                break;
+    /// <summary>
+    /// Loads the User with Business included, runs WhatsApp's dispatcher, sends the result back
+    /// through Messenger. Used for every intent we don't handle locally so Messenger users get
+    /// the same answers (and same formatting) as WhatsApp users.
+    /// </summary>
+    private async Task DelegateToWhatsAppDispatcherAsync(ParsedMessage parsed, Guid userId, ConversationMessage inbound, CancellationToken ct)
+    {
+        var user = await _db.Users
+            .Include(u => u.Business)
+            .FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user is null || user.Business is null)
+        {
+            await Reply(inbound, "I couldn't find your account record. Try logging into the dashboard first.", ct);
+            return;
+        }
+        try
+        {
+            var reply = await _whatsappDispatch.ExecuteIntentForUserAsync(user, parsed);
+            await Reply(inbound, reply, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Delegated intent {Intent} threw for user {User} via Messenger", parsed.Intent, userId);
+            await Reply(inbound, $"Couldn't process that: {FriendlyErrorMessage(ex)}", ct);
         }
     }
 
