@@ -309,7 +309,7 @@ Supported intents:
 - cancel_subscription: {confirmed?} — cancel current subscription. When user confirms after being asked, set confirmed:"true".
 - cancel_plan_change: {} — cancel a pending plan downgrade
 - show_reports: {} — show all available report commands
-- get_export_link: {reportType?} — user wants to export/download data, get CSV/PDF, send report to accountant. reportType is one of: "sales", "expenses", "monthly-pnl". Infer from context: "export my sales" → {reportType:"sales"}, "send me my monthly report" / "profit and loss" / "P&L" → {reportType:"monthly-pnl"}, "export expenses" → {reportType:"expenses"}. If unclear or generic ("export my data"), leave reportType empty.
+- get_export_link: {reportType?} — user wants a PDF report. reportType is exactly one of these lowercase strings: "sales", "expenses", "inventory", "monthly-pnl". Always lowercase. Infer from context: "export my sales" / "send sales pdf" → {reportType:"sales"}; "export expenses" / "send expenses report" / "expense pdf" → {reportType:"expenses"}; "export inventory" / "stock pdf" / "inventory report" / "send my stock list" → {reportType:"inventory"}; "send my monthly report" / "profit and loss" / "P&L" / "pnl" → {reportType:"monthly-pnl"}. If unclear or generic ("export my data"), leave reportType empty. Never invent other values — use one of the four exactly.
 - help: {} — show advanced commands
 - show_roles: {} — show staff roles and what each role can do. Triggers: "roles", "what roles are there", "staff roles", "what can each role do", "role permissions"
 - unknown: {}

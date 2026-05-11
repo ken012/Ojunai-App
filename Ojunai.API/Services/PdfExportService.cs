@@ -21,11 +21,15 @@ public class PdfExportService : IPdfExportService
             ?? throw new KeyNotFoundException("Business not found.");
         var cs = BillingConfig.Symbol(business.Currency);
 
-        return reportType switch
+        // Lowercase normalize so callers that emit "Expenses" / "INVENTORY" / etc. still hit the
+        // right case (Claude has been known to capitalize reportType values inconsistently).
+        var normalized = reportType?.Trim().ToLowerInvariant() ?? "";
+        return normalized switch
         {
             "sales" => await GenerateSalesReportAsync(business, cs, from, to),
             "expenses" => await GenerateExpensesReportAsync(business, cs, from, to),
-            "monthly-pnl" => await GeneratePnlReportAsync(business, cs, from, to),
+            "monthly-pnl" or "pnl" or "profit-and-loss" => await GeneratePnlReportAsync(business, cs, from, to),
+            "inventory" or "stock" => await GenerateInventoryReportAsync(business, cs),
             _ => throw new ArgumentException($"Unknown report type: {reportType}")
         };
     }
@@ -168,6 +172,70 @@ public class PdfExportService : IPdfExportService
 
             doc.Item().PaddingTop(15).Text($"Gross Margin: {grossMargin:F1}%  |  Net Margin: {netMargin:F1}%")
                 .FontSize(9).FontColor(Colors.Grey.Darken1);
+        });
+    }
+
+    /// <summary>
+    /// Inventory is a snapshot, not a date-range report. The token still carries from/to (we
+    /// reuse the same signed-token format as the other exports) but the PDF only renders the
+    /// "as of {to}" date in its header. Includes all active products with current stock, low-stock
+    /// flagging, cost/sell prices, and a total stock value at the bottom.
+    /// </summary>
+    private async Task<byte[]> GenerateInventoryReportAsync(Business biz, string cs)
+    {
+        var asOf = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var items = await _db.Products
+            .Where(p => p.BusinessId == biz.Id && p.IsActive)
+            .OrderBy(p => p.Name)
+            .ToListAsync();
+
+        var totalUnits = items.Sum(p => p.CurrentStock);
+        var totalCostValue = items.Sum(p => (p.CostPrice ?? 0m) * p.CurrentStock);
+        var totalSellValue = items.Sum(p => (p.SellingPrice ?? 0m) * p.CurrentStock);
+        var lowCount = items.Count(p => p.CurrentStock <= p.LowStockThreshold);
+
+        return BuildPdf(biz.Name, "Inventory Report", asOf, asOf, doc =>
+        {
+            doc.Item().Table(table =>
+            {
+                table.ColumnsDefinition(c =>
+                {
+                    c.RelativeColumn(2.2f); // Name
+                    c.RelativeColumn(1f);   // Unit
+                    c.RelativeColumn(1.1f); // Qty
+                    c.RelativeColumn(1.1f); // Min
+                    c.RelativeColumn(1.3f); // Cost
+                    c.RelativeColumn(1.3f); // Sell
+                    c.RelativeColumn(1.4f); // Stock value (Sell × Qty)
+                });
+
+                table.Header(h =>
+                {
+                    foreach (var hdr in new[] { "Product", "Unit", "Qty", "Low at", "Cost", "Sell", "Stock value" })
+                        h.Cell().Background(Colors.Grey.Lighten3).Padding(5).Text(hdr).Bold().FontSize(8);
+                });
+
+                foreach (var p in items)
+                {
+                    var stockValue = (p.SellingPrice ?? 0m) * p.CurrentStock;
+                    var lowFlag = p.CurrentStock <= p.LowStockThreshold ? " ⚠" : "";
+                    DataCell(table, p.Name + lowFlag);
+                    DataCell(table, p.Unit);
+                    DataCell(table, $"{p.CurrentStock:0.##}", true);
+                    DataCell(table, $"{p.LowStockThreshold:0.##}");
+                    DataCell(table, p.CostPrice.HasValue ? $"{cs}{p.CostPrice.Value:N0}" : "—", true);
+                    DataCell(table, p.SellingPrice.HasValue ? $"{cs}{p.SellingPrice.Value:N0}" : "—", true);
+                    DataCell(table, $"{cs}{stockValue:N0}", true);
+                }
+            });
+
+            doc.Item().PaddingTop(10).AlignRight().Text($"Total stock value (at sell price): {cs}{totalSellValue:N0}").Bold().FontSize(11);
+            doc.Item().AlignRight().Text($"Total stock value (at cost): {cs}{totalCostValue:N0}").FontSize(9).FontColor(Colors.Grey.Darken1);
+            doc.Item().PaddingTop(4).Text(
+                $"{items.Count} active products · {totalUnits:0.##} total units" +
+                (lowCount > 0 ? $" · {lowCount} below threshold ⚠" : ""))
+                .FontSize(8).FontColor(Colors.Grey.Medium);
         });
     }
 

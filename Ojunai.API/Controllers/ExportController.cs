@@ -102,6 +102,7 @@ public class ExportController : ControllerBase
     {
         "sales" => "Sales-Report",
         "expenses" => "Expenses-Report",
+        "inventory" => "Inventory-Report",
         "monthly-pnl" => "PnL-Statement",
         _ => s
     };

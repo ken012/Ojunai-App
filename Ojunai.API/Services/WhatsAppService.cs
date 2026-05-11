@@ -2894,25 +2894,36 @@ public class WhatsAppService : IWhatsAppService
 
     private string HandleGetExportLink(Guid businessId, JsonElement ba, User user)
     {
-        var reportType = ba.GetStringOrNull("reportType");
+        // Normalize first so Claude's casing variations (Expenses / EXPENSES / expense) all hit
+        // the right route. Map common synonyms (stock → inventory, pnl → monthly-pnl).
+        var rawReportType = ba.GetStringOrNull("reportType") ?? "";
+        var reportType = rawReportType.Trim().ToLowerInvariant() switch
+        {
+            "stock" => "inventory",
+            "pnl" or "profit-and-loss" or "p&l" => "monthly-pnl",
+            "expense" => "expenses",
+            "sale" => "sales",
+            var s => s,
+        };
 
         if (string.IsNullOrWhiteSpace(reportType))
         {
             return "📥 *Export Your Data*\n\n" +
                    "Which report would you like as a PDF?\n\n" +
-                   "• *Sales report* — all sales for this month\n" +
-                   "• *Expenses report* — all expenses for this month\n" +
+                   "• *Sales report* — all sales for the last 30 days\n" +
+                   "• *Expenses report* — all expenses for the last 30 days\n" +
+                   "• *Inventory report* — current stock snapshot\n" +
                    "• *Monthly P&L* — profit & loss statement\n\n" +
                    "Just say which one! e.g. \"Export my sales\"\n\n" +
                    "For more export options (CSV, tax package, etc.):\n" +
                    "👉 app.ojunai.com/export";
         }
 
-        var validTypes = new HashSet<string> { "sales", "expenses", "monthly-pnl" };
+        var validTypes = new HashSet<string> { "sales", "expenses", "inventory", "monthly-pnl" };
         if (!validTypes.Contains(reportType))
         {
-            return $"I can generate PDF reports for sales, expenses, or monthly P&L.\n\n" +
-                   $"Try: \"Export my sales\" or \"Monthly P&L report\"\n\n" +
+            return $"I can generate PDF reports for sales, expenses, inventory, or monthly P&L.\n\n" +
+                   $"Try: \"Export my sales\" or \"Inventory report\"\n\n" +
                    $"For other exports: 👉 app.ojunai.com/export";
         }
 
@@ -2929,6 +2940,7 @@ public class WhatsAppService : IWhatsAppService
         {
             "sales" => "Sales Report",
             "expenses" => "Expenses Report",
+            "inventory" => "Inventory Report",
             "monthly-pnl" => "Profit & Loss Statement",
             _ => "Report"
         };
