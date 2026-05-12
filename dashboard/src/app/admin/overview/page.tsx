@@ -38,17 +38,24 @@ type BillingOverview = {
 };
 
 type Revenue = {
-  windowMonths: number;
+  period: string;
+  estimatedMrr: number;
   totalRevenue: number;
-  currency?: string;
-  monthlyBreakdown?: Array<{ month: string; revenue: number; count: number }>;
+  totalPayments: number;
+  byPlan?: Array<{ plan: string | null; total: number; count: number }>;
+  byCurrency?: Array<{ currency: string | null; total: number; count: number }>;
+  byProvider?: Array<{ provider: string | null; total: number; count: number }>;
+  byMonth?: Array<{ month: string; total: number; count: number }>;
 };
 
 type Churn = {
-  windowDays: number;
-  totalChurnEvents: number;
-  byType?: Array<{ type: string; count: number }>;
-  recent?: Array<{ businessName: string | null; eventType: string; createdAtUtc: string }>;
+  period: string;
+  totalEvents: number;
+  uniqueBusinesses: number;
+  byCancelled: number;
+  byExpired: number;
+  byRefunded: number;
+  details?: Array<{ businessName: string; eventType: string; createdAtUtc: string }>;
 };
 
 type Misparse = {
@@ -74,10 +81,14 @@ type TopFailures = {
   clusters: Array<{ normalized: string; count: number; sampleMessage: string; commonIntent: string | null }>;
 };
 
+// `business` is an object {id, name, plan, currency, country} — the controller returns the
+// whole entity summary, not just the name. Render `business.name` (and guard for null in
+// case a deleted business still has historical rows referencing its id).
+type BusinessRef = { id: string; name: string; plan?: string; currency?: string; country?: string } | null;
 type TopBusinesses = {
   windowDays: number;
-  byMessages: Array<{ business: string | null; messageCount: number }>;
-  bySalesVolume: Array<{ business: string | null; salesCount: number; salesTotal: number }>;
+  byMessages: Array<{ business: BusinessRef; messageCount: number }>;
+  bySalesVolume: Array<{ business: BusinessRef; salesCount: number; salesTotal: number }>;
 };
 
 type MessageVolume = {
@@ -101,10 +112,9 @@ type FailedPayments = {
 };
 
 type VoiceAI = {
-  enabledBusinesses?: number;
-  callsLast7Days?: number;
-  failedCallsLast7Days?: number;
-  failureRatePct?: number;
+  totalEnabled: number;
+  overrides: number;
+  byStatus?: Array<{ status: string | null; count: number }>;
 };
 
 type AuditLog = {
@@ -279,23 +289,29 @@ function AdminOverviewPage() {
       <section>
         <SectionHeader
           title="Revenue"
-          subtitle="last 3 months"
+          subtitle={revenue?.period ?? "last 3 months"}
           linkTo={`/api/admin/metrics/revenue?key=${k}&months=3`}
           linkLabel="Raw JSON"
         />
         {revenue ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            <Stat
-              label={`Total (${revenue.currency ?? "NGN"})`}
-              value={(revenue.totalRevenue ?? 0).toLocaleString()}
-            />
-            <Stat label="Months covered" value={revenue.windowMonths ?? 0} />
-            <Stat
-              label="Latest month"
-              value={revenue.monthlyBreakdown?.[0]
-                ? `${revenue.currency ?? ""}${revenue.monthlyBreakdown[0].revenue.toLocaleString()}`
-                : "—"}
-              sub={revenue.monthlyBreakdown?.[0]?.month}
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <Stat label="Estimated MRR" value={(revenue.estimatedMrr ?? 0).toLocaleString()} />
+              <Stat label="Total revenue" value={(revenue.totalRevenue ?? 0).toLocaleString()} sub={`${revenue.totalPayments ?? 0} payments`} />
+              <Stat
+                label="Latest month"
+                value={revenue.byMonth && revenue.byMonth.length > 0
+                  ? revenue.byMonth[revenue.byMonth.length - 1].total.toLocaleString()
+                  : "—"}
+                sub={revenue.byMonth && revenue.byMonth.length > 0
+                  ? revenue.byMonth[revenue.byMonth.length - 1].month
+                  : undefined}
+              />
+            </div>
+            <KeyedList
+              title="By currency"
+              rows={(revenue.byCurrency ?? []).map(c => ({ label: c.currency ?? "unknown", value: c.total }))}
+              emptyText="No payments yet."
             />
           </div>
         ) : <SectionError />}
@@ -305,23 +321,20 @@ function AdminOverviewPage() {
       <section>
         <SectionHeader
           title="Churn"
-          subtitle="last 30 days"
+          subtitle={churn?.period ?? "last 30 days"}
           linkTo={`/api/admin/metrics/churn?key=${k}&days=30`}
           linkLabel="Raw JSON"
         />
         {churn ? (
-          (churn.totalChurnEvents ?? 0) === 0 ? (
-            <div className="text-sm text-slate-500 dark:text-slate-400 italic">No churn events in the last 30 days.</div>
+          (churn.totalEvents ?? 0) === 0 ? (
+            <div className="text-sm text-slate-500 dark:text-slate-400 italic">No churn events in the period.</div>
           ) : (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                <Stat label="Total churn events" value={churn.totalChurnEvents ?? 0} highlight={(churn.totalChurnEvents ?? 0) > 10} />
-              </div>
-              <KeyedList
-                title="By event type"
-                rows={(churn.byType ?? []).map(t => ({ label: t.type, value: t.count }))}
-                emptyText="No breakdown."
-              />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Stat label="Total events" value={churn.totalEvents ?? 0} highlight={(churn.totalEvents ?? 0) > 10} />
+              <Stat label="Unique businesses" value={churn.uniqueBusinesses ?? 0} />
+              <Stat label="Cancelled" value={churn.byCancelled ?? 0} />
+              <Stat label="Expired" value={churn.byExpired ?? 0} />
+              <Stat label="Refunded" value={churn.byRefunded ?? 0} />
             </div>
           )
         ) : <SectionError />}
@@ -457,7 +470,7 @@ function AdminOverviewPage() {
               <div className="space-y-1">
                 {(topBusinesses.byMessages ?? []).slice(0, 5).map((b, i) => (
                   <div key={i} className="flex justify-between text-sm">
-                    <span className="text-slate-700 dark:text-slate-300">{b.business ?? "—"}</span>
+                    <span className="text-slate-700 dark:text-slate-300">{b.business?.name ?? "—"}</span>
                     <span className="font-mono text-slate-900 dark:text-slate-100">{b.messageCount}</span>
                   </div>
                 ))}
@@ -471,7 +484,7 @@ function AdminOverviewPage() {
               <div className="space-y-1">
                 {(topBusinesses.bySalesVolume ?? []).slice(0, 5).map((b, i) => (
                   <div key={i} className="flex justify-between text-sm">
-                    <span className="text-slate-700 dark:text-slate-300">{b.business ?? "—"}</span>
+                    <span className="text-slate-700 dark:text-slate-300">{b.business?.name ?? "—"}</span>
                     <span className="font-mono text-slate-900 dark:text-slate-100">{b.salesTotal?.toLocaleString() ?? 0}</span>
                   </div>
                 ))}
@@ -516,19 +529,20 @@ function AdminOverviewPage() {
       <section>
         <SectionHeader
           title="Voice AI"
-          subtitle="phone bot status"
+          subtitle="businesses with Voice AI enabled"
           linkTo={`/admin/voice-ai?key=${k}`}
           linkLabel="Voice AI detail"
         />
         {voiceAI ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Stat label="Enabled businesses" value={voiceAI.enabledBusinesses ?? 0} />
-            <Stat label="Calls (7d)" value={voiceAI.callsLast7Days ?? 0} />
-            <Stat label="Failed (7d)" value={voiceAI.failedCallsLast7Days ?? 0} highlight={(voiceAI.failedCallsLast7Days ?? 0) > 5} />
-            <Stat
-              label="Failure rate"
-              value={voiceAI.failureRatePct != null ? `${voiceAI.failureRatePct.toFixed(1)}%` : "—"}
-              highlight={(voiceAI.failureRatePct ?? 0) > 20}
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <Stat label="Total enabled" value={voiceAI.totalEnabled ?? 0} />
+              <Stat label="Internal overrides" value={voiceAI.overrides ?? 0} sub="set via admin tool" />
+            </div>
+            <KeyedList
+              title="By status"
+              rows={(voiceAI.byStatus ?? []).map(s => ({ label: s.status ?? "unknown", value: s.count }))}
+              emptyText="No Voice AI accounts yet."
             />
           </div>
         ) : <SectionError />}
