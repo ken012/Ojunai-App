@@ -155,6 +155,9 @@ builder.Services.AddScoped<VoiceAITrialRevertJobService>();
 builder.Services.AddScoped<RenewalReminderJobService>();
 builder.Services.AddScoped<ImportJobService>();
 builder.Services.AddScoped<PaymentReconciliationJobService>();
+builder.Services.AddScoped<AdminSnapshotJobService>();
+builder.Services.AddScoped<MessageLogRetentionJobService>();
+builder.Services.AddScoped<AdminAlertJobService>();
 
 // ── Hangfire ──────────────────────────────────────────────────────────────────
 builder.Services.AddHangfire(hf => hf
@@ -296,6 +299,9 @@ app.UseHttpsRedirection();
 
 // Security headers applied to all responses. These mitigate clickjacking, MIME sniffing,
 // information leakage via referrers, and (in production) enforce HTTPS via HSTS.
+// /api/* responses also get Cache-Control: no-store so authenticated payloads
+// (auth tokens, dashboard data, receipts, exports) never sit in any browser,
+// proxy, or CDN cache.
 app.Use(async (context, next) =>
 {
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
@@ -305,6 +311,12 @@ app.Use(async (context, next) =>
     if (app.Environment.IsProduction())
     {
         context.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+    }
+    if (context.Request.Path.StartsWithSegments("/api"))
+    {
+        context.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private";
+        context.Response.Headers["Pragma"] = "no-cache";
+        context.Response.Headers["Expires"] = "0";
     }
     await next();
 });
@@ -409,5 +421,26 @@ RecurringJob.AddOrUpdate<PaymentReconciliationJobService>(
     "payment-reconciliation",
     svc => svc.ReconcileAsync(),
     "0 6 * * *");
+
+// ── Admin observability (Phase 7) ──
+// Daily snapshot at 00:05 UTC — captures DAU/WAU/MAU/MRR/misparse/etc into AdminMetricSnapshots
+// so historical trend charts have data to read.
+RecurringJob.AddOrUpdate<AdminSnapshotJobService>(
+    "admin-daily-snapshot",
+    svc => svc.RunDailyAsync(),
+    "5 0 * * *");
+
+// MessageLogs retention sweep at 02:00 UTC — runs after the snapshot so we never lose data we
+// haven't yet rolled up. Default 180 days; Admin:MessageLogRetentionDays=0 disables.
+RecurringJob.AddOrUpdate<MessageLogRetentionJobService>(
+    "messagelogs-retention",
+    svc => svc.RunDailyAsync(),
+    "0 2 * * *");
+
+// Metric-spike alerting every 15 min. No-op when no delivery channels are configured.
+RecurringJob.AddOrUpdate<AdminAlertJobService>(
+    "admin-alerts",
+    svc => svc.RunAsync(),
+    "*/15 * * * *");
 
 app.Run();

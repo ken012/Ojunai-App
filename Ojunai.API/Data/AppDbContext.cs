@@ -45,6 +45,10 @@ public class AppDbContext : DbContext
     // ── Telegram pending actions (Phase 2.8: callback flows) ──────────────────
     public DbSet<PendingTelegramAction> PendingTelegramActions => Set<PendingTelegramAction>();
 
+    // ── Admin observability (Phase 7) ──
+    public DbSet<AdminAuditEntry> AdminAuditEntries => Set<AdminAuditEntry>();
+    public DbSet<AdminMetricSnapshot> AdminMetricSnapshots => Set<AdminMetricSnapshot>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         base.OnModelCreating(mb);
@@ -435,6 +439,28 @@ public class AppDbContext : DbContext
             // Lookup by token is the hot path on callback resume.
             e.HasIndex(x => x.Token).IsUnique();
             e.HasIndex(x => x.ExpiresAtUtc);
+        });
+
+        mb.Entity<AdminAuditEntry>(e =>
+        {
+            e.Property(x => x.Endpoint).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Ip).HasMaxLength(64);
+            e.Property(x => x.KeyPrefix).HasMaxLength(24);
+            e.Property(x => x.QueryString).HasMaxLength(500);
+            e.HasIndex(x => x.CreatedAtUtc);
+            e.HasIndex(x => x.KeyPrefix);
+        });
+
+        mb.Entity<AdminMetricSnapshot>(e =>
+        {
+            e.Property(x => x.MetricName).HasMaxLength(40).IsRequired();
+            e.Property(x => x.ChannelFilter).HasMaxLength(20);
+            e.Property(x => x.ValueText).HasMaxLength(80);
+            // Unique per (metric, channel filter, date) so a re-run of the daily job is a no-op
+            // rather than a duplicate row. Channel filter is nullable; Postgres treats nulls as
+            // distinct so we keep two distinct unique constraints to cover both cases.
+            e.HasIndex(x => new { x.MetricName, x.ChannelFilter, x.CapturedDate }).IsUnique();
+            e.HasIndex(x => new { x.MetricName, x.CapturedDate });
         });
     }
 }

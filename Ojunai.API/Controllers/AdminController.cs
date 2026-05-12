@@ -108,17 +108,116 @@ public class AdminController : ControllerBase
     }
 
     /// <summary>
-    /// Shared admin-key validation. Returns null on success, or the action result to short-circuit with.
+    /// Shared admin-key validation. Returns null on success, or the action result to short-circuit
+    /// with. Always writes an audit row (success or failure) so we have a record of who accessed
+    /// admin endpoints. The raw key is never logged — only a SHA-256 prefix for correlation.
     /// </summary>
     private IActionResult? ValidateAdminKey(string? key)
     {
+        var result = ValidateAdminKeyInner(key, out var success, out var statusCode);
+        // Fire-and-forget audit write so a DB hiccup on the audit table never blocks the admin
+        // endpoint itself. The audit is best-effort; a real implementation could surface failures
+        // to a metric, but for our scale this is fine.
+        try { WriteAuditEntry(key, success, statusCode); } catch { /* swallow */ }
+        return result;
+    }
+
+    private IActionResult? ValidateAdminKeyInner(string? key, out bool success, out int statusCode)
+    {
+        success = false; statusCode = 200;
         var secret = _config["Admin:AnalyticsKey"];
         if (string.IsNullOrEmpty(secret) || secret.Length < 32)
+        {
+            statusCode = 503;
             return StatusCode(503, "Admin endpoint not configured.");
+        }
         if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
             System.Text.Encoding.UTF8.GetBytes((key ?? "").ToLowerInvariant()),
-            System.Text.Encoding.UTF8.GetBytes(secret.ToLowerInvariant()))) return Unauthorized();
+            System.Text.Encoding.UTF8.GetBytes(secret.ToLowerInvariant())))
+        {
+            statusCode = 401;
+            return Unauthorized();
+        }
+        success = true;
         return null;
+    }
+
+    private void WriteAuditEntry(string? key, bool success, int statusCode)
+    {
+        // Hash prefix lets us tell "same operator hitting many endpoints" without storing the key.
+        string? keyPrefix = null;
+        if (!string.IsNullOrEmpty(key))
+        {
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            var bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(key));
+            keyPrefix = Convert.ToHexString(bytes).ToLowerInvariant()[..12];
+        }
+
+        // Strip the key from the query string before persisting — we never want it on disk.
+        var qs = Request.QueryString.HasValue
+            ? string.Join("&", Request.Query
+                .Where(p => !string.Equals(p.Key, "key", StringComparison.OrdinalIgnoreCase))
+                .Select(p => $"{p.Key}={p.Value}"))
+            : null;
+
+        var entry = new Models.AdminAuditEntry
+        {
+            Endpoint = $"{Request.Method} {Request.Path}",
+            Ip = Request.HttpContext.Connection.RemoteIpAddress?.ToString(),
+            KeyPrefix = keyPrefix,
+            Success = success,
+            StatusCode = statusCode,
+            QueryString = string.IsNullOrEmpty(qs) ? null : (qs.Length > 500 ? qs[..500] : qs),
+        };
+        _db.AdminAuditEntries.Add(entry);
+        _db.SaveChanges();
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════
+    // AUDIT LOG — who accessed which admin endpoint and when
+    // ═════════════════════════════════════════════════════════════════════════════
+
+    [HttpGet("audit-log")]
+    public async Task<IActionResult> AuditLog([FromQuery] string key, [FromQuery] int days = 7, [FromQuery] int limit = 200)
+    {
+        var auth = ValidateAdminKey(key);
+        if (auth != null) return auth;
+
+        var since = DateTime.UtcNow.AddDays(-Math.Clamp(days, 1, 90));
+        limit = Math.Clamp(limit, 1, 1000);
+
+        var rows = await _db.AdminAuditEntries
+            .Where(a => a.CreatedAtUtc >= since)
+            .OrderByDescending(a => a.CreatedAtUtc)
+            .Take(limit)
+            .Select(a => new
+            {
+                at = a.CreatedAtUtc,
+                endpoint = a.Endpoint,
+                ip = a.Ip,
+                keyPrefix = a.KeyPrefix,
+                success = a.Success,
+                status = a.StatusCode,
+                query = a.QueryString,
+            })
+            .ToListAsync();
+
+        // Group failures by IP/prefix for spotting attack patterns at a glance
+        var failuresByIp = await _db.AdminAuditEntries
+            .Where(a => a.CreatedAtUtc >= since && !a.Success)
+            .GroupBy(a => a.Ip ?? "unknown")
+            .Select(g => new { ip = g.Key, count = g.Count() })
+            .OrderByDescending(g => g.count)
+            .Take(20)
+            .ToListAsync();
+
+        return Ok(new
+        {
+            period = $"Last {days} days",
+            totalRecent = rows.Count,
+            recent = rows,
+            failuresByIp,
+        });
     }
 
     // ═════════════════════════════════════════════════════════════════════════════
@@ -352,7 +451,10 @@ public class AdminController : ControllerBase
     // ═════════════════════════════════════════════════════════════════════════════
 
     [HttpGet("metrics/overview")]
-    public async Task<IActionResult> MetricsOverview([FromQuery] string key, [FromQuery] int days = 30)
+    public async Task<IActionResult> MetricsOverview(
+        [FromQuery] string key,
+        [FromQuery] int days = 30,
+        [FromQuery] string? channel = null)
     {
         var auth = ValidateAdminKey(key);
         if (auth != null) return auth;
@@ -360,25 +462,34 @@ public class AdminController : ControllerBase
         var now = DateTime.UtcNow;
         var since = now.AddDays(-Math.Clamp(days, 1, 365));
 
+        // Normalize channel filter — Whatsapp/Telegram/Messenger/Dashboard, or null = all channels.
+        // We accept any casing on input and store the canonical form in the response so callers
+        // see the same shape every time.
+        var channelFilter = NormalizeChannel(channel);
+
         var totalBusinesses = await _db.Businesses.CountAsync(b => b.IsActive);
         var totalUsers = await _db.Users.CountAsync(u => u.IsActive);
 
-        // Daily active businesses (sent at least one WhatsApp message)
-        var dauSince = now.AddDays(-1);
-        var dailyActive = await _db.MessageLogs
-            .Where(m => m.CreatedAtUtc >= dauSince && m.Direction == MessageDirection.Inbound && m.BusinessId.HasValue)
+        // Build the inbound-message query once and reuse for DAU/WAU/MAU computations. When
+        // channelFilter is set we restrict the active-count to messages from that channel only —
+        // useful for "WhatsApp-only DAU", "Telegram active count", etc.
+        IQueryable<MessageLog> InboundQuery(DateTime fromUtc) =>
+            _db.MessageLogs.Where(m =>
+                m.CreatedAtUtc >= fromUtc
+                && m.Direction == MessageDirection.Inbound
+                && m.BusinessId.HasValue
+                && (channelFilter == null || m.Channel == channelFilter));
+
+        // Daily active businesses (sent at least one inbound message on the filtered channel)
+        var dailyActive = await InboundQuery(now.AddDays(-1))
             .Select(m => m.BusinessId).Distinct().CountAsync();
 
         // Weekly active
-        var wauSince = now.AddDays(-7);
-        var weeklyActive = await _db.MessageLogs
-            .Where(m => m.CreatedAtUtc >= wauSince && m.Direction == MessageDirection.Inbound && m.BusinessId.HasValue)
+        var weeklyActive = await InboundQuery(now.AddDays(-7))
             .Select(m => m.BusinessId).Distinct().CountAsync();
 
         // Monthly active
-        var mauSince = now.AddDays(-30);
-        var monthlyActive = await _db.MessageLogs
-            .Where(m => m.CreatedAtUtc >= mauSince && m.Direction == MessageDirection.Inbound && m.BusinessId.HasValue)
+        var monthlyActive = await InboundQuery(now.AddDays(-30))
             .Select(m => m.BusinessId).Distinct().CountAsync();
 
         // New signups in period
@@ -396,6 +507,7 @@ public class AdminController : ControllerBase
         return Ok(new
         {
             period = $"Last {days} days",
+            channel = channelFilter ?? "all",
             totalBusinesses,
             totalUsers,
             dailyActiveBusinesses = dailyActive,
@@ -404,6 +516,65 @@ public class AdminController : ControllerBase
             newSignups,
             trialConversion = new { started = totalTrialStarted, converted = totalConverted, rate = $"{conversionRate}%" },
             recentChurnEvents = recentChurn,
+        });
+    }
+
+    /// <summary>
+    /// Map any-casing channel input to the canonical form stored in MessageLogs.Channel.
+    /// Returns null when caller didn't filter (= all channels). Casing must match exactly
+    /// what the writers emit — MessageLog.Channel defaults to "WhatsApp" and webhooks write
+    /// "Telegram" / "Messenger" verbatim.
+    /// </summary>
+    private static string? NormalizeChannel(string? channel) => channel?.Trim().ToLowerInvariant() switch
+    {
+        "whatsapp" => "WhatsApp",
+        "telegram" => "Telegram",
+        "messenger" => "Messenger",
+        "dashboard" => "Dashboard",
+        "voice" => "Voice",
+        null or "" => null,
+        _ => null,  // Unknown channel name silently falls back to all-channels rather than 400ing.
+    };
+
+    /// <summary>
+    /// Historical trend data from AdminMetricSnapshots. The daily snapshot job writes one row
+    /// per metric per day; this endpoint reads them back as a time series for charts.
+    /// </summary>
+    [HttpGet("metrics/snapshots")]
+    public async Task<IActionResult> MetricsSnapshots(
+        [FromQuery] string key,
+        [FromQuery] string metric,
+        [FromQuery] int days = 90,
+        [FromQuery] string? channel = null)
+    {
+        var auth = ValidateAdminKey(key);
+        if (auth != null) return auth;
+        if (string.IsNullOrWhiteSpace(metric)) return BadRequest("metric is required");
+
+        var since = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-Math.Clamp(days, 1, 365)));
+        var channelFilter = NormalizeChannel(channel);
+
+        var rows = await _db.AdminMetricSnapshots
+            .Where(s => s.MetricName == metric && s.CapturedDate >= since && s.ChannelFilter == channelFilter)
+            .OrderBy(s => s.CapturedDate)
+            .Select(s => new { date = s.CapturedDate, value = s.Value, valueText = s.ValueText })
+            .ToListAsync();
+
+        // List all metrics we have any snapshot for — useful for the dashboard to populate a
+        // dropdown of "what can I chart"
+        var available = await _db.AdminMetricSnapshots
+            .Select(s => s.MetricName)
+            .Distinct()
+            .OrderBy(n => n)
+            .ToListAsync();
+
+        return Ok(new
+        {
+            metric,
+            channel = channelFilter ?? "all",
+            days,
+            points = rows,
+            availableMetrics = available,
         });
     }
 
@@ -540,19 +711,42 @@ public class AdminController : ControllerBase
     }
 
     [HttpGet("metrics/message-volume")]
-    public async Task<IActionResult> MessageVolume([FromQuery] string key, [FromQuery] int days = 30)
+    public async Task<IActionResult> MessageVolume(
+        [FromQuery] string key,
+        [FromQuery] int days = 30,
+        [FromQuery] string? channel = null)
     {
         var auth = ValidateAdminKey(key);
         if (auth != null) return auth;
 
         var since = DateTime.UtcNow.AddDays(-Math.Clamp(days, 1, 365));
+        var channelFilter = NormalizeChannel(channel);
 
-        var daily = await _db.MessageLogs
-            .Where(m => m.CreatedAtUtc >= since && m.Direction == MessageDirection.Inbound)
+        var inboundQ = _db.MessageLogs
+            .Where(m => m.CreatedAtUtc >= since && m.Direction == MessageDirection.Inbound);
+        if (channelFilter != null)
+            inboundQ = inboundQ.Where(m => m.Channel == channelFilter);
+
+        var daily = await inboundQ
             .GroupBy(m => m.CreatedAtUtc.Date)
             .Select(g => new { date = g.Key, count = g.Count() })
             .OrderBy(g => g.date)
             .ToListAsync();
+
+        // Per-channel breakdown — only useful when the caller didn't already filter to one channel.
+        // Saves a separate request to see "WhatsApp vs Telegram vs Messenger" split alongside the
+        // daily trend.
+        List<object>? byChannel = null;
+        if (channelFilter == null)
+        {
+            var rows = await _db.MessageLogs
+                .Where(m => m.CreatedAtUtc >= since && m.Direction == MessageDirection.Inbound)
+                .GroupBy(m => m.Channel)
+                .Select(g => new { channel = g.Key, count = g.Count() })
+                .OrderByDescending(g => g.count)
+                .ToListAsync();
+            byChannel = rows.Cast<object>().ToList();
+        }
 
         var totalInbound = daily.Sum(d => d.count);
         var avgPerDay = daily.Count > 0 ? Math.Round((double)totalInbound / daily.Count) : 0;
@@ -560,10 +754,12 @@ public class AdminController : ControllerBase
         return Ok(new
         {
             period = $"Last {days} days",
+            channel = channelFilter ?? "all",
             totalInbound,
             averagePerDay = avgPerDay,
             peakDay = daily.OrderByDescending(d => d.count).FirstOrDefault(),
             daily,
+            byChannel,
         });
     }
 
@@ -615,17 +811,25 @@ public class AdminController : ControllerBase
     /// of messages. Threshold of concern: >5% for any single intent.
     /// </summary>
     [HttpGet("telemetry/misparse-rate")]
-    public async Task<IActionResult> GetMisparseRate([FromQuery] string key, [FromQuery] int days = 7)
+    public async Task<IActionResult> GetMisparseRate(
+        [FromQuery] string key,
+        [FromQuery] int days = 7,
+        [FromQuery] string? channel = null)
     {
         var auth = ValidateAdminKey(key);
         if (auth != null) return auth;
 
         var since = DateTime.UtcNow.AddDays(-Math.Clamp(days, 1, 90));
+        var channelFilter = NormalizeChannel(channel);
 
-        var logs = await _db.MessageLogs
+        var query = _db.MessageLogs
             .Where(m => m.Direction == MessageDirection.Inbound
                         && m.CreatedAtUtc >= since
-                        && m.BusinessId != null)
+                        && m.BusinessId != null);
+        if (channelFilter != null)
+            query = query.Where(m => m.Channel == channelFilter);
+
+        var logs = await query
             .Select(m => new { m.ParsedIntent, m.ProcessingStatus })
             .ToListAsync();
 
@@ -657,7 +861,7 @@ public class AdminController : ControllerBase
                 2)
         };
 
-        return Ok(new { windowDays = days, overall, byIntent });
+        return Ok(new { windowDays = days, channel = channelFilter ?? "all", overall, byIntent });
     }
 
     /// <summary>
