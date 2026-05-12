@@ -22,20 +22,37 @@ type Overview = {
   recentChurnEvents: number;
 };
 
+// Shape matches AdminController.BillingOverview verbatim. Fields you might expect from a
+// generic SaaS billing endpoint (recentRevenue, currency totals) AREN'T there — what we
+// actually expose is a breakdown of subscription state.
 type BillingOverview = {
-  totalActive: number;
+  totalActiveSubscribers: number;
   byPlan: Array<{ plan: string; count: number }>;
-  recentRevenue: number;
-  currency: string;
+  byProvider: Array<{ provider: string | null; count: number }>;
+  byCurrency: Array<{ currency: string | null; count: number }>;
+  byCycle: Array<{ cycle: string | null; count: number }>;
+  autoRenew: number;
+  manualRenew: number;
+  expiringIn7Days: number;
+  inGrace: number;
+  pastDue: number;
 };
 
 type Misparse = {
   overall: { Total: number; Problems: number; Rate: number };
 };
 
+// AdminController.FailedPayments returns details[] not events[], and totalFailed not total.
 type FailedPayments = {
-  events: Array<{ businessName: string; eventType: string; amount: number; createdAtUtc: string }>;
-  total: number;
+  totalFailed: number;
+  byType: Array<{ type: string; count: number }>;
+  details: Array<{
+    businessName: string | null;
+    eventType: string;
+    amount: number | null;
+    currency: string | null;
+    createdAtUtc: string;
+  }>;
 };
 
 type AuditLog = {
@@ -102,36 +119,51 @@ function AdminOverviewPage() {
         <SectionHeader title="Growth & Activity" subtitle="last 30 days" />
         {overview ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Stat label="Active businesses (24h)" value={overview.dailyActiveBusinesses} />
-            <Stat label="Active businesses (7d)" value={overview.weeklyActiveBusinesses} />
-            <Stat label="Active businesses (30d)" value={overview.monthlyActiveBusinesses} />
-            <Stat label="Total businesses" value={overview.totalBusinesses} />
-            <Stat label="Total users" value={overview.totalUsers} />
-            <Stat label="New signups (30d)" value={overview.newSignups} />
-            <Stat label="Trial conversion" value={overview.trialConversion.rate} sub={`${overview.trialConversion.converted}/${overview.trialConversion.started}`} />
-            <Stat label="Churn events (30d)" value={overview.recentChurnEvents} highlight={overview.recentChurnEvents > 5} />
+            <Stat label="Active businesses (24h)" value={overview.dailyActiveBusinesses ?? 0} />
+            <Stat label="Active businesses (7d)" value={overview.weeklyActiveBusinesses ?? 0} />
+            <Stat label="Active businesses (30d)" value={overview.monthlyActiveBusinesses ?? 0} />
+            <Stat label="Total businesses" value={overview.totalBusinesses ?? 0} />
+            <Stat label="Total users" value={overview.totalUsers ?? 0} />
+            <Stat label="New signups (30d)" value={overview.newSignups ?? 0} />
+            <Stat
+              label="Trial conversion"
+              value={overview.trialConversion?.rate ?? "—"}
+              sub={overview.trialConversion
+                ? `${overview.trialConversion.converted}/${overview.trialConversion.started}`
+                : undefined}
+            />
+            <Stat
+              label="Churn events (30d)"
+              value={overview.recentChurnEvents ?? 0}
+              highlight={(overview.recentChurnEvents ?? 0) > 5}
+            />
           </div>
         ) : <SectionError />}
       </section>
 
       {/* ── Billing ── */}
       <section>
-        <SectionHeader title="Subscriptions" subtitle="active accounts by plan" />
+        <SectionHeader title="Subscriptions" subtitle="active paid accounts (auto/manual renewing)" />
         {billing ? (
           <div className="space-y-3">
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              <Stat label="Active subscriptions" value={billing.totalActive} />
-              <Stat label={`Revenue (7d, ${billing.currency})`} value={billing.recentRevenue.toLocaleString()} />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Stat label="Active subscribers" value={billing.totalActiveSubscribers ?? 0} />
+              <Stat label="Auto-renew on" value={billing.autoRenew ?? 0} />
+              <Stat label="Expiring in 7 days" value={billing.expiringIn7Days ?? 0} highlight={(billing.expiringIn7Days ?? 0) > 5} />
+              <Stat label="Past due" value={billing.pastDue ?? 0} highlight={(billing.pastDue ?? 0) > 0} />
             </div>
             <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4">
               <h3 className="text-xs uppercase font-semibold text-slate-600 dark:text-slate-400 mb-2">By plan</h3>
               <div className="space-y-1">
-                {billing.byPlan?.map(p => (
-                  <div key={p.plan} className="flex justify-between text-sm">
-                    <span className="text-slate-700 dark:text-slate-300">{p.plan}</span>
+                {(billing.byPlan ?? []).map(p => (
+                  <div key={p.plan ?? "unknown"} className="flex justify-between text-sm">
+                    <span className="text-slate-700 dark:text-slate-300">{p.plan ?? "unknown"}</span>
                     <span className="font-mono text-slate-900 dark:text-slate-100">{p.count}</span>
                   </div>
                 ))}
+                {(billing.byPlan ?? []).length === 0 && (
+                  <div className="text-xs italic text-slate-500 dark:text-slate-400">No paid plans yet.</div>
+                )}
               </div>
             </div>
           </div>
@@ -145,9 +177,11 @@ function AdminOverviewPage() {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             <Stat
               label="Misparse rate"
-              value={`${misparse.overall.Rate}%`}
-              highlight={misparse.overall.Rate > 5}
-              sub={`${misparse.overall.Problems} of ${misparse.overall.Total} messages`}
+              value={misparse.overall ? `${misparse.overall.Rate}%` : "—"}
+              highlight={(misparse.overall?.Rate ?? 0) > 5}
+              sub={misparse.overall
+                ? `${misparse.overall.Problems} of ${misparse.overall.Total} messages`
+                : undefined}
             />
           </div>
         ) : <SectionError />}
@@ -157,7 +191,7 @@ function AdminOverviewPage() {
       <section>
         <SectionHeader title="Failed Payments" subtitle="last 7 days" />
         {failedPayments ? (
-          failedPayments.total === 0 ? (
+          (failedPayments.totalFailed ?? 0) === 0 ? (
             <div className="text-sm text-slate-500 dark:text-slate-400 italic">No payment failures in the last 7 days.</div>
           ) : (
             <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
@@ -171,13 +205,15 @@ function AdminOverviewPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {failedPayments.events.slice(0, 10).map((e, i) => (
+                  {(failedPayments.details ?? []).slice(0, 10).map((e, i) => (
                     <tr key={i} className="border-t border-slate-100 dark:border-slate-800">
                       <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{e.businessName ?? "—"}</td>
-                      <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{e.eventType}</td>
-                      <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-300 font-mono">{e.amount?.toLocaleString() ?? "—"}</td>
+                      <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{e.eventType ?? "—"}</td>
+                      <td className="px-3 py-2 text-right text-slate-700 dark:text-slate-300 font-mono">
+                        {e.amount != null ? `${e.currency ?? ""}${e.amount.toLocaleString()}` : "—"}
+                      </td>
                       <td className="px-3 py-2 text-right text-slate-500 dark:text-slate-400">
-                        {new Date(e.createdAtUtc).toLocaleString()}
+                        {e.createdAtUtc ? new Date(e.createdAtUtc).toLocaleString() : "—"}
                       </td>
                     </tr>
                   ))}
@@ -193,7 +229,7 @@ function AdminOverviewPage() {
         <SectionHeader title="Admin Access Audit" subtitle="last 7 days" />
         {audit ? (
           <div className="space-y-3">
-            {audit.failuresByIp.length > 0 && (
+            {(audit.failuresByIp ?? []).length > 0 && (
               <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-lg p-3 text-sm">
                 <strong className="text-amber-800 dark:text-amber-300">Failed access attempts:</strong>{" "}
                 {audit.failuresByIp.map(f => `${f.ip} (${f.count}×)`).join(", ")}
@@ -210,7 +246,7 @@ function AdminOverviewPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {audit.recent.slice(0, 25).map((r, i) => (
+                  {(audit.recent ?? []).slice(0, 25).map((r, i) => (
                     <tr key={i} className="border-t border-slate-100 dark:border-slate-800">
                       <td className="px-3 py-2 text-slate-500 dark:text-slate-400">{new Date(r.at).toLocaleString()}</td>
                       <td className="px-3 py-2 font-mono text-slate-700 dark:text-slate-300">{r.endpoint}</td>
