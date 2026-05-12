@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, API_ORIGIN } from "@/lib/api";
 
 /**
  * Combined Admin Overview — single screen aggregating every admin metric group.
@@ -269,7 +269,7 @@ function AdminOverviewPage() {
         <SectionHeader
           title="Subscriptions"
           subtitle="active paid accounts"
-          linkTo={`/api/admin/billing-overview?key=${k}`}
+          linkTo={`${API_ORIGIN}/api/admin/billing-overview?key=${k}`}
           linkLabel="Raw JSON"
         />
         {billing ? (
@@ -290,7 +290,7 @@ function AdminOverviewPage() {
         <SectionHeader
           title="Revenue"
           subtitle={revenue?.period ?? "last 3 months"}
-          linkTo={`/api/admin/metrics/revenue?key=${k}&months=3`}
+          linkTo={`${API_ORIGIN}/api/admin/metrics/revenue?key=${k}&months=3`}
           linkLabel="Raw JSON"
         />
         {revenue ? (
@@ -322,7 +322,7 @@ function AdminOverviewPage() {
         <SectionHeader
           title="Churn"
           subtitle={churn?.period ?? "last 30 days"}
-          linkTo={`/api/admin/metrics/churn?key=${k}&days=30`}
+          linkTo={`${API_ORIGIN}/api/admin/metrics/churn?key=${k}&days=30`}
           linkLabel="Raw JSON"
         />
         {churn ? (
@@ -460,7 +460,7 @@ function AdminOverviewPage() {
         <SectionHeader
           title="Top Businesses"
           subtitle="last 30 days — by message volume + sales"
-          linkTo={`/api/admin/metrics/top-businesses?key=${k}&days=30&limit=25`}
+          linkTo={`${API_ORIGIN}/api/admin/metrics/top-businesses?key=${k}&days=30&limit=25`}
           linkLabel="Full list (JSON)"
         />
         {topBusinesses ? (
@@ -502,7 +502,7 @@ function AdminOverviewPage() {
         <SectionHeader
           title="Message Volume"
           subtitle="last 7 days — across all channels"
-          linkTo={`/api/admin/metrics/message-volume?key=${k}&days=30`}
+          linkTo={`${API_ORIGIN}/api/admin/metrics/message-volume?key=${k}&days=30`}
           linkLabel="30-day data (JSON)"
         />
         {messageVolume ? (
@@ -553,7 +553,7 @@ function AdminOverviewPage() {
         <SectionHeader
           title="Failed Payments"
           subtitle="last 7 days"
-          linkTo={`/api/admin/metrics/failed-payments?key=${k}&days=30`}
+          linkTo={`${API_ORIGIN}/api/admin/metrics/failed-payments?key=${k}&days=30`}
           linkLabel="30-day data (JSON)"
         />
         {failedPayments ? (
@@ -595,7 +595,7 @@ function AdminOverviewPage() {
         <SectionHeader
           title="Admin Access Audit"
           subtitle="last 7 days"
-          linkTo={`/api/admin/audit-log?key=${k}&days=30&limit=500`}
+          linkTo={`${API_ORIGIN}/api/admin/audit-log?key=${k}&days=30&limit=500`}
           linkLabel="30-day log (JSON)"
         />
         {audit ? (
