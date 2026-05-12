@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, Check, X, AlertCircle, AlertTriangle, Info, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -79,21 +79,38 @@ export function NotificationBell() {
   }, [open]);
 
   /**
+   * Width of the popup. Desktop stays at the comfortable 320px (room to sit
+   * next to the bell, plenty of dashboard visible alongside). Mobile gets a
+   * bigger panel (up to 420px) so alert text isn't cramped — it overlays the
+   * dashboard underneath, which is fine since the popup is a modal-style
+   * overlay anyway.
+   */
+  function popupWidthFor(viewportWidth: number): number {
+    const isMobile = viewportWidth < 640;
+    if (isMobile) return Math.min(420, viewportWidth - 24);
+    return 320;
+  }
+
+  /**
    * Anchors the popup to the bell's current viewport position. Called on open
    * and on resize/scroll while open so the panel tracks if the page reflows.
-   * Clamps to keep the panel inside the viewport so it never bleeds off-screen
-   * on narrow phones or when the bell sits near a screen edge.
+   * Right-aligned to the bell; clamped to keep the panel inside the viewport
+   * so it never bleeds off-screen on narrow phones.
+   *
+   * Wrapped in useCallback with empty deps because it only reads refs + window
+   * (both stable) and calls setPopupPos (also stable). Lets the resize/scroll
+   * useEffect list it as a dep without re-subscribing on every render.
    */
-  function recomputePosition() {
+  const recomputePosition = useCallback(() => {
     if (!buttonRef.current) return;
     const rect = buttonRef.current.getBoundingClientRect();
-    const popupWidth = Math.min(320, window.innerWidth - 16); // w-80 max, but honor the viewport
+    const popupWidth = popupWidthFor(window.innerWidth);
     let left = rect.right - popupWidth;
     if (left < 8) left = 8;
     const maxLeft = window.innerWidth - popupWidth - 8;
     if (left > maxLeft) left = maxLeft;
     setPopupPos({ top: rect.bottom + 8, left });
-  }
+  }, []);
 
   // Recompute on viewport changes while the popup is open so it stays anchored.
   useEffect(() => {
@@ -105,7 +122,7 @@ export function NotificationBell() {
       window.removeEventListener("resize", handler);
       window.removeEventListener("scroll", handler, true);
     };
-  }, [open]);
+  }, [open, recomputePosition]);
 
   async function handleOpen() {
     if (open) { setOpen(false); return; }
@@ -177,7 +194,7 @@ export function NotificationBell() {
           /* `position: fixed` so the dropdown escapes the sidebar's overflow:auto
              clip and stays anchored to the bell button. Width clamps to the
              viewport so the panel fits on narrow phones. */
-          style={{ position: "fixed", top: popupPos.top, left: popupPos.left, width: Math.min(320, typeof window !== "undefined" ? window.innerWidth - 16 : 320) }}
+          style={{ position: "fixed", top: popupPos.top, left: popupPos.left, width: typeof window !== "undefined" ? popupWidthFor(window.innerWidth) : 320 }}
           className="max-h-[480px] flex flex-col rounded-lg shadow-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 z-50"
         >
           <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 dark:border-slate-800">
