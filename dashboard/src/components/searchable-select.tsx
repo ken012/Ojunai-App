@@ -207,7 +207,7 @@ export function SearchableSelect({
         <div
           ref={popoverRef}
           onKeyDown={handleKey}
-          className="absolute z-50 mt-1 w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md shadow-lg overflow-hidden"
+          className="absolute z-50 mt-1 min-w-full w-max max-w-[28rem] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md shadow-lg overflow-hidden"
         >
           <div className="flex items-center gap-2 px-2 py-1.5 border-b border-slate-100 dark:border-slate-800">
             <Search size={14} className="text-slate-400 flex-shrink-0" />
