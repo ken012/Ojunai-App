@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { SearchableSelect } from "@/components/searchable-select";
+import { Pagination } from "@/components/pagination";
 import { formatNaira, formatDateTime } from "@/lib/format";
 import type { ContactDto, LedgerEntryDto, PaginatedResult } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
@@ -408,33 +409,12 @@ export default function ContactsPage() {
             </Table>
           )}
 
-          {/* Pagination controls — only render when there's more than one page so a small
-              contact list (typical for a new business) stays uncluttered. */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4 text-xs text-slate-500 dark:text-slate-400">
-              <span>
-                Page {page} of {totalPages} · {data?.totalCount ?? 0} contact{(data?.totalCount ?? 0) === 1 ? "" : "s"}
-              </span>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page <= 1}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  disabled={page >= totalPages}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          )}
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            summary={`Page ${page} of ${totalPages} · ${data?.totalCount ?? 0} contact${(data?.totalCount ?? 0) === 1 ? "" : "s"}`}
+          />
         </CardContent>
       </Card>
 

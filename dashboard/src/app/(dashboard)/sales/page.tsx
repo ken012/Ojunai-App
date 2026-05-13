@@ -39,6 +39,7 @@ import {
 import { ChevronLeft, ChevronRight, Ban, Trash2, RotateCcw, Search, X, ShoppingCart, FileDown, Mail } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { SearchableSelect } from "@/components/searchable-select";
+import { Pagination } from "@/components/pagination";
 
 function statusBadgeClass(status: string) {
   if (status === "Paid") return "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200";
@@ -328,28 +329,13 @@ export default function SalesPage() {
               </Table>
 
               {data && data.totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Page {data.page} of {data.totalPages}
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage((p) => p - 1)}
-                      disabled={page === 1}
-                    >
-                      <ChevronLeft size={14} />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage((p) => p + 1)}
-                      disabled={page === data.totalPages}
-                    >
-                      <ChevronRight size={14} />
-                    </Button>
-                  </div>
+                <div className="mt-4 pt-4 border-t">
+                  <Pagination
+                    page={data.page}
+                    totalPages={data.totalPages}
+                    onPageChange={setPage}
+                    summary={`Page ${data.page} of ${data.totalPages} · ${data.totalCount} sale${data.totalCount === 1 ? "" : "s"}`}
+                  />
                 </div>
               )}
             </>

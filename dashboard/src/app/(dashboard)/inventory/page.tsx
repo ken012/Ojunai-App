@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Pagination } from "@/components/pagination";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -1867,30 +1868,13 @@ export default function InventoryPage() {
 
       {/* Pagination — only renders when more than one page of products matches the filter.
           Inventory below the PAGE_SIZE threshold (50 today) stays uncluttered. */}
-      {!isWastageView && totalPages > 1 && (
-        <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mt-3">
-          <span>
-            Page {page} of {totalPages} · {totalForCurrentFilter} product{totalForCurrentFilter === 1 ? "" : "s"}
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page <= 1}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
+      {!isWastageView && (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          summary={`Page ${page} of ${totalPages} · ${totalForCurrentFilter} product${totalForCurrentFilter === 1 ? "" : "s"}`}
+        />
       )}
 
       {/* Sticky bulk action bar */}
