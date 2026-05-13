@@ -227,7 +227,9 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
 
         var pricedItems = DistributePricesAcrossItems(items, parsed.BusinessAction);
 
-        var resolvedItems = new List<(Product Product, decimal Quantity, decimal UnitPrice)>();
+        // The 4th tuple value (fromCatalog) tells SalesService whether to add VAT on top (true,
+        // stored selling price = net) or derive VAT from inside the user-stated gross (false).
+        var resolvedItems = new List<(Product Product, decimal Quantity, decimal UnitPrice, bool FromCatalog)>();
         var unknownItems = new List<(string ProductName, decimal Quantity, decimal UnitPrice)>();
 
         foreach (var item in pricedItems)
@@ -236,7 +238,8 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
 
             if (product is not null)
             {
-                var unitPrice = item.UnitPrice > 0
+                var userProvidedPrice = item.UnitPrice > 0;
+                var unitPrice = userProvidedPrice
                     ? item.UnitPrice
                     : product.SellingPrice ?? 0m;
 
@@ -249,7 +252,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
                         ct);
                     return;
                 }
-                resolvedItems.Add((product, item.Quantity, unitPrice));
+                resolvedItems.Add((product, item.Quantity, unitPrice, FromCatalog: !userProvidedPrice));
             }
             else
             {
@@ -331,6 +334,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
                 ProductId = r.Product.Id,
                 Quantity = r.Quantity,
                 UnitPrice = r.UnitPrice,
+                UnitPriceFromCatalog = r.FromCatalog,
             }).ToList(),
             ContactId = contactId,
             PaymentStatus = PaymentStatus.Paid,

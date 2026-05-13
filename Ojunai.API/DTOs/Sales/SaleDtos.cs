@@ -20,6 +20,15 @@ public class SaleItemRequest
     [Required] public Guid ProductId { get; set; }
     [Range(0.001, 999999)] public decimal Quantity { get; set; }
     [Range(0, 999999999)] public decimal UnitPrice { get; set; }
+
+    /// <summary>
+    /// True when <see cref="UnitPrice"/> came from the product's stored SellingPrice (net of VAT)
+    /// rather than from a user-typed amount. Drives the SalesService VAT-on-top behavior:
+    /// catalog prices are treated as net and VAT is added; user-typed prices are treated as
+    /// gross/total and VAT is derived from inside. Defaults to false so the dashboard flow
+    /// (which already submits gross prices + a precomputed VatAmount) keeps working unchanged.
+    /// </summary>
+    public bool UnitPriceFromCatalog { get; set; } = false;
 }
 
 public class SaleDto

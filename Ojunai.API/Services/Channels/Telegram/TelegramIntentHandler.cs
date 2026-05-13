@@ -321,7 +321,9 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
 
         // Resolve every product up front. Track which items have a known product and which don't —
         // unknowns trigger the Phase-2.8 "add on the fly" inline-keyboard prompt instead of a hard error.
-        var resolvedItems = new List<(Product Product, decimal Quantity, decimal UnitPrice)>();
+        // The 4th tuple value (fromCatalog) tells SalesService whether to add VAT on top (true)
+        // or derive VAT from inside the user-stated gross (false).
+        var resolvedItems = new List<(Product Product, decimal Quantity, decimal UnitPrice, bool FromCatalog)>();
         var unknownItems = new List<(string ProductName, decimal Quantity, decimal UnitPrice)>();
 
         foreach (var item in pricedItems)
@@ -333,7 +335,8 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
                 // Known product → fall back to stored SellingPrice when the user didn't say a
                 // price. Matches WhatsApp's behavior: "sold 2 rice" with rice priced at ₦800
                 // records as ₦1,600 without forcing the user to repeat the price every time.
-                var unitPrice = item.UnitPrice > 0
+                var userProvidedPrice = item.UnitPrice > 0;
+                var unitPrice = userProvidedPrice
                     ? item.UnitPrice
                     : product.SellingPrice ?? 0m;
 
@@ -346,7 +349,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
                         ct);
                     return;
                 }
-                resolvedItems.Add((product, item.Quantity, unitPrice));
+                resolvedItems.Add((product, item.Quantity, unitPrice, FromCatalog: !userProvidedPrice));
             }
             else
             {
@@ -443,6 +446,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
                 ProductId = r.Product.Id,
                 Quantity = r.Quantity,
                 UnitPrice = r.UnitPrice,
+                UnitPriceFromCatalog = r.FromCatalog,
             }).ToList(),
             ContactId = contactId,
             PaymentStatus = PaymentStatus.Paid,

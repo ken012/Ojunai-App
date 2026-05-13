@@ -991,8 +991,11 @@ public class WhatsAppService : IWhatsAppService
             if (product.CurrentStock <= 0) return $"{product.Name} has no stock to sell.";
             var price = topLevelUnitPrice ?? product.SellingPrice ?? 0;
             if (price <= 0) return $"No selling price set for {product.Name}. Set a price first.";
+            // Flag the price source for downstream VAT handling. Catalog price = net (VAT added
+            // on top). User-stated topLevelUnitPrice = gross (VAT derived from inside).
+            bool fromCatalog = !topLevelUnitPrice.HasValue;
             if (discountPercent.HasValue) price = price * (1 - discountPercent.Value / 100);
-            saleItems.Add(new SaleItemRequest { ProductId = product.Id, Quantity = product.CurrentStock, UnitPrice = price });
+            saleItems.Add(new SaleItemRequest { ProductId = product.Id, Quantity = product.CurrentStock, UnitPrice = price, UnitPriceFromCatalog = fromCatalog });
         }
         else if (!string.IsNullOrEmpty(sellHalfProduct))
         {
@@ -1006,8 +1009,9 @@ public class WhatsAppService : IWhatsAppService
             var halfQty = Math.Max(1, Math.Ceiling(product.CurrentStock / 2m));
             var price = topLevelUnitPrice ?? product.SellingPrice ?? 0;
             if (price <= 0) return $"No selling price is set for {product.Name}. Please say the price, e.g. \"Sell half my stock of {product.Name} at 5000\"";
+            bool fromCatalog = !topLevelUnitPrice.HasValue;
             if (discountPercent.HasValue) price = price * (1 - discountPercent.Value / 100);
-            saleItems.Add(new SaleItemRequest { ProductId = product.Id, Quantity = halfQty, UnitPrice = price });
+            saleItems.Add(new SaleItemRequest { ProductId = product.Id, Quantity = halfQty, UnitPrice = price, UnitPriceFromCatalog = fromCatalog });
         }
         else if (sellAll || sellEachQty.HasValue)
         {
@@ -1031,7 +1035,8 @@ public class WhatsAppService : IWhatsAppService
                 if (price <= 0) { skipped.Add($"{product.Name} (no selling price)"); continue; }
                 if (discountPercent.HasValue) price = price * (1 - discountPercent.Value / 100);
 
-                saleItems.Add(new SaleItemRequest { ProductId = product.Id, Quantity = qty, UnitPrice = price });
+                // Bulk sell-all / sell-each branch always sources price from the catalog.
+                saleItems.Add(new SaleItemRequest { ProductId = product.Id, Quantity = qty, UnitPrice = price, UnitPriceFromCatalog = true });
             }
         }
         else
@@ -1048,6 +1053,11 @@ public class WhatsAppService : IWhatsAppService
 
                 var qty = item.GetDecimalOrNull("quantity") ?? 0;
                 var unitPrice = item.GetDecimalOrNull("unitPrice");
+                // Capture whether the user explicitly stated a unitPrice BEFORE the reverse-calc
+                // branch potentially overwrites it. Drives the VAT logic downstream: user-typed
+                // price = gross (VAT derived from inside); catalog/reverse-calc price = net (VAT
+                // added on top).
+                bool unitPriceUserProvided = unitPrice.HasValue;
                 var itemTotalAmount = item.GetDecimalOrNull("totalAmount");
                 var (product, error) = await FindProductAsync(businessId, productName);
 
@@ -1068,9 +1078,12 @@ public class WhatsAppService : IWhatsAppService
 
                 var finalPrice = unitPrice ?? product.SellingPrice ?? 0;
                 if (finalPrice <= 0) { if (isBatch) { skipped.Add($"{product.Name} (no price)"); continue; } return $"No selling price is set for {product.Name}. Please say the price, e.g. \"I sold {qty} {product.Unit} of {product.Name} at 5000\""; }
-                if (discountPercent.HasValue && unitPrice == null) finalPrice = finalPrice * (1 - discountPercent.Value / 100);
+                if (discountPercent.HasValue && unitPriceUserProvided == false) finalPrice = finalPrice * (1 - discountPercent.Value / 100);
 
-                saleItems.Add(new SaleItemRequest { ProductId = product.Id, Quantity = qty, UnitPrice = finalPrice });
+                // fromCatalog reflects the ORIGINAL price source — reverse-calc derives qty from
+                // the user's stated total but still uses catalog SellingPrice for the per-unit
+                // amount, so it counts as catalog (= net, add VAT on top).
+                saleItems.Add(new SaleItemRequest { ProductId = product.Id, Quantity = qty, UnitPrice = finalPrice, UnitPriceFromCatalog = !unitPriceUserProvided });
             }
         }
 

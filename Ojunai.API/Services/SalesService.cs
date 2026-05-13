@@ -57,6 +57,46 @@ public class SalesService : ISalesService
                 throw new InvalidOperationException($"Insufficient stock for '{product.Name}'. Available: {product.CurrentStock} {product.Unit}.");
         }
 
+        // ── VAT processing ────────────────────────────────────────────────────
+        // When the business has VAT enabled and the caller didn't pre-compute VatAmount
+        // (dashboard does; chat handlers don't), derive VAT per item based on whether the
+        // UnitPrice came from the product catalog or was user-stated:
+        //
+        //   - UnitPriceFromCatalog = true → stored SellingPrice is NET. Add VAT on top.
+        //     Customer ends up paying  price × qty × (1 + rate/100).
+        //   - UnitPriceFromCatalog = false → user-typed price is GROSS (the amount the
+        //     customer was charged in total). Derive the VAT portion from inside.
+        //
+        // SaleItem.UnitPrice is always stored as the GROSS unit price so the receipt math
+        // ("subtotal = total - vat") and per-line displays both stay consistent.
+        var business = await _db.Businesses.FindAsync(businessId);
+        bool vatOn = business != null && business.VatEnabled && business.VatRate > 0;
+        decimal vatRate = vatOn ? business!.VatRate : 0m;
+        decimal autoVatAmount = 0m;
+        var grossUnitByIndex = new Dictionary<int, decimal>();
+        for (int idx = 0; idx < request.Items.Count; idx++)
+        {
+            var itemReq = request.Items[idx];
+            decimal grossUnit;
+            if (vatOn && itemReq.UnitPriceFromCatalog)
+            {
+                // Stored selling price = net; convert to gross + record VAT
+                grossUnit = Math.Round(itemReq.UnitPrice * (1m + vatRate / 100m), 2);
+                autoVatAmount += Math.Round(itemReq.UnitPrice * itemReq.Quantity * vatRate / 100m, 2);
+            }
+            else if (vatOn && request.VatAmount == null)
+            {
+                // User-typed price = gross; VAT lives inside (only auto-compute when caller didn't)
+                grossUnit = itemReq.UnitPrice;
+                autoVatAmount += Math.Round(grossUnit * itemReq.Quantity * vatRate / (100m + vatRate), 2);
+            }
+            else
+            {
+                grossUnit = itemReq.UnitPrice;
+            }
+            grossUnitByIndex[idx] = grossUnit;
+        }
+
         var sale = new Sale
         {
             BusinessId = businessId,
@@ -65,7 +105,7 @@ public class SalesService : ISalesService
             PaymentMethod = request.PaymentMethod,
             Notes = request.Notes,
             Source = source,
-            VatAmount = request.VatAmount ?? 0m,
+            VatAmount = request.VatAmount ?? autoVatAmount,
             RecordedByUserId = recordedByUserId,
             RecordedByName = recordedByName,
             CreatedAtUtc = request.SaleDate ?? DateTime.UtcNow
@@ -74,17 +114,19 @@ public class SalesService : ISalesService
         decimal total = 0;
         var inventoryTxns = new List<InventoryTransaction>();
 
-        foreach (var itemReq in request.Items)
+        for (int idx = 0; idx < request.Items.Count; idx++)
         {
+            var itemReq = request.Items[idx];
             var product = products[itemReq.ProductId];
-            var lineTotal = itemReq.Quantity * itemReq.UnitPrice;
+            var grossUnit = grossUnitByIndex[idx];
+            var lineTotal = itemReq.Quantity * grossUnit;
             total += lineTotal;
 
             sale.Items.Add(new SaleItem
             {
                 ProductId = itemReq.ProductId,
                 Quantity = itemReq.Quantity,
-                UnitPrice = itemReq.UnitPrice,
+                UnitPrice = grossUnit,
                 TotalPrice = lineTotal
             });
 
