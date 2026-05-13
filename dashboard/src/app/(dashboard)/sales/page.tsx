@@ -2,10 +2,10 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useStickyState } from "@/lib/sticky-state";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, fetchAllPaged } from "@/lib/api";
+import { api } from "@/lib/api";
 import { hasPermission, Permission } from "@/lib/permissions";
 import { useBusiness } from "@/lib/data-sync";
 import { useToast } from "@/components/toast";
@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/dialog";
 import { ChevronLeft, ChevronRight, Ban, Trash2, RotateCcw, Search, X, ShoppingCart, FileDown, Mail } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
+import { SearchableSelect } from "@/components/searchable-select";
 
 function statusBadgeClass(status: string) {
   if (status === "Paid") return "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200";
@@ -509,25 +510,76 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
     }
   }, [open, biz?.vatEnabled]);
 
-  const { data: products } = useQuery({
-    queryKey: ["products-for-sale"],
-    queryFn: () => fetchAllPaged<ProductDto>((p, ps) => `/products?page=${p}&pageSize=${ps}`),
-    enabled: open,
-  });
+  // Server-side search for the product + customer pickers. At scale (thousands of
+  // products/contacts per business) loading everything up-front would slow the dialog
+  // open and waste bandwidth. We hit the API per-keystroke with a debounce baked into
+  // SearchableSelect itself, fetching the top 20 matches at a time.
+  //
+  // productCache stores ProductDto-by-id for any product we've seen via fetchProducts;
+  // updateLine consults it to auto-fill the unit price when the user picks a product.
+  // Without the cache we'd need a separate /products/{id} round-trip after every pick.
+  const [productCache, setProductCache] = useState<Record<string, ProductDto>>({});
+  const [contactCache, setContactCache] = useState<Record<string, ContactDto>>({});
 
-  const { data: contacts } = useQuery({
-    queryKey: ["contacts-for-sale"],
-    queryFn: () => fetchAllPaged<ContactDto>((p, ps) => `/contacts?page=${p}&pageSize=${ps}`),
-    enabled: open,
-  });
+  const fetchProducts = useCallback(async (search: string) => {
+    const url = `/products?search=${encodeURIComponent(search)}&page=1&pageSize=20`;
+    const { data } = await api.get<{ data: { items: ProductDto[] } }>(url);
+    const items = data.data?.items ?? [];
+    setProductCache(prev => {
+      const next = { ...prev };
+      for (const p of items) next[p.id] = p;
+      return next;
+    });
+    return items.map(p => ({
+      value: p.id,
+      label: p.name,
+      secondary: `${p.currentStock} ${p.unit}` + (p.sellingPrice ? ` · ${biz?.currency ?? ""}${p.sellingPrice}` : ""),
+    }));
+  }, [biz?.currency]);
+
+  const resolveProduct = useCallback(async (id: string) => {
+    const cached = productCache[id];
+    if (cached) return { value: cached.id, label: cached.name, secondary: `${cached.currentStock} ${cached.unit}` };
+    try {
+      const { data } = await api.get<{ data: ProductDto }>(`/products/${id}`);
+      const p = data.data;
+      setProductCache(prev => ({ ...prev, [p.id]: p }));
+      return { value: p.id, label: p.name, secondary: `${p.currentStock} ${p.unit}` };
+    } catch { return null; }
+  }, [productCache]);
+
+  const fetchContacts = useCallback(async (search: string) => {
+    const url = `/contacts?search=${encodeURIComponent(search)}&page=1&pageSize=20`;
+    const { data } = await api.get<{ data: { items: ContactDto[] } }>(url);
+    const items = data.data?.items ?? [];
+    setContactCache(prev => {
+      const next = { ...prev };
+      for (const c of items) next[c.id] = c;
+      return next;
+    });
+    return items.map(c => ({ value: c.id, label: c.name }));
+  }, []);
+
+  const resolveContact = useCallback(async (id: string) => {
+    const cached = contactCache[id];
+    if (cached) return { value: cached.id, label: cached.name };
+    try {
+      const { data } = await api.get<{ data: ContactDto }>(`/contacts/${id}`);
+      const c = data.data;
+      setContactCache(prev => ({ ...prev, [c.id]: c }));
+      return { value: c.id, label: c.name };
+    } catch { return null; }
+  }, [contactCache]);
 
   function updateLine(idx: number, field: keyof SaleLine, value: string) {
     setLines((prev) => {
       const next = [...prev];
       next[idx] = { ...next[idx], [field]: value };
-      // Auto-fill price when product is picked
+      // Auto-fill price when product is picked. productCache is populated by
+      // fetchProducts every time it returns a batch, so any product the user can
+      // see in the picker is already in here.
       if (field === "productId") {
-        const product = products?.find((p) => p.id === value);
+        const product = productCache[value];
         if (product?.sellingPrice) next[idx].unitPrice = product.sellingPrice.toString();
       }
       return next;
@@ -606,18 +658,15 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
             {lines.map((line, idx) => (
               <div key={idx} className="grid grid-cols-12 gap-2 items-end">
                 <div className="col-span-5">
-                  <select
-                    className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm"
+                  <SearchableSelect
                     value={line.productId}
-                    onChange={(e) => updateLine(idx, "productId", e.target.value)}
-                  >
-                    <option value="">Pick product</option>
-                    {products?.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.currentStock} {p.unit})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => updateLine(idx, "productId", v)}
+                    fetchOptions={fetchProducts}
+                    resolveLabel={resolveProduct}
+                    placeholder="Pick product"
+                    searchPlaceholder="Search products"
+                    emptyMessage="No products match"
+                  />
                 </div>
                 <div className="col-span-3">
                   <Input
@@ -654,18 +703,15 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
 
           <div>
             <Label>Customer (optional)</Label>
-            <select
-              className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm"
+            <SearchableSelect
               value={contactId}
-              onChange={(e) => setContactId(e.target.value)}
-            >
-              <option value="">No customer</option>
-              {contacts?.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              onChange={setContactId}
+              fetchOptions={fetchContacts}
+              resolveLabel={resolveContact}
+              placeholder="No customer"
+              searchPlaceholder="Search customers"
+              emptyMessage="No customers match"
+            />
           </div>
 
           <div>
