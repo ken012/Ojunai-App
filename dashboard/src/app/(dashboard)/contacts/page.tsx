@@ -2,11 +2,12 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, fetchAllPaged } from "@/lib/api";
+import { api } from "@/lib/api";
+import { SearchableSelect } from "@/components/searchable-select";
 import { formatNaira, formatDateTime } from "@/lib/format";
-import type { ContactDto, LedgerEntryDto } from "@/lib/types";
+import type { ContactDto, LedgerEntryDto, PaginatedResult } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,8 @@ export default function ContactsPage() {
   const [balanceFilter, setBalanceFilter] = useState<string>("bal-all");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<ContactDto | null>(null);
   const [recordingDebt, setRecordingDebt] = useState(false);
@@ -57,6 +60,10 @@ export default function ContactsPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // Any filter or search change resets pagination to page 1 — otherwise you'd land on page 7
+  // of a result set that only has 2 pages.
+  useEffect(() => { setPage(1); }, [debouncedSearch, typeFilter, balanceFilter]);
+
   // Auto-open create dialog from ?new=1 (dashboard quick action)
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("new") === "1") {
@@ -64,68 +71,71 @@ export default function ContactsPage() {
     }
   }, []);
 
-  // Fetch the COMPLETE contact list by paging through the API until exhausted, then
-  // run search + filters fully client-side. Without this, large contact lists got
-  // silently truncated and "Record Debt" / "Owes You" only saw the first batch.
+  // Server-side search + pagination — the API does the ILike(name, "X%") match using a
+  // database index, so this scales identically regardless of how many contacts the business
+  // has. Filters (search, type, balance) are passed as query params so the visible page +
+  // total counts reflect the filtered set.
+  const balanceParam = balanceFilter === "bal-receivable" ? "receivable"
+    : balanceFilter === "bal-payable" ? "payable"
+    : balanceFilter === "bal-settled" ? "settled"
+    : "";
+  const typeParam = typeFilter !== "all" ? typeFilter : "";
+
   const { data, isLoading } = useQuery({
-    queryKey: ["contacts"],
-    queryFn: () => fetchAllPaged<ContactDto>((p, ps) => `/contacts?page=${p}&pageSize=${ps}`),
+    queryKey: ["contacts", debouncedSearch, typeParam, balanceParam, page],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("pageSize", String(PAGE_SIZE));
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      if (typeParam) params.set("type", typeParam);
+      if (balanceParam) params.set("balance", balanceParam);
+      const { data } = await api.get<{ data: PaginatedResult<ContactDto> }>(`/contacts?${params.toString()}`);
+      return data.data;
+    },
     staleTime: 30_000,
   });
 
-  const allItems = useMemo(() => data ?? [], [data]);
+  // Headline totals come from a separate aggregate endpoint that honors the same filters as
+  // the list query. This keeps the "Total receivable / payable" numbers accurate without
+  // having to load every contact into memory like the old client-side approach.
+  const { data: totals } = useQuery({
+    queryKey: ["contacts-totals", debouncedSearch, typeParam, balanceParam],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      if (typeParam) params.set("type", typeParam);
+      if (balanceParam) params.set("balance", balanceParam);
+      const { data } = await api.get<{ data: { totalContacts: number; totalReceivable: number; totalPayable: number } }>(
+        `/contacts/totals${params.toString() ? `?${params.toString()}` : ""}`);
+      return data.data;
+    },
+    staleTime: 30_000,
+  });
 
-  // Search runs client-side over the full list so it works with the balance/type filters
-  // simultaneously and the Record Debt picker always sees every contact.
-  const searchedItems = useMemo(() => {
-    if (!debouncedSearch) return allItems;
-    const q = debouncedSearch.toLowerCase();
-    return allItems.filter((c) =>
-      c.name.toLowerCase().includes(q) ||
-      (c.phoneNumber ? c.phoneNumber.includes(debouncedSearch) : false)
-    );
-  }, [allItems, debouncedSearch]);
+  const contacts = useMemo(() => data?.items ?? [], [data]);
+  const totalPages = data ? Math.max(1, Math.ceil(data.totalCount / PAGE_SIZE)) : 1;
 
-  // Deep-link: ?id=<contactId> auto-opens that contact's drawer once contacts are loaded.
-  // Used by Today screen "Remind" CTA and the Sales list outstanding-customer link.
-  // Consumed once via ref + URL is rewritten so closing the drawer doesn't re-trigger
-  // (which would otherwise cause an infinite reopen loop).
+  // Deep-link: ?id=<contactId> auto-opens that contact's drawer. Used by Today screen
+  // "Remind" CTA and the Sales list outstanding-customer link. We fetch the specific
+  // contact directly rather than scanning the visible page (which may not include it).
   const deepLinkConsumed = useRef(false);
   useEffect(() => {
-    if (deepLinkConsumed.current || !allItems.length) return;
+    if (deepLinkConsumed.current) return;
     const id = new URLSearchParams(window.location.search).get("id");
     if (!id) return;
-    const target = allItems.find((c) => c.id === id);
-    if (target) {
-      setViewingLedger(target);
-      deepLinkConsumed.current = true;
-      // Strip ?id from URL so back/forward + drawer-close behave as expected.
+    deepLinkConsumed.current = true;
+    (async () => {
+      try {
+        const { data } = await api.get<{ data: ContactDto }>(`/contacts/${id}`);
+        if (data.data) setViewingLedger(data.data);
+      } catch { /* contact not found / unauthorized — leave the URL params; user can refresh */ }
       window.history.replaceState(null, "", "/contacts");
-    }
-  }, [allItems]);
+    })();
+  }, []);
 
-  const filteredContacts = useMemo(() => {
-    let result = searchedItems;
-
-    if (typeFilter !== "all")
-      result = result.filter(c => c.type === typeFilter);
-
-    // A negative payable behaves like a receivable (and vice versa) — surface those
-    // contacts under the side that matches the user's intent.
-    if (balanceFilter === "bal-receivable")
-      result = result.filter(c => c.outstandingReceivable > 0 || c.outstandingPayable < 0);
-    else if (balanceFilter === "bal-payable")
-      result = result.filter(c => c.outstandingPayable > 0 || c.outstandingReceivable < 0);
-    else if (balanceFilter === "bal-settled")
-      result = result.filter(c => c.outstandingReceivable === 0 && c.outstandingPayable === 0);
-
-    return result;
-  }, [searchedItems, typeFilter, balanceFilter]);
-
-  // Totals always reflect the full unfiltered set so the headline numbers don't jump when filtering.
-  const totalReceivable = allItems.reduce((s, c) => s + c.outstandingReceivable, 0);
-  const totalPayable = allItems.reduce((s, c) => s + c.outstandingPayable, 0);
-  const contacts = filteredContacts;
+  const totalReceivable = totals?.totalReceivable ?? 0;
+  const totalPayable = totals?.totalPayable ?? 0;
 
   return (
     <div className="space-y-6">
@@ -397,6 +407,34 @@ export default function ContactsPage() {
               </TableBody>
             </Table>
           )}
+
+          {/* Pagination controls — only render when there's more than one page so a small
+              contact list (typical for a new business) stays uncluttered. */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4 text-xs text-slate-500 dark:text-slate-400">
+              <span>
+                Page {page} of {totalPages} · {data?.totalCount ?? 0} contact{(data?.totalCount ?? 0) === 1 ? "" : "s"}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -409,7 +447,6 @@ export default function ContactsPage() {
       <RecordDebtDialog
         open={recordingDebt}
         onClose={() => setRecordingDebt(false)}
-        contacts={allItems}
       />
       <RecordPaymentDialog
         contact={recordingPayment}
@@ -430,20 +467,32 @@ export default function ContactsPage() {
   );
 }
 
-function RecordDebtDialog({ open, onClose, contacts }: { open: boolean; onClose: () => void; contacts: ContactDto[] }) {
+function RecordDebtDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const [form, setForm] = useState({ contactId: "", type: "receivable", amount: "", notes: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [contactSearch, setContactSearch] = useState("");
 
-  // Client-side filter over the already-loaded contacts. We don't re-fetch because the contacts prop
-  // already reflects the page's active tab filter — no need to double-round-trip for a sub-selection.
-  const filteredContacts = useMemo(() => {
-    const q = contactSearch.trim().toLowerCase();
-    if (!q) return contacts;
-    return contacts.filter((c) => c.name.toLowerCase().includes(q));
-  }, [contacts, contactSearch]);
+  // Server-side contact search via SearchableSelect — no longer depends on a parent-loaded
+  // contacts list, which means the dialog works correctly even when the contacts page is
+  // paginating and only the visible page is in memory.
+  const fetchContacts = useCallback(async (search: string) => {
+    const url = `/contacts?search=${encodeURIComponent(search)}&page=1&pageSize=20`;
+    const { data } = await api.get<{ data: PaginatedResult<ContactDto> }>(url);
+    const items = data.data?.items ?? [];
+    return items.map(c => ({
+      value: c.id,
+      label: c.name,
+      secondary: c.type,
+    }));
+  }, []);
+  const resolveContact = useCallback(async (id: string) => {
+    try {
+      const { data } = await api.get<{ data: ContactDto }>(`/contacts/${id}`);
+      const c = data.data;
+      return { value: c.id, label: c.name, secondary: c.type };
+    } catch { return null; }
+  }, []);
 
   async function handleSave() {
     if (!form.contactId || !form.amount || !form.notes) return;
@@ -468,7 +517,6 @@ function RecordDebtDialog({ open, onClose, contacts }: { open: boolean; onClose:
 
   function handleClose() {
     setForm({ contactId: "", type: "receivable", amount: "", notes: "" });
-    setContactSearch("");
     setError(null);
     onClose();
   }
@@ -493,30 +541,15 @@ function RecordDebtDialog({ open, onClose, contacts }: { open: boolean; onClose:
           </div>
           <div>
             <Label>Contact</Label>
-            <div className="relative mb-1">
-              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" />
-              <Input
-                type="search"
-                placeholder="Filter contacts..."
-                value={contactSearch}
-                onChange={(e) => setContactSearch(e.target.value)}
-                className="pl-7 h-8 text-xs"
-              />
-            </div>
-            <select
-              className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
+            <SearchableSelect
               value={form.contactId}
-              onChange={(e) => setForm({ ...form, contactId: e.target.value })}
-              size={Math.min(6, Math.max(2, filteredContacts.length + 1))}
-            >
-              <option value="">Select contact</option>
-              {filteredContacts.map((c) => (
-                <option key={c.id} value={c.id}>{c.name} ({c.type})</option>
-              ))}
-            </select>
-            {contactSearch && filteredContacts.length === 0 && (
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">No contacts match &ldquo;{contactSearch}&rdquo;.</p>
-            )}
+              onChange={(v) => setForm({ ...form, contactId: v })}
+              fetchOptions={fetchContacts}
+              resolveLabel={resolveContact}
+              placeholder="Select contact"
+              searchPlaceholder="Search contacts"
+              emptyMessage="No contacts match"
+            />
           </div>
           <div>
             <Label>Amount</Label>

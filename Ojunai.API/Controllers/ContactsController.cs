@@ -22,10 +22,26 @@ public class ContactsController : OjunaiBaseController
     [RequirePermission(Permission.ViewOwnReports)]
     public async Task<ActionResult<ApiResponse<PaginatedResult<ContactDto>>>> GetAll(
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
-        [FromQuery] string? search = null, [FromQuery] string? type = null)
+        [FromQuery] string? search = null, [FromQuery] string? type = null,
+        [FromQuery] string? balance = null)
     {
-        var result = await _contacts.GetAllAsync(BusinessId, page, pageSize, search, type);
+        var result = await _contacts.GetAllAsync(BusinessId, page, pageSize, search, type, balance);
         return Ok(ApiResponse<PaginatedResult<ContactDto>>.Ok(result));
+    }
+
+    /// <summary>
+    /// Headline totals across all contacts matching the same filters as <see cref="GetAll"/>.
+    /// Lets the Contacts page show "Total receivables: ₦X" without paging the entire list
+    /// client-side.
+    /// </summary>
+    [HttpGet("totals")]
+    [RequirePermission(Permission.ViewOwnReports)]
+    public async Task<ActionResult<ApiResponse<ContactTotalsDto>>> GetTotals(
+        [FromQuery] string? search = null, [FromQuery] string? type = null,
+        [FromQuery] string? balance = null)
+    {
+        var result = await _contacts.GetTotalsAsync(BusinessId, search, type, balance);
+        return Ok(ApiResponse<ContactTotalsDto>.Ok(result));
     }
 
     [HttpGet("{id:guid}")]

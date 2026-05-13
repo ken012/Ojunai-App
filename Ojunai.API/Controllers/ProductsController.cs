@@ -17,9 +17,12 @@ public class ProductsController : OjunaiBaseController
     [HttpGet]
     [RequirePermission(Permission.ViewStock)]
     public async Task<ActionResult<ApiResponse<PaginatedResult<ProductDto>>>> GetAll(
-        [FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null)
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] string? category = null,
+        [FromQuery] string? stockLevel = null)
     {
-        var result = await _products.GetAllAsync(BusinessId, page, pageSize, search);
+        var result = await _products.GetAllAsync(BusinessId, page, pageSize, search, category, stockLevel);
         return Ok(ApiResponse<PaginatedResult<ProductDto>>.Ok(result));
     }
 
@@ -29,6 +32,21 @@ public class ProductsController : OjunaiBaseController
     {
         var result = await _products.GetLowStockAsync(BusinessId);
         return Ok(ApiResponse<List<ProductDto>>.Ok(result));
+    }
+
+    /// <summary>
+    /// Per-stock-level counts honoring optional search + category filters. Powers the
+    /// Inventory page's filter chip counts ("All 47 · In stock 30 · Low 12 · Out 5") without
+    /// loading every product client-side.
+    /// </summary>
+    [HttpGet("stats")]
+    [RequirePermission(Permission.ViewStock)]
+    public async Task<ActionResult<ApiResponse<ProductStockStatsDto>>> GetStats(
+        [FromQuery] string? search = null,
+        [FromQuery] string? category = null)
+    {
+        var result = await _products.GetStockStatsAsync(BusinessId, search, category);
+        return Ok(ApiResponse<ProductStockStatsDto>.Ok(result));
     }
 
     [HttpGet("{id:guid}")]

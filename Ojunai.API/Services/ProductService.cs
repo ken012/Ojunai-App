@@ -13,7 +13,9 @@ public class ProductService : IProductService
 
     public ProductService(AppDbContext db) => _db = db;
 
-    public async Task<PaginatedResult<ProductDto>> GetAllAsync(Guid businessId, int page, int pageSize, string? search)
+    public async Task<PaginatedResult<ProductDto>> GetAllAsync(
+        Guid businessId, int page, int pageSize,
+        string? search, string? category = null, string? stockLevel = null)
     {
         var query = _db.Products
             .Where(p => p.BusinessId == businessId && p.IsActive);
@@ -23,6 +25,23 @@ public class ProductService : IProductService
             var pattern = $"%{search}%";
             query = query.Where(p => EF.Functions.ILike(p.Name, pattern) || (p.SKU != null && EF.Functions.ILike(p.SKU, pattern)));
         }
+
+        if (!string.IsNullOrWhiteSpace(category))
+            query = query.Where(p => p.Category == category);
+
+        // stockLevel filter:
+        //   "low"        → at or below the per-product threshold but still some stock
+        //   "out"        → zero stock
+        //   "sufficient" → above the threshold
+        //   (anything else / null) → no filter
+        // The threshold lives on the Product itself so the SQL is just an inline comparison.
+        var normalized = stockLevel?.Trim().ToLowerInvariant();
+        if (normalized == "low")
+            query = query.Where(p => p.CurrentStock <= p.LowStockThreshold && p.CurrentStock > 0);
+        else if (normalized == "out")
+            query = query.Where(p => p.CurrentStock <= 0);
+        else if (normalized == "sufficient")
+            query = query.Where(p => p.CurrentStock > p.LowStockThreshold);
 
         var total = await query.CountAsync();
         var items = await query
@@ -162,6 +181,39 @@ public class ProductService : IProductService
             .OrderBy(p => p.CurrentStock)
             .Select(p => ToDto(p))
             .ToListAsync();
+    }
+
+    public async Task<ProductStockStatsDto> GetStockStatsAsync(Guid businessId, string? search, string? category)
+    {
+        var query = _db.Products.Where(p => p.BusinessId == businessId && p.IsActive);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var pattern = $"%{search}%";
+            query = query.Where(p => EF.Functions.ILike(p.Name, pattern) || (p.SKU != null && EF.Functions.ILike(p.SKU, pattern)));
+        }
+        if (!string.IsNullOrWhiteSpace(category))
+            query = query.Where(p => p.Category == category);
+
+        // One round-trip — count up the three buckets with conditional aggregates so the DB
+        // does all the work. Total is the sum of all three.
+        var stats = await query
+            .GroupBy(p => 1)
+            .Select(g => new
+            {
+                Total = g.Count(),
+                OutOfStock = g.Count(p => p.CurrentStock <= 0),
+                Low = g.Count(p => p.CurrentStock > 0 && p.CurrentStock <= p.LowStockThreshold),
+                Sufficient = g.Count(p => p.CurrentStock > p.LowStockThreshold),
+            })
+            .FirstOrDefaultAsync();
+
+        return new ProductStockStatsDto
+        {
+            Total = stats?.Total ?? 0,
+            OutOfStock = stats?.OutOfStock ?? 0,
+            Low = stats?.Low ?? 0,
+            Sufficient = stats?.Sufficient ?? 0,
+        };
     }
 
     private static ProductDto ToDto(Product p) => new()

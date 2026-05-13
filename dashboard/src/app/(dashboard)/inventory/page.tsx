@@ -1233,6 +1233,9 @@ export default function InventoryPage() {
   );
   const [categoryFilter, setCategoryFilter] = useStickyState<string>("inventory-category-filter", "");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkConfirmDelete, setBulkConfirmDelete] = useState(false);
   // View mode: dense list (new) vs card grid (legacy). Persisted across visits.
@@ -1251,21 +1254,42 @@ export default function InventoryPage() {
     }
   }, []);
 
-  const { data: allProductsList, isLoading } = useQuery({
-    queryKey: ["products"],
-    queryFn: () => fetchAllPaged<ProductDto>((p, ps) => `/products?page=${p}&pageSize=${ps}`),
+  // Debounce search so each keystroke doesn't fire a request. 250ms matches the rest of
+  // the dashboard's search inputs.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Any filter / search change resets pagination to page 1 — otherwise you'd land on page 7
+  // of a result set that only has 2 pages after narrowing.
+  useEffect(() => { setPage(1); }, [debouncedSearch, stockFilter, categoryFilter]);
+
+  // Map the UI's stock-filter chip to the API's stockLevel query param.
+  const stockLevelParam = stockFilter === "low" ? "low"
+    : stockFilter === "out" ? "out"
+    : stockFilter === "sufficient" ? "sufficient"
+    : "";
+
+  // Wastage is a separate view (not a stock-level filter), so when that chip is active we
+  // intentionally suppress the products query.
+  const productsQueryEnabled = stockFilter !== "wastage";
+
+  const { data: productsData, isLoading } = useQuery({
+    queryKey: ["products", debouncedSearch, categoryFilter, stockLevelParam, page],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("pageSize", String(PAGE_SIZE));
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      if (categoryFilter) params.set("category", categoryFilter);
+      if (stockLevelParam) params.set("stockLevel", stockLevelParam);
+      const { data } = await api.get<{ data: PaginatedResult<ProductDto> }>(`/products?${params.toString()}`);
+      return data.data;
+    },
+    enabled: productsQueryEnabled,
     staleTime: 30_000,
   });
-  const productsData = useMemo(
-    () => allProductsList ? {
-      items: allProductsList,
-      totalCount: allProductsList.length,
-      page: 1,
-      pageSize: allProductsList.length,
-      totalPages: 1,
-    } as PaginatedResult<ProductDto> : undefined,
-    [allProductsList],
-  );
 
   const { data: lowStock } = useQuery({
     queryKey: ["low-stock"],
@@ -1273,6 +1297,22 @@ export default function InventoryPage() {
       const { data } = await api.get<{ data: ProductDto[] }>("/products/low-stock");
       return data.data!;
     },
+  });
+
+  // Filter-chip count source. Honors the same search + category as the products list so the
+  // chip numbers stay in sync with what the user is searching. Stock-level filter is NOT
+  // applied here — we want the count of OTHER stock levels too, not just the current one.
+  const { data: stockStats } = useQuery({
+    queryKey: ["product-stock-stats", debouncedSearch, categoryFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      if (categoryFilter) params.set("category", categoryFilter);
+      const url = `/products/stats${params.toString() ? `?${params.toString()}` : ""}`;
+      const { data } = await api.get<{ data: { total: number; outOfStock: number; low: number; sufficient: number } }>(url);
+      return data.data;
+    },
+    staleTime: 30_000,
   });
 
   const qc = useQueryClient();
@@ -1318,8 +1358,15 @@ export default function InventoryPage() {
     }
   }
 
-  // Compute filtered products
+  // Compute filtered products. allProducts is the current PAGE from the server — filtering by
+  // stock level + category + search is already applied server-side, so this view-list is the
+  // visible result for the active filters.
   const allProducts = useMemo(() => productsData?.items ?? [], [productsData]);
+  const totalPages = productsData ? Math.max(1, Math.ceil(productsData.totalCount / PAGE_SIZE)) : 1;
+
+  // lowStockIds comes from a separate /products/low-stock query — used by the per-row
+  // "low stock" badge and outOfStockIds is derived per-row from currentStock. Both still
+  // work because they're computed per-product on the visible page.
   const lowStockIds = useMemo(() => new Set((lowStock ?? []).map((p) => p.id)), [lowStock]);
   const outOfStockIds = useMemo(() => new Set(allProducts.filter((p) => p.currentStock <= 0).map((p) => p.id)), [allProducts]);
   const lowOnlyIds = useMemo(() => {
@@ -1327,7 +1374,10 @@ export default function InventoryPage() {
     lowStockIds.forEach((id) => { if (!outOfStockIds.has(id)) s.add(id); });
     return s;
   }, [lowStockIds, outOfStockIds]);
-  const sufficientCount = allProducts.filter((p) => !lowStockIds.has(p.id) && !outOfStockIds.has(p.id)).length;
+  // Filter-chip count: total matching the active filter (from server response). When no
+  // stockLevel filter is active, this is the total product count; when a stockLevel is
+  // active, it's the count for THAT level.
+  const totalForCurrentFilter = productsData?.totalCount ?? 0;
 
   // Inline edit save — uses existing PUT /products/:id
   async function saveProductPatch(p: ProductDto, patch: Partial<Pick<ProductDto, "sellingPrice" | "currentStock" | "lowStockThreshold">>) {
@@ -1418,24 +1468,12 @@ export default function InventoryPage() {
   }, [allProducts]);
 
   const isWastageView = stockFilter === "wastage";
+  // Server-side filtering: search + stockLevel + category are all applied via query params on
+  // the /products fetch. The visible list is exactly the items on the current page that match.
+  // Wastage view doesn't list products at all — it renders the losses table elsewhere.
   const filteredProducts = useMemo(() => {
-    if (stockFilter === "wastage") return [];
-    let items = allProducts;
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      const nameStarts = items.filter((p) => p.name.toLowerCase().startsWith(q) || p.sku?.toLowerCase().startsWith(q));
-      const wordStarts = items.filter((p) =>
-        !p.name.toLowerCase().startsWith(q) && !p.sku?.toLowerCase().startsWith(q)
-        && p.name.toLowerCase().split(" ").some(w => w.startsWith(q))
-      );
-      items = [...nameStarts, ...wordStarts];
-    }
-    if (stockFilter === "low") items = items.filter((p) => lowOnlyIds.has(p.id));
-    if (stockFilter === "out") items = items.filter((p) => outOfStockIds.has(p.id));
-    if (stockFilter === "sufficient") items = items.filter((p) => !lowStockIds.has(p.id) && !outOfStockIds.has(p.id));
-    if (categoryFilter) items = items.filter((p) => p.category === categoryFilter);
-    return items;
-  }, [allProducts, search, stockFilter, categoryFilter, lowStockIds, lowOnlyIds, outOfStockIds]);
+    return stockFilter === "wastage" ? [] : allProducts;
+  }, [allProducts, stockFilter]);
 
   return (
     <div className="space-y-6">
@@ -1537,10 +1575,10 @@ export default function InventoryPage() {
         <div className="overflow-x-auto -mx-1 px-1 flex-1">
           <div className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
             {([
-              { id: "all", label: "All", count: productsData?.totalCount ?? 0, dot: "bg-slate-400" },
-              { id: "sufficient", label: "In stock", count: sufficientCount, dot: "bg-emerald-500" },
-              { id: "low", label: "Low", count: lowOnlyIds.size, dot: "bg-amber-500" },
-              { id: "out", label: "Out", count: outOfStockIds.size, dot: "bg-rose-500" },
+              { id: "all", label: "All", count: stockStats?.total ?? 0, dot: "bg-slate-400" },
+              { id: "sufficient", label: "In stock", count: stockStats?.sufficient ?? 0, dot: "bg-emerald-500" },
+              { id: "low", label: "Low", count: stockStats?.low ?? 0, dot: "bg-amber-500" },
+              { id: "out", label: "Out", count: stockStats?.outOfStock ?? 0, dot: "bg-rose-500" },
               { id: "wastage", label: "Damaged / Wastage", count: lossesData?.length ?? 0, dot: "bg-orange-500" },
             ] as { id: StockFilter; label: string; count: number; dot: string }[]).map((t) => {
               const active = stockFilter === t.id;
@@ -1765,6 +1803,34 @@ export default function InventoryPage() {
             ))}
           </div>
         )
+      )}
+
+      {/* Pagination — only renders when more than one page of products matches the filter.
+          Inventory below the PAGE_SIZE threshold (50 today) stays uncluttered. */}
+      {!isWastageView && totalPages > 1 && (
+        <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mt-3">
+          <span>
+            Page {page} of {totalPages} · {totalForCurrentFilter} product{totalForCurrentFilter === 1 ? "" : "s"}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page <= 1}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* Sticky bulk action bar */}
