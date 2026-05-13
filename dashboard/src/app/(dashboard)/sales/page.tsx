@@ -36,7 +36,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, Ban, Trash2, RotateCcw, Search, X, ShoppingCart, FileDown, Mail } from "lucide-react";
+import { Ban, Trash2, RotateCcw, Search, X, ShoppingCart, FileDown, Mail } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { SearchableSelect } from "@/components/searchable-select";
 import { Pagination } from "@/components/pagination";

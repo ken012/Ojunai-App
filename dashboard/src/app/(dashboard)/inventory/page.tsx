@@ -1420,16 +1420,6 @@ export default function InventoryPage() {
   const allProducts = useMemo(() => productsData?.items ?? [], [productsData]);
   const totalPages = productsData ? Math.max(1, Math.ceil(productsData.totalCount / PAGE_SIZE)) : 1;
 
-  // lowStockIds comes from a separate /products/low-stock query — used by the per-row
-  // "low stock" badge and outOfStockIds is derived per-row from currentStock. Both still
-  // work because they're computed per-product on the visible page.
-  const lowStockIds = useMemo(() => new Set((lowStock ?? []).map((p) => p.id)), [lowStock]);
-  const outOfStockIds = useMemo(() => new Set(allProducts.filter((p) => p.currentStock <= 0).map((p) => p.id)), [allProducts]);
-  const lowOnlyIds = useMemo(() => {
-    const s = new Set<string>();
-    lowStockIds.forEach((id) => { if (!outOfStockIds.has(id)) s.add(id); });
-    return s;
-  }, [lowStockIds, outOfStockIds]);
   // Filter-chip count: total matching the active filter (from server response). When no
   // stockLevel filter is active, this is the total product count; when a stockLevel is
   // active, it's the count for THAT level.
