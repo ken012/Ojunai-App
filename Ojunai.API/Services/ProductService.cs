@@ -22,8 +22,18 @@ public class ProductService : IProductService
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            var pattern = $"%{search}%";
-            query = query.Where(p => EF.Functions.ILike(p.Name, pattern) || (p.SKU != null && EF.Functions.ILike(p.SKU, pattern)));
+            // Prefix-first matching — matches the contacts page + sale picker UX. Typing "C"
+            // surfaces products whose name STARTS with C OR products with a word starting
+            // with C (so "Anklet with Citrine" matches "C", but "Art Deco Anklet" doesn't even
+            // though "Deco" contains a lowercase c). Substring matching was surfacing too many
+            // unrelated rows for users navigating large catalogs.
+            var prefix = $"{search}%";
+            var wordPrefix = $"% {search}%";
+            query = query.Where(p =>
+                EF.Functions.ILike(p.Name, prefix)
+                || EF.Functions.ILike(p.Name, wordPrefix)
+                || (p.SKU != null && EF.Functions.ILike(p.SKU, prefix))
+                || (p.SKU != null && EF.Functions.ILike(p.SKU, wordPrefix)));
         }
 
         if (!string.IsNullOrWhiteSpace(category))
@@ -188,8 +198,15 @@ public class ProductService : IProductService
         var query = _db.Products.Where(p => p.BusinessId == businessId && p.IsActive);
         if (!string.IsNullOrWhiteSpace(search))
         {
-            var pattern = $"%{search}%";
-            query = query.Where(p => EF.Functions.ILike(p.Name, pattern) || (p.SKU != null && EF.Functions.ILike(p.SKU, pattern)));
+            // Must mirror the same prefix-first matching as GetAllAsync so the filter chips
+            // and the list view show consistent counts.
+            var prefix = $"{search}%";
+            var wordPrefix = $"% {search}%";
+            query = query.Where(p =>
+                EF.Functions.ILike(p.Name, prefix)
+                || EF.Functions.ILike(p.Name, wordPrefix)
+                || (p.SKU != null && EF.Functions.ILike(p.SKU, prefix))
+                || (p.SKU != null && EF.Functions.ILike(p.SKU, wordPrefix)));
         }
         if (!string.IsNullOrWhiteSpace(category))
             query = query.Where(p => p.Category == category);
