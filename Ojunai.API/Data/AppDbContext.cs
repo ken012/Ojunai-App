@@ -49,6 +49,11 @@ public class AppDbContext : DbContext
     public DbSet<AdminAuditEntry> AdminAuditEntries => Set<AdminAuditEntry>();
     public DbSet<AdminMetricSnapshot> AdminMetricSnapshots => Set<AdminMetricSnapshot>();
 
+    // ── Email deliverability ──
+    // Suppression list populated by SES bounce/complaint SNS notifications. EmailService
+    // checks this on every send so we never re-hit a known-bad address.
+    public DbSet<SuppressedEmail> SuppressedEmails => Set<SuppressedEmail>();
+
     protected override void OnModelCreating(ModelBuilder mb)
     {
         base.OnModelCreating(mb);
@@ -461,6 +466,20 @@ public class AppDbContext : DbContext
             // distinct so we keep two distinct unique constraints to cover both cases.
             e.HasIndex(x => new { x.MetricName, x.ChannelFilter, x.CapturedDate }).IsUnique();
             e.HasIndex(x => new { x.MetricName, x.CapturedDate });
+        });
+
+        mb.Entity<SuppressedEmail>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Email).HasMaxLength(320).IsRequired();
+            e.Property(x => x.Reason).HasMaxLength(20).IsRequired();
+            e.Property(x => x.BounceType).HasMaxLength(40);
+            e.Property(x => x.BounceSubType).HasMaxLength(40);
+            // RawPayload is jsonb so we can ad-hoc query specific fields if we ever debug
+            // a delivery issue ("show me every bounce with bounceSubType=NoEmail").
+            e.Property(x => x.RawPayload).HasColumnType("jsonb");
+            // Email is normalized lowercase at write time — a plain unique index is enough.
+            e.HasIndex(x => x.Email).IsUnique();
         });
     }
 }

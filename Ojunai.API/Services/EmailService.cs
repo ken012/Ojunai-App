@@ -52,11 +52,13 @@ public class SmtpEmailService : IEmailService
 {
     private readonly IConfiguration _config;
     private readonly ILogger<SmtpEmailService> _logger;
+    private readonly ISuppressionService _suppression;
 
-    public SmtpEmailService(IConfiguration config, ILogger<SmtpEmailService> logger)
+    public SmtpEmailService(IConfiguration config, ILogger<SmtpEmailService> logger, ISuppressionService suppression)
     {
         _config = config;
         _logger = logger;
+        _suppression = suppression;
     }
 
     public bool IsConfigured =>
@@ -74,6 +76,15 @@ public class SmtpEmailService : IEmailService
         if (!IsConfigured)
             throw new InvalidOperationException(
                 "Email service is not configured. Set Email__SmtpHost, Email__SmtpUsername, Email__SmtpPassword, Email__FromAddress in environment.");
+
+        // Reputation guard: refuse to send to any address SES has previously reported as
+        // a hard bounce or complaint. Sending anyway would tank our sender reputation and
+        // can get production access revoked.
+        if (await _suppression.IsSuppressedAsync(toAddress))
+        {
+            _logger.LogWarning("Skipping send to suppressed address {To} subject={Subject}", toAddress, subject);
+            return;
+        }
 
         var host = _config["Email:SmtpHost"]!;
         var port = int.TryParse(_config["Email:SmtpPort"], out var p) ? p : 587;
