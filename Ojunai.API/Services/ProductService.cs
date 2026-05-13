@@ -22,18 +22,28 @@ public class ProductService : IProductService
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            // Prefix-first matching — matches the contacts page + sale picker UX. Typing "C"
-            // surfaces products whose name STARTS with C OR products with a word starting
-            // with C (so "Anklet with Citrine" matches "C", but "Art Deco Anklet" doesn't even
-            // though "Deco" contains a lowercase c). Substring matching was surfacing too many
-            // unrelated rows for users navigating large catalogs.
+            // Prefix-first matching. Single-letter searches only match the START of the
+            // product name — otherwise word-prefix turns "C" into a match for every product
+            // containing "Cufflinks" (or "Coral", "Citrine", etc), which buries the actually
+            // C-prefixed products under a wall of unrelated rows. For 2+ characters the
+            // signal is strong enough that word-prefix is useful (so "Cuff" matches every
+            // "Art Deco X Gold Cufflinks").
             var prefix = $"{search}%";
-            var wordPrefix = $"% {search}%";
-            query = query.Where(p =>
-                EF.Functions.ILike(p.Name, prefix)
-                || EF.Functions.ILike(p.Name, wordPrefix)
-                || (p.SKU != null && EF.Functions.ILike(p.SKU, prefix))
-                || (p.SKU != null && EF.Functions.ILike(p.SKU, wordPrefix)));
+            if (search.Length >= 2)
+            {
+                var wordPrefix = $"% {search}%";
+                query = query.Where(p =>
+                    EF.Functions.ILike(p.Name, prefix)
+                    || EF.Functions.ILike(p.Name, wordPrefix)
+                    || (p.SKU != null && EF.Functions.ILike(p.SKU, prefix))
+                    || (p.SKU != null && EF.Functions.ILike(p.SKU, wordPrefix)));
+            }
+            else
+            {
+                query = query.Where(p =>
+                    EF.Functions.ILike(p.Name, prefix)
+                    || (p.SKU != null && EF.Functions.ILike(p.SKU, prefix)));
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(category))
@@ -199,14 +209,24 @@ public class ProductService : IProductService
         if (!string.IsNullOrWhiteSpace(search))
         {
             // Must mirror the same prefix-first matching as GetAllAsync so the filter chips
-            // and the list view show consistent counts.
+            // and the list view show consistent counts. See GetAllAsync for the rationale on
+            // the single-letter carve-out.
             var prefix = $"{search}%";
-            var wordPrefix = $"% {search}%";
-            query = query.Where(p =>
-                EF.Functions.ILike(p.Name, prefix)
-                || EF.Functions.ILike(p.Name, wordPrefix)
-                || (p.SKU != null && EF.Functions.ILike(p.SKU, prefix))
-                || (p.SKU != null && EF.Functions.ILike(p.SKU, wordPrefix)));
+            if (search.Length >= 2)
+            {
+                var wordPrefix = $"% {search}%";
+                query = query.Where(p =>
+                    EF.Functions.ILike(p.Name, prefix)
+                    || EF.Functions.ILike(p.Name, wordPrefix)
+                    || (p.SKU != null && EF.Functions.ILike(p.SKU, prefix))
+                    || (p.SKU != null && EF.Functions.ILike(p.SKU, wordPrefix)));
+            }
+            else
+            {
+                query = query.Where(p =>
+                    EF.Functions.ILike(p.Name, prefix)
+                    || (p.SKU != null && EF.Functions.ILike(p.SKU, prefix)));
+            }
         }
         if (!string.IsNullOrWhiteSpace(category))
             query = query.Where(p => p.Category == category);
