@@ -1136,6 +1136,11 @@ function ProductRow({
   onSaveStock,
   onSaveThreshold,
   canEdit,
+  onRestock,
+  onEdit,
+  onStockOut,
+  onDamaged,
+  onDelete,
 }: {
   product: ProductDto;
   selected: boolean;
@@ -1145,6 +1150,11 @@ function ProductRow({
   onSaveStock: (n: number) => Promise<void>;
   onSaveThreshold: (n: number) => Promise<void>;
   canEdit: boolean;
+  onRestock: (p: ProductDto) => void;
+  onEdit: (p: ProductDto) => void;
+  onStockOut: (p: ProductDto) => void;
+  onDamaged: (p: ProductDto) => void;
+  onDelete: (p: ProductDto) => void;
 }) {
   const status = statusOf(product);
   return (
@@ -1209,8 +1219,53 @@ function ProductRow({
           disabled={!canEdit}
         />
       </div>
-      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-        <Pencil size={14} className="text-slate-400 dark:text-slate-500" />
+      {/* Action icons — match the grid card's set so users get the same affordances in either
+          view. Hover-to-show keeps the row clean while scanning; stopPropagation prevents the
+          row's onClickRow (edit) from firing when an icon is clicked. */}
+      <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex items-center gap-0.5">
+        {canEdit && (
+          <>
+            <button
+              onClick={(e) => { e.stopPropagation(); onRestock(product); }}
+              className="p-1 rounded hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400"
+              title="Restock"
+            >
+              <Plus size={14} />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit(product); }}
+              className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50"
+              title="Edit"
+            >
+              <Pencil size={14} />
+            </button>
+            {product.currentStock > 0 && (
+              <>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onStockOut(product); }}
+                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
+                  title="Remove stock"
+                >
+                  <Minus size={14} />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDamaged(product); }}
+                  className="p-1 rounded hover:bg-amber-50 dark:hover:bg-amber-950/30 text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400"
+                  title="Mark damaged"
+                >
+                  <Ban size={14} />
+                </button>
+              </>
+            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(product); }}
+              className="p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/30 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400"
+              title="Delete"
+            >
+              <Trash2 size={14} />
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1785,6 +1840,11 @@ export default function InventoryPage() {
                 onSaveStock={(n) => saveProductPatch(product, { currentStock: n })}
                 onSaveThreshold={(n) => saveProductPatch(product, { lowStockThreshold: n })}
                 canEdit={hasPermission(Permission.ManageStock)}
+                onRestock={setRestocking}
+                onEdit={setEditing}
+                onStockOut={setRemovingStock}
+                onDamaged={setDamaging}
+                onDelete={setDeleting}
               />
             ))}
           </div>
