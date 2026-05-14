@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+#
+# Pre-commit guardrail — blocks the commit if entity classes or AppDbContext have
+# changed but no corresponding EF Core migration was added.
+#
+# Why: it's easy to add a property to a model and forget `dotnet ef migrations add`.
+# The change still compiles, but the schema drifts: snapshot says one thing,
+# migrations describe another, prod runs a third. We had to spend a session
+# reconciling that drift — this hook makes it impossible to repeat the mistake
+# silently.
+#
+# Install: ./scripts/install-hooks.sh
+#
+# Bypass (don't unless you really know what you're doing): git commit --no-verify
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+API_DIR="$REPO_ROOT/Ojunai.API"
+
+# Fast path: skip the check entirely if nothing schema-relevant is being committed.
+# Reading the entire model is ~3 seconds — too slow to run on every dashboard-only commit.
+RELEVANT_PATTERN='^Ojunai\.API/(Models/|Data/AppDbContext\.cs|Migrations/)'
+if ! git diff --cached --name-only | grep -qE "$RELEVANT_PATTERN"; then
+    exit 0
+fi
+
+# Need dotnet on PATH. If it's missing, fail loudly instead of silently allowing the commit.
+if ! command -v dotnet >/dev/null 2>&1; then
+    echo "✘ pre-commit: dotnet not on PATH — cannot verify migrations."
+    echo "  Install .NET SDK 8 or remove this hook (~/.git/hooks/pre-commit)."
+    exit 1
+fi
+
+cd "$API_DIR"
+
+# `has-pending-model-changes` returns 0 if snapshot matches entities, 1 if drift exists.
+# stderr captures the EF tool's verbose logging — we hide it unless something fails.
+if dotnet ef migrations has-pending-model-changes >/dev/null 2>&1; then
+    exit 0
+fi
+
+cat <<'MSG' >&2
+
+✘ pre-commit blocked: entity classes have changed but no migration was added.
+
+   You modified a file under Ojunai.API/Models/ or Ojunai.API/Data/AppDbContext.cs
+   but didn't run `dotnet ef migrations add <Name>`. Committing now would leave the
+   model snapshot and migration history out of sync — exactly the drift we just
+   spent a session cleaning up.
+
+   To fix:
+     1. cd Ojunai.API
+     2. dotnet ef migrations add <DescriptiveName>
+     3. Inspect the generated migration .cs file before committing.
+     4. git add Ojunai.API/Migrations/*
+     5. git commit again.
+
+   If you genuinely meant to commit without a migration (e.g. you removed an
+   unused entity that was never in the schema), bypass with: --no-verify
+
+MSG
+exit 1
