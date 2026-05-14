@@ -1,0 +1,54 @@
+name: Migrations guardrail
+
+# Runs on every PR + push to main. Mirrors the local pre-commit hook so the check
+# survives across machines and catches teammates who haven't installed the hook.
+# If you changed an entity class or AppDbContext without adding a migration, this
+# job fails the build with the same error message the local hook shows.
+
+on:
+  pull_request:
+    paths:
+      - 'Ojunai.API/Models/**'
+      - 'Ojunai.API/Data/AppDbContext.cs'
+      - 'Ojunai.API/Migrations/**'
+  push:
+    branches: [main]
+    paths:
+      - 'Ojunai.API/Models/**'
+      - 'Ojunai.API/Data/AppDbContext.cs'
+      - 'Ojunai.API/Migrations/**'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install EF Core tooling
+        run: dotnet tool install --global dotnet-ef --version 8.0.14
+
+      - name: Restore + verify snapshot is in sync with entities
+        working-directory: Ojunai.API
+        run: |
+          dotnet restore
+          if ! dotnet ef migrations has-pending-model-changes; then
+            cat <<'MSG'
+
+          ✘ Migration guardrail: entity classes changed but no migration was added.
+
+             Run locally to fix:
+               cd Ojunai.API
+               dotnet ef migrations add <DescriptiveName>
+               git add Ojunai.API/Migrations/*
+               git commit && git push
+
+             Or install the local pre-commit hook so this can't happen silently:
+               ./scripts/install-hooks.sh
+
+          MSG
+            exit 1
+          fi
