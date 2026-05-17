@@ -90,8 +90,12 @@ public class ProductService : IProductService
 
     public async Task<ProductDto> CreateAsync(Guid businessId, CreateProductRequest request, Guid? recordedByUserId = null, string? recordedByName = null, DateTime? createdAtUtc = null)
     {
+        // Case-insensitive duplicate check — "Art Deco Anklet" and "art deco anklet" are the
+        // same product. Lookup paths (sale-time matching in EntityResolverService) already
+        // compare with .ToLower(), so allowing a casing-divergent duplicate to slip through
+        // here would create rows that can't be reliably picked at sale-time.
         var exists = await _db.Products.AnyAsync(p =>
-            p.BusinessId == businessId && p.Name == request.Name && p.IsActive);
+            p.BusinessId == businessId && p.Name.ToLower() == request.Name.ToLower() && p.IsActive);
         if (exists)
             throw new InvalidOperationException($"Product '{request.Name}' already exists.");
 

@@ -19,9 +19,11 @@ namespace Ojunai.API.Jobs;
 /// Thresholds are env-driven so ops can adjust without redeploying:
 ///   Admin:Alerts:SlackWebhook
 ///   Admin:Alerts:Email
-///   Admin:Alerts:MisparseRatePct       — fire if >X (default 5)
-///   Admin:Alerts:FailedPayments24h     — fire if >X (default 5)
-///   Admin:Alerts:VoiceAIFailureRatePct — fire if >X (default 20)
+///   Admin:Alerts:MisparseRatePct        — fire if >X% over 7d (default 5)
+///   Admin:Alerts:MisparseMinCount7d     — floor below which rate alert is suppressed (default 50)
+///   Admin:Alerts:MisparseAbsCount24h    — fire if absolute failures in last 24h exceed X (default 25)
+///   Admin:Alerts:FailedPayments24h      — fire if >X (default 5)
+///   Admin:Alerts:VoiceAIFailureRatePct  — fire if >X (default 20)
 /// </summary>
 public sealed class AdminAlertJobService
 {
@@ -65,16 +67,58 @@ public sealed class AdminAlertJobService
 
         var now = DateTime.UtcNow;
 
-        // ── Misparse rate (last 7 days) ──
+        // ── Misparse signals ──
+        // Two complementary checks:
+        //   1. 7-day RATE with a minimum-volume floor. A rate is only meaningful when the
+        //      denominator is large enough — without the floor, a single legitimate
+        //      NeedsClarification on a quiet week pushes us over 5% and spams the inbox hourly.
+        //   2. 24-hour ABSOLUTE COUNT. Catches "we're getting 100 misparses today" even when
+        //      the rate over 7d hasn't crossed the threshold yet (e.g. a sudden traffic spike
+        //      on a single bad day).
         var misparseThreshold = _config.GetValue<double>("Admin:Alerts:MisparseRatePct", 5.0);
-        var misparseRate = await ComputeMisparseRateAsync(now.AddDays(-7));
-        if (misparseRate > misparseThreshold && ShouldFire("misparse_rate"))
+        var misparseFloor = _config.GetValue<int>("Admin:Alerts:MisparseMinCount7d", 50);
+        var misparseAbsThreshold = _config.GetValue<int>("Admin:Alerts:MisparseAbsCount24h", 25);
+
+        var misparse7d = await _db.MessageLogs
+            .Where(m => m.CreatedAtUtc >= now.AddDays(-7)
+                && m.Direction == MessageDirection.Inbound
+                && m.BusinessId != null)
+            .GroupBy(m => 1)
+            .Select(g => new
+            {
+                Total = g.Count(),
+                Problems = g.Count(x => x.ProcessingStatus == MessageProcessingStatus.NeedsClarification
+                                     || x.ProcessingStatus == MessageProcessingStatus.Failed),
+            })
+            .FirstOrDefaultAsync();
+
+        if (misparse7d != null && misparse7d.Total >= misparseFloor)
+        {
+            var misparseRate = (double)misparse7d.Problems / misparse7d.Total * 100.0;
+            if (misparseRate > misparseThreshold && ShouldFire("misparse_rate"))
+            {
+                await FireAsync(slackWebhook, adminEmail,
+                    $"⚠️ Misparse rate is {misparseRate:F2}% ({misparse7d.Problems}/{misparse7d.Total} over 7d, threshold {misparseThreshold:F2}%)",
+                    "The bot is misunderstanding more user messages than usual. Check /admin/telemetry " +
+                    "and inspect the top failure clusters — a recent deploy may have broken prompt " +
+                    "classification or a usage pattern shifted.");
+            }
+        }
+
+        var misparse24hCount = await _db.MessageLogs
+            .CountAsync(m => m.CreatedAtUtc >= now.AddDays(-1)
+                && m.Direction == MessageDirection.Inbound
+                && m.BusinessId != null
+                && (m.ProcessingStatus == MessageProcessingStatus.NeedsClarification
+                 || m.ProcessingStatus == MessageProcessingStatus.Failed));
+        if (misparse24hCount > misparseAbsThreshold && ShouldFire("misparse_absolute"))
         {
             await FireAsync(slackWebhook, adminEmail,
-                $"⚠️ Misparse rate is {misparseRate:F2}% (threshold {misparseThreshold:F2}%)",
-                "The bot is misunderstanding more user messages than usual. Check /admin/telemetry " +
-                "and inspect the top failure clusters — a recent deploy may have broken prompt " +
-                "classification or a usage pattern shifted.");
+                $"⚠️ {misparse24hCount} misparses in the last 24h (threshold {misparseAbsThreshold})",
+                "Volume of NeedsClarification + Failed messages spiked today. Check /admin/telemetry — " +
+                "if this is a real quality regression the 7d rate alert will follow tomorrow once the " +
+                "denominator catches up; if it's a transient spike (new merchant onboarding test session, etc) " +
+                "it'll subside on its own.");
         }
 
         // ── Failed payments in last 24h ──
@@ -127,22 +171,6 @@ public sealed class AdminAlertJobService
             _lastFired[metric] = DateTime.UtcNow;
             return true;
         }
-    }
-
-    private async Task<double> ComputeMisparseRateAsync(DateTime since)
-    {
-        var totals = await _db.MessageLogs
-            .Where(m => m.CreatedAtUtc >= since && m.Direction == MessageDirection.Inbound && m.BusinessId != null)
-            .GroupBy(m => 1)
-            .Select(g => new
-            {
-                Total = g.Count(),
-                Problems = g.Count(x => x.ProcessingStatus == MessageProcessingStatus.NeedsClarification
-                                     || x.ProcessingStatus == MessageProcessingStatus.Failed),
-            })
-            .FirstOrDefaultAsync();
-        if (totals == null || totals.Total == 0) return 0;
-        return (double)totals.Problems / totals.Total * 100;
     }
 
     private async Task FireAsync(string? slackWebhook, string? adminEmail, string subject, string body)
