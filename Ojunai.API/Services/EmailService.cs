@@ -118,6 +118,13 @@ public class SmtpEmailService : IEmailService
         var secureOption = port == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls;
 
         using var client = new SmtpClient();
+        // MailKit defaults to a 2-minute timeout per operation. That's far too long for a send
+        // sitting in an HTTP request hot-path — a slow/unreachable SMTP host would pin the
+        // request thread for minutes, browsers / Cloudflare / nginx would drop the connection,
+        // and the caller would see a network error even when the rest of the request succeeded.
+        // 10s is generous for a connect+auth+send to a healthy provider and short enough that
+        // a flaky provider can't take down the user flow.
+        client.Timeout = 10_000;
         try
         {
             await client.ConnectAsync(host, port, secureOption);

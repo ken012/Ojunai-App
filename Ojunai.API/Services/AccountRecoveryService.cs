@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Hangfire;
 using Ojunai.API.Common;
 using Ojunai.API.Data;
 using Ojunai.API.DTOs.Auth;
@@ -30,6 +31,7 @@ public class AccountRecoveryService : IAccountRecoveryService
     private readonly AuthService _auth;
     private readonly IAlertService _alerts;
     private readonly IConfiguration _config;
+    private readonly IBackgroundJobClient _jobs;
     private readonly ILogger<AccountRecoveryService> _logger;
 
     private static readonly TimeSpan TokenLifetime = TimeSpan.FromMinutes(30);
@@ -43,6 +45,7 @@ public class AccountRecoveryService : IAccountRecoveryService
         IAuthService auth,
         IAlertService alerts,
         IConfiguration config,
+        IBackgroundJobClient jobs,
         ILogger<AccountRecoveryService> logger)
     {
         _db = db;
@@ -51,6 +54,7 @@ public class AccountRecoveryService : IAccountRecoveryService
         _auth = (AuthService)auth;
         _alerts = alerts;
         _config = config;
+        _jobs = jobs;
         _logger = logger;
     }
 
@@ -179,10 +183,10 @@ public class AccountRecoveryService : IAccountRecoveryService
 
         if (!string.IsNullOrEmpty(user.Email))
         {
-            await _email.TrySendSecurityNotificationAsync(
+            _jobs.Enqueue<IEmailService>(svc => svc.TrySendSecurityNotificationAsync(
                 user.Email, user.FullName,
-                action: "Account recovery used (password reset)",
-                detail: "Your password was just reset using the email-recovery flow.");
+                "Account recovery used (password reset)",
+                "Your password was just reset using the email-recovery flow."));
         }
 
         return _auth.BuildAuthResponsePublic(user, user.Business!, overrideMustChange: false);
@@ -250,10 +254,10 @@ public class AccountRecoveryService : IAccountRecoveryService
 
         if (!string.IsNullOrEmpty(user.Email))
         {
-            await _email.TrySendSecurityNotificationAsync(
+            _jobs.Enqueue<IEmailService>(svc => svc.TrySendSecurityNotificationAsync(
                 user.Email, user.FullName,
-                action: "Phone number changed via recovery",
-                detail: $"Your account phone was just changed to {MaskPhone(newPhone)}.");
+                "Phone number changed via recovery",
+                $"Your account phone was just changed to {MaskPhone(newPhone)}."));
         }
 
         return _auth.BuildAuthResponsePublic(user, user.Business!, overrideMustChange: false);

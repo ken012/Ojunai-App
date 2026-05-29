@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Hangfire;
 using Ojunai.API.Common;
 using Ojunai.API.Data;
 using Ojunai.API.DTOs.Auth;
@@ -18,6 +19,7 @@ public class AuthService : IAuthService
     private readonly Services.Interfaces.IPhoneVerificationService _phoneVerify;
     private readonly Services.Interfaces.IAlertService _alerts;
     private readonly IEmailService _email;
+    private readonly IBackgroundJobClient _jobs;
     private readonly ILogger<AuthService> _logger;
 
     public AuthService(
@@ -26,6 +28,7 @@ public class AuthService : IAuthService
         Services.Interfaces.IPhoneVerificationService phoneVerify,
         Services.Interfaces.IAlertService alerts,
         IEmailService email,
+        IBackgroundJobClient jobs,
         ILogger<AuthService> logger)
     {
         _db = db;
@@ -33,6 +36,7 @@ public class AuthService : IAuthService
         _phoneVerify = phoneVerify;
         _alerts = alerts;
         _email = email;
+        _jobs = jobs;
         _logger = logger;
     }
 
@@ -214,12 +218,15 @@ public class AuthService : IAuthService
 
         // Out-of-band notification — bell only matters if attacker hasn't logged us out;
         // an email reaches us through a different channel they don't control.
+        // Enqueued to Hangfire so a slow SMTP host doesn't block the request hot-path
+        // (we hit exactly that bug after switching email providers — connection lingered,
+        // browser dropped, UI showed failure despite the password change succeeding).
         if (user.EmailVerified)
         {
-            await _email.TrySendSecurityNotificationAsync(
+            _jobs.Enqueue<IEmailService>(svc => svc.TrySendSecurityNotificationAsync(
                 user.Email, user.FullName,
-                action: "Password changed",
-                detail: "Your account password was just updated from inside the dashboard.");
+                "Password changed",
+                "Your account password was just updated from inside the dashboard."));
         }
     }
 
@@ -280,10 +287,10 @@ public class AuthService : IAuthService
 
         if (user.EmailVerified)
         {
-            await _email.TrySendSecurityNotificationAsync(
+            _jobs.Enqueue<IEmailService>(svc => svc.TrySendSecurityNotificationAsync(
                 user.Email, user.FullName,
-                action: "Password reset via WhatsApp",
-                detail: "Your password was just reset using a WhatsApp verification code.");
+                "Password reset via WhatsApp",
+                "Your password was just reset using a WhatsApp verification code."));
         }
     }
 

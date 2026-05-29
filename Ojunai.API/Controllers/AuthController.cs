@@ -1,3 +1,4 @@
+using Hangfire;
 using Ojunai.API.Common;
 using Ojunai.API.Data;
 using Ojunai.API.DTOs.Auth;
@@ -20,6 +21,7 @@ public class AuthController : OjunaiBaseController
     private readonly IEmailVerificationService _emailVerify;
     private readonly IEmailService _emailSender;
     private readonly IAccountRecoveryService _recovery;
+    private readonly IBackgroundJobClient _jobs;
     private readonly ILogger<AuthController> _logger;
 
     public AuthController(
@@ -30,6 +32,7 @@ public class AuthController : OjunaiBaseController
         IEmailVerificationService emailVerify,
         IEmailService emailSender,
         IAccountRecoveryService recovery,
+        IBackgroundJobClient jobs,
         ILogger<AuthController> logger)
     {
         _auth = auth;
@@ -40,6 +43,7 @@ public class AuthController : OjunaiBaseController
         _emailVerify = emailVerify;
         _emailSender = emailSender;
         _recovery = recovery;
+        _jobs = jobs;
         _logger = logger;
     }
 
@@ -173,10 +177,12 @@ public class AuthController : OjunaiBaseController
 
             if (previousEmailVerified && !string.IsNullOrEmpty(previousEmail))
             {
-                await _emailSender.TrySendSecurityNotificationAsync(
-                    previousEmail, user.FullName,
-                    action: "Account email changed",
-                    detail: $"Your Ojunai account email was just changed from {previousEmail} to {normalized}. The new address must be verified before it can be used for recovery.");
+                var fullName = user.FullName;
+                var detail = $"Your Ojunai account email was just changed from {previousEmail} to {normalized}. The new address must be verified before it can be used for recovery.";
+                _jobs.Enqueue<IEmailService>(svc => svc.TrySendSecurityNotificationAsync(
+                    previousEmail, fullName,
+                    "Account email changed",
+                    detail));
             }
         }
 
