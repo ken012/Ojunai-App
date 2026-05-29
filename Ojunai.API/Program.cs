@@ -128,8 +128,6 @@ builder.Services.AddScoped<IPdfExportService, PdfExportService>();
 builder.Services.AddScoped<IReceiptService, ReceiptService>();
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 builder.Services.AddScoped<ISuppressionService, SuppressionService>();
-// Default unnamed HttpClient — used by SesNotificationsController to confirm SNS subscriptions.
-builder.Services.AddHttpClient();
 builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
 builder.Services.AddScoped<IClaudeParsingService, ClaudeParsingService>();
 builder.Services.AddScoped<IEntityResolverService, EntityResolverService>();
