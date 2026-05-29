@@ -387,13 +387,25 @@ function EmailReceiptDialog({
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  // Pre-fill (best-effort) on open from existing customer email if we had it.
+  // Pre-fill from the linked customer's saved email if we have one. Cheap one-shot fetch
+  // when the dialog opens — avoids loading every contact when the sales list renders, and
+  // covers both online (network → fresh email) and offline-then-online (cache will hit).
   useEffect(() => {
-    if (open) {
-      setEmail("");
-      setError(null);
-    }
-  }, [open]);
+    if (!open) return;
+    setEmail("");
+    setError(null);
+    if (!sale?.contactId) return;
+
+    let alive = true;
+    api.get<{ data: ContactDto }>(`/contacts/${sale.contactId}`)
+      .then((res) => {
+        if (alive && res.data?.data?.email) setEmail(res.data.data.email);
+      })
+      .catch(() => {
+        // Silent — the user can still type an address manually if we can't load the contact.
+      });
+    return () => { alive = false; };
+  }, [open, sale?.contactId]);
 
   async function handleSend() {
     if (!sale || !email.includes("@")) {

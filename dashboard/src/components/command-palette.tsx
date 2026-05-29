@@ -149,7 +149,7 @@ export function CommandPaletteProvider({ children }: { children: React.ReactNode
       label: "Assets",
       items: [
         { id: "p-inventory", label: "Inventory", hint: "/inventory", icon: <Package size={14} />, action: () => { router.push("/inventory"); close(); } },
-        { id: "p-contacts", label: "Contacts", hint: "/contacts", icon: <Users size={14} />, keywords: "customers suppliers debtors", action: () => { router.push("/contacts"); close(); } },
+        { id: "p-contacts", label: "Contacts & Ledger", hint: "/contacts", icon: <Users size={14} />, keywords: "customers suppliers debtors ledger", action: () => { router.push("/contacts"); close(); } },
       ],
     },
     {

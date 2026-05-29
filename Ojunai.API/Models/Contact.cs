@@ -6,6 +6,8 @@ public class Contact
     public Guid BusinessId { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
+    /// <summary>Optional email — used to pre-fill the "Email receipt" dialog and any future email-based contact features.</summary>
+    public string? Email { get; set; }
     public ContactType Type { get; set; } = ContactType.Customer;
     public string Source { get; set; } = "Manual";
     public Guid? ImportBatchId { get; set; }

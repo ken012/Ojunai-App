@@ -152,6 +152,7 @@ export interface ContactDto {
   id: string;
   name: string;
   phoneNumber?: string;
+  email?: string;
   type: string;
   outstandingReceivable: number;
   outstandingPayable: number;

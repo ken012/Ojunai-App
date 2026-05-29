@@ -167,6 +167,7 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.BusinessId, x.Name });
             e.Property(x => x.Name).HasMaxLength(200).IsRequired();
             e.Property(x => x.PhoneNumber).HasMaxLength(20);
+            e.Property(x => x.Email).HasMaxLength(200);
             e.HasIndex(x => x.ImportBatchId).HasFilter("\"ImportBatchId\" IS NOT NULL");
             e.HasOne(x => x.Business)
              .WithMany(x => x.Contacts)

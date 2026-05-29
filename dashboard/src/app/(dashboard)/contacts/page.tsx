@@ -141,7 +141,7 @@ export default function ContactsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Contacts"
+        title="Contacts & Ledger"
         subtitle="Customers, suppliers, and outstanding balances"
         actions={
           hasPermission(Permission.ManageDebts) ? (
@@ -902,7 +902,7 @@ function EditContactDialog({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ name: "", phoneNumber: "", type: "Customer" as "Customer" | "Supplier" | "Both" });
+  const [form, setForm] = useState({ name: "", phoneNumber: "", email: "", type: "Customer" as "Customer" | "Supplier" | "Both" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -910,6 +910,7 @@ function EditContactDialog({
     setForm({
       name: contact.name,
       phoneNumber: contact.phoneNumber ?? "",
+      email: contact.email ?? "",
       type: (contact.type as "Customer" | "Supplier" | "Both") ?? "Customer",
     });
   }
@@ -922,6 +923,7 @@ function EditContactDialog({
       await api.put(`/contacts/${contact.id}`, {
         name: form.name,
         phoneNumber: form.phoneNumber || null,
+        email: form.email || null,
         type: form.type,
       });
       qc.invalidateQueries({ queryKey: ["contacts"] });
@@ -935,7 +937,7 @@ function EditContactDialog({
   }
 
   function handleClose() {
-    setForm({ name: "", phoneNumber: "", type: "Customer" });
+    setForm({ name: "", phoneNumber: "", email: "", type: "Customer" });
     setError(null);
     onClose();
   }
@@ -954,6 +956,10 @@ function EditContactDialog({
           <div>
             <Label>Phone Number</Label>
             <Input value={form.phoneNumber} onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} />
+          </div>
+          <div>
+            <Label>Email</Label>
+            <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="customer@example.com" />
           </div>
           <div>
             <Label>Type</Label>
@@ -980,7 +986,7 @@ function EditContactDialog({
 
 function AddContactDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ name: "", phoneNumber: "", type: "Customer" as "Customer" | "Supplier" | "Both" });
+  const [form, setForm] = useState({ name: "", phoneNumber: "", email: "", type: "Customer" as "Customer" | "Supplier" | "Both" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -991,6 +997,7 @@ function AddContactDialog({ open, onClose }: { open: boolean; onClose: () => voi
       await api.post(`/contacts`, {
         name: form.name,
         phoneNumber: form.phoneNumber || undefined,
+        email: form.email || undefined,
         type: form.type,
       });
       qc.invalidateQueries({ queryKey: ["contacts"] });
@@ -1004,7 +1011,7 @@ function AddContactDialog({ open, onClose }: { open: boolean; onClose: () => voi
   }
 
   function handleClose() {
-    setForm({ name: "", phoneNumber: "", type: "Customer" });
+    setForm({ name: "", phoneNumber: "", email: "", type: "Customer" });
     setError(null);
     onClose();
   }
@@ -1023,6 +1030,10 @@ function AddContactDialog({ open, onClose }: { open: boolean; onClose: () => voi
           <div>
             <Label>Phone Number (optional)</Label>
             <Input value={form.phoneNumber} onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} placeholder="+234..." />
+          </div>
+          <div>
+            <Label>Email (optional)</Label>
+            <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="customer@example.com" />
           </div>
           <div>
             <Label>Type</Label>

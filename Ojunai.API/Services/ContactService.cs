@@ -55,6 +55,7 @@ public class ContactService : IContactService
                 Id = c.Id,
                 Name = c.Name,
                 PhoneNumber = c.PhoneNumber,
+                Email = c.Email,
                 Type = c.Type.ToString(),
                 OutstandingReceivable = bal?.Receivable ?? 0,
                 OutstandingPayable = bal?.Payable ?? 0,
@@ -167,6 +168,7 @@ public class ContactService : IContactService
             Id = contact.Id,
             Name = contact.Name,
             PhoneNumber = contact.PhoneNumber,
+            Email = contact.Email,
             Type = contact.Type.ToString(),
             OutstandingReceivable = receivable,
             OutstandingPayable = payable,
@@ -181,6 +183,7 @@ public class ContactService : IContactService
             BusinessId = businessId,
             Name = request.Name,
             PhoneNumber = request.PhoneNumber,
+            Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim().ToLowerInvariant(),
             Type = request.Type
         };
         _db.Contacts.Add(contact);
@@ -191,6 +194,7 @@ public class ContactService : IContactService
             Id = contact.Id,
             Name = contact.Name,
             PhoneNumber = contact.PhoneNumber,
+            Email = contact.Email,
             Type = contact.Type.ToString(),
             OutstandingReceivable = 0,
             OutstandingPayable = 0,
@@ -206,6 +210,7 @@ public class ContactService : IContactService
 
         contact.Name = request.Name;
         contact.PhoneNumber = request.PhoneNumber;
+        contact.Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim().ToLowerInvariant();
         contact.Type = request.Type;
 
         await _db.SaveChangesAsync();

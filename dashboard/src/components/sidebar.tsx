@@ -63,7 +63,7 @@ const navGroups: NavGroup[] = [
     label: "Assets",
     items: [
       { href: "/inventory", label: "Inventory", icon: Package },
-      { href: "/contacts", label: "Contacts", icon: Users },
+      { href: "/contacts", label: "Contacts & Ledger", icon: Users },
     ],
   },
   {
@@ -105,8 +105,16 @@ export function Sidebar() {
     <>
       {/* Mobile top bar with hamburger */}
       <div
-        className="lg:hidden fixed top-0 left-0 right-0 z-30 flex items-center justify-between bg-slate-900 text-white px-4 pb-3 border-b border-slate-700"
-        style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)" }}
+        className="lg:hidden fixed top-0 left-0 right-0 z-30 flex items-center justify-between bg-slate-900 text-white pb-3 border-b border-slate-700"
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)",
+          // Landscape on iPhone puts the camera/dynamic island on the left
+          // or right edge of the top bar — without safe-area-inset-{left,right}
+          // the notification bell and logo get clipped under it. max() preserves
+          // the original 1rem inset on devices with no safe area.
+          paddingLeft: "max(1rem, env(safe-area-inset-left))",
+          paddingRight: "max(1rem, env(safe-area-inset-right))",
+        }}
       >
         <LogoMark size="sm" className="text-cyan-300" />
         <div className="flex items-center gap-1">
@@ -138,6 +146,10 @@ export function Sidebar() {
           // indicator the safe-area inset is 0, so this just adds a comfortable
           // 1.5rem gap below the footer.
           paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)",
+          // Mobile drawer slides in from the left, so in landscape with the
+          // camera on the left edge of the screen the logo and nav items would
+          // sit under it. safe-area-inset-left handles that.
+          paddingLeft: "env(safe-area-inset-left)",
         }}
         className={cn(
           "bg-slate-900 text-white flex flex-col z-40",
