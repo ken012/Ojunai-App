@@ -42,7 +42,7 @@ import {
   getDefaultCurrency,
   toBillingCurrency,
 } from "@/lib/pricing";
-import { QuotaMeter } from "@/components/quota-meter";
+import { QuotaMeter, useQuotaSnapshot } from "@/components/quota-meter";
 import { WhatsAppPackPicker } from "@/components/whatsapp-pack-picker";
 
 const CURRENCIES = [
@@ -1392,6 +1392,11 @@ function ConnectedChannelsCard() {
   const [loading, setLoading] = useState(true);
   const [linking, setLinking] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  // WhatsApp pack state — drives the status badge on the WhatsApp row.
+  // null = pack catalog still loading; "none" = no active pack; else = pack code.
+  const { data: quota } = useQuotaSnapshot();
+  const whatsAppPackName = quota?.whatsAppPackName ?? null;
+  const whatsAppActive = whatsAppPackName !== null && whatsAppPackName !== "none";
 
   async function fetchStatus() {
     setLoading(true);
@@ -1467,7 +1472,8 @@ function ConnectedChannelsCard() {
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
-        {/* WhatsApp — always available, no per-user binding. */}
+        {/* WhatsApp — paid channel. Active state = at least one BusinessAddOn with a
+            whatsapp_pack.<code> code. Quota meter drives the displayed pack name. */}
         <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 p-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-lg bg-green-50 dark:bg-green-950/40 flex items-center justify-center flex-shrink-0">
@@ -1475,12 +1481,31 @@ function ConnectedChannelsCard() {
             </div>
             <div className="min-w-0">
               <p className="text-sm font-medium text-slate-900 dark:text-slate-50">WhatsApp</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                Send messages to the shared Ojunai number to record sales and expenses.
-              </p>
+              {whatsAppPackName === null ? (
+                <p className="text-xs text-slate-400 dark:text-slate-500 truncate">Checking status…</p>
+              ) : whatsAppActive ? (
+                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                  Active on the{" "}
+                  <span className="font-medium capitalize">{whatsAppPackName}</span> pack.
+                  Send messages to the Ojunai number to record sales and expenses.
+                </p>
+              ) : (
+                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                  Inactive. Add a WhatsApp pack in Plan &amp; Billing to enable.
+                </p>
+              )}
             </div>
           </div>
-          <Badge variant="default" className="flex-shrink-0">Always on</Badge>
+          {whatsAppPackName === null ? null : whatsAppActive ? (
+            <Badge variant="default" className="flex-shrink-0 capitalize">{whatsAppPackName} pack</Badge>
+          ) : (
+            <a
+              href="#plan"
+              className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline flex-shrink-0"
+            >
+              Get a pack
+            </a>
+          )}
         </div>
 
         {/* Telegram — full bind/unbind via /start deep link */}
