@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { MessageSquare, Send } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -64,34 +65,82 @@ export function QuotaMeter({ compact = false }: { compact?: boolean } = {}) {
   }
 
   if (compact) {
-    return (
-      <div className="relative">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          aria-label="Show quota usage"
-        >
-          <CompactBar channel={data.messaging} accent="cyan" />
-          <CompactBar channel={data.whatsApp} accent="emerald" />
-        </button>
-
-        {open && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-            <div className="absolute right-0 top-full mt-2 z-50 w-80 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg p-4">
-              <QuotaCardBody data={data} />
-            </div>
-          </>
-        )}
-      </div>
-    );
+    return <CompactQuotaButton data={data} open={open} setOpen={setOpen} />;
   }
 
   return (
     <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
       <QuotaCardBody data={data} />
     </div>
+  );
+}
+
+/**
+ * Compact-mode button + portal-rendered popover.
+ *
+ * Why a portal: the sidebar that hosts this button uses `overflow-y-auto`, which
+ * causes browsers to implicitly clip overflow-x as well. A standard absolutely-
+ * positioned popover got cut off at the sidebar's right edge on desktop. Rendering
+ * via createPortal mounts the popover at the document body so it sits in its own
+ * stacking context and the sidebar's overflow doesn't apply.
+ *
+ * Position is computed from the button's bounding rect each time the popover
+ * opens. Right-aligned to the button. Closes on click-outside.
+ */
+function CompactQuotaButton({
+  data,
+  open,
+  setOpen,
+}: {
+  data: QuotaSnapshot;
+  open: boolean;
+  setOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
+}) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [coords, setCoords] = useState<{ top: number; right: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!open || !buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    // Right-align: distance from viewport right edge. mt-2 = 8px below button.
+    setCoords({
+      top: rect.bottom + 8,
+      right: Math.max(8, window.innerWidth - rect.right),
+    });
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1 px-1.5 py-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+        aria-label="Show quota usage"
+      >
+        <CompactBar channel={data.messaging} accent="cyan" />
+        <CompactBar channel={data.whatsApp} accent="emerald" />
+      </button>
+
+      {mounted && open && coords &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
+            <div
+              className="fixed z-[9999] w-80 max-w-[calc(100vw-1rem)] rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg p-4"
+              style={{ top: coords.top, right: coords.right }}
+            >
+              <QuotaCardBody data={data} />
+            </div>
+          </>,
+          document.body,
+        )}
+    </>
   );
 }
 
@@ -184,7 +233,7 @@ function CompactBar({ channel, accent }: { channel: QuotaChannel; accent: "cyan"
   const widthPct = channel.isUnlimited ? 100 : isZero ? 0 : channel.percentUsed;
 
   return (
-    <div className="h-1.5 w-9 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+    <div className="h-1.5 w-6 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
       <div
         className={`h-full ${barColor(accent, channel.percentUsed)}`}
         style={{ width: `${widthPct}%` }}
