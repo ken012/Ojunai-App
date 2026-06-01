@@ -1,8 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Ojunai.API.Common;
 using Ojunai.API.Data;
+using Ojunai.API.Models;
 using Ojunai.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -46,6 +48,122 @@ public class SubscriptionController : OjunaiBaseController
     {
         var snapshot = await _usage.GetSnapshotAsync(BusinessId, ct);
         return Ok(snapshot);
+    }
+
+    /// <summary>
+    /// WhatsApp pack catalog + the business's currently active pack (if any). Public catalog data
+    /// + per-business state combined into one call so the pack picker only does one round-trip.
+    /// </summary>
+    [HttpGet("whatsapp-packs")]
+    public async Task<IActionResult> GetWhatsAppPacks(CancellationToken ct)
+    {
+        // EF can't translate the range expression `[...]` for the code suffix, so we pull the
+        // raw row and strip the prefix client-side. Cheap — at most one row matches.
+        var activeRow = await _db.BusinessAddOns
+            .Where(a => a.BusinessId == BusinessId
+                && a.Status == "active"
+                && a.AddOnCode.StartsWith("whatsapp_pack."))
+            .OrderByDescending(a => a.UpdatedAtUtc)
+            .Select(a => new
+            {
+                a.AddOnCode,
+                a.BilledAmount,
+                a.BilledCurrency,
+                a.NextBillingAtUtc,
+                a.AddedAtUtc
+            })
+            .FirstOrDefaultAsync(ct);
+
+        object? activePack = activeRow == null ? null : new
+        {
+            code = activeRow.AddOnCode["whatsapp_pack.".Length..],
+            activeRow.BilledAmount,
+            activeRow.BilledCurrency,
+            activeRow.NextBillingAtUtc,
+            activeRow.AddedAtUtc,
+        };
+
+        return Ok(new
+        {
+            catalog = BillingConfig.GetAllWhatsAppPackPricing(),
+            activePack,
+        });
+    }
+
+    /// <summary>
+    /// Manually activate a WhatsApp pack for the current business. PHASE-2 INTERIM —
+    /// bypasses Paystack/Flutterwave so the pack picker UX is testable end-to-end (cap on the
+    /// quota meter updates, purchase flow validates the catalog). Phase 2.5 will replace this
+    /// with a real payment-gated activation via the existing checkout webhook.
+    ///
+    /// Behavior:
+    ///   - Cancels any existing active WhatsApp pack on this business (one pack at a time).
+    ///   - Upserts a BusinessAddOn for the new pack code at the current month's BilledAmount.
+    ///   - Returns the activated pack row.
+    /// </summary>
+    [HttpPost("whatsapp-packs/activate")]
+    [RequirePermission(Permission.ManageSettings)]
+    public async Task<ActionResult<ApiResponse<object>>> ActivateWhatsAppPack(
+        [FromBody] ActivateWhatsAppPackRequest request,
+        CancellationToken ct)
+    {
+        var code = (request.Code ?? "").ToLowerInvariant().Trim();
+        if (string.IsNullOrEmpty(code) || !BillingConfig.WhatsAppPackCodes.Contains(code))
+            return BadRequest(ApiResponse<object>.Fail("Unknown WhatsApp pack code."));
+
+        var business = await _db.Businesses.FindAsync(new object[] { BusinessId }, ct);
+        if (business == null) return NotFound(ApiResponse<object>.Fail("Business not found."));
+
+        var currency = (business.BillingCurrency ?? business.Currency ?? "NGN").ToUpperInvariant();
+        var cycle = (business.BillingCycle ?? "monthly").Equals("annual", StringComparison.OrdinalIgnoreCase)
+            ? BillingConfig.BillingCycle.Annual
+            : BillingConfig.BillingCycle.Monthly;
+
+        var amount = BillingConfig.GetWhatsAppPackPrice(code, cycle, currency);
+        if (!amount.HasValue)
+            return BadRequest(ApiResponse<object>.Fail(
+                $"No price for pack '{code}' in {currency}. Switch your billing currency first."));
+
+        var now = DateTime.UtcNow;
+        var nextBilling = cycle == BillingConfig.BillingCycle.Annual ? now.AddYears(1) : now.AddMonths(1);
+
+        // Cancel any existing active WhatsApp pack — one pack per business at a time.
+        var existing = await _db.BusinessAddOns
+            .Where(a => a.BusinessId == BusinessId
+                && a.Status == "active"
+                && a.AddOnCode.StartsWith("whatsapp_pack."))
+            .ToListAsync(ct);
+        foreach (var old in existing)
+        {
+            old.Status = "cancelled";
+            old.CancelledAtUtc = now;
+            old.UpdatedAtUtc = now;
+        }
+
+        var addOn = new BusinessAddOn
+        {
+            BusinessId = BusinessId,
+            AddOnCode = $"whatsapp_pack.{code}",
+            Status = "active",
+            Quantity = 1,
+            BilledAmount = amount.Value,
+            BilledCurrency = currency,
+            AddedAtUtc = now,
+            NextBillingAtUtc = nextBilling,
+            UpdatedAtUtc = now,
+        };
+        _db.BusinessAddOns.Add(addOn);
+        await _db.SaveChangesAsync(ct);
+
+        return Ok(ApiResponse<object>.Ok(new
+        {
+            code,
+            label = BillingConfig.WhatsAppPackLabels[code],
+            actions = BillingConfig.WhatsAppPackActions[code],
+            billedAmount = amount.Value,
+            billedCurrency = currency,
+            nextBillingAtUtc = nextBilling,
+        }, $"{BillingConfig.WhatsAppPackLabels[code]} activated."));
     }
 
     /// <summary>
@@ -407,6 +525,11 @@ public class InitializeSubscriptionRequest
     public string Plan { get; set; } = string.Empty;
     public string? Currency { get; set; }
     public string? BillingCycle { get; set; }
+}
+
+public class ActivateWhatsAppPackRequest
+{
+    public string? Code { get; set; }
 }
 
 public class ChangePlanRequest

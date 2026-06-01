@@ -43,6 +43,7 @@ import {
   toBillingCurrency,
 } from "@/lib/pricing";
 import { QuotaMeter } from "@/components/quota-meter";
+import { WhatsAppPackPicker } from "@/components/whatsapp-pack-picker";
 
 const CURRENCIES = [
   "NGN", "GHS", "KES", "ZAR", "TZS", "UGX", "RWF", "XAF", "XOF", "EGP", "ETB",
@@ -294,6 +295,10 @@ function SettingsPage() {
       {/* Current-month assistant action usage — sits above the plan picker so a merchant
           who's hit a cap sees the trigger right where they decide whether to upgrade. */}
       <QuotaMeter />
+      <div className="h-3" />
+      {/* WhatsApp pack — separately purchasable since WhatsApp has per-conversation fees;
+          merchants who only use Telegram/Messenger never need this. */}
+      <WhatsAppPackPicker />
       <div className="h-3" />
       {/* Plan */}
       <PlanCard business={business} />

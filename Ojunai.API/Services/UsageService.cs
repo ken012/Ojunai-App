@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Ojunai.API.Common;
 using Ojunai.API.Data;
 using Ojunai.API.Models;
 
@@ -42,7 +43,9 @@ public interface IUsageService
 /// </summary>
 public static class QuotaLimits
 {
-    /// <summary>Plan → monthly Telegram + Messenger combined cap. Keyed by lowercase plan name.</summary>
+    /// <summary>Plan → monthly Telegram + Messenger combined cap. Keyed by lowercase plan name.
+    /// WhatsApp pack caps live in <see cref="BillingConfig.WhatsAppPackActions"/> — pack metadata
+    /// belongs with pack pricing as the single source of truth.</summary>
     public static readonly Dictionary<string, int> MessagingByPlan = new(StringComparer.OrdinalIgnoreCase)
     {
         // Free tier: 15 actions TOTAL across all channels (capped here on Messaging side; WhatsApp pack = 0).
@@ -51,17 +54,6 @@ public static class QuotaLimits
         ["pro"] = 1500,        // Operator
         ["business"] = 4000,   // Pro
         // Future: ["scale"] = -1
-    };
-
-    /// <summary>WhatsApp pack name → monthly cap. Keyed by lowercase pack name.</summary>
-    public static readonly Dictionary<string, int> WhatsAppByPack = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["none"] = 0,          // Free tier or no pack selected
-        ["start"] = 100,
-        ["grow"] = 300,
-        ["pro"] = 800,
-        ["scale"] = 2000,
-        ["unlimited"] = -1,
     };
 }
 
@@ -121,9 +113,24 @@ public class UsageService : IUsageService
             ct);
 
         var planName = (business.Plan ?? "starter").ToLowerInvariant();
-        var packName = "none"; // Phase 2 will read this from a real WhatsApp pack subscription row.
 
-        var whatsAppCap = QuotaLimits.WhatsAppByPack.GetValueOrDefault(packName, 0);
+        // Look up the business's active WhatsApp pack from BusinessAddOn. Codes are
+        // "whatsapp_pack.<size>" — we strip the prefix and use the bare size to drive the cap.
+        // Multiple pack rows shouldn't co-exist; if they do (data drift), the most recent wins.
+        var packCode = await _db.BusinessAddOns
+            .Where(a => a.BusinessId == businessId
+                && a.Status == "active"
+                && a.AddOnCode.StartsWith("whatsapp_pack."))
+            .OrderByDescending(a => a.UpdatedAtUtc)
+            .Select(a => a.AddOnCode)
+            .FirstOrDefaultAsync(ct);
+
+        var packName = packCode?["whatsapp_pack.".Length..].ToLowerInvariant() ?? "none";
+
+        // Pull WhatsApp cap from the BillingConfig catalog (single source of truth for pack
+        // metadata). Fall back to 0 if the active pack code isn't in the catalog — i.e. a
+        // stale row from a deprecated SKU. Treat as "no pack" rather than crashing the meter.
+        var whatsAppCap = BillingConfig.WhatsAppPackActions.GetValueOrDefault(packName, 0);
         var messagingCap = QuotaLimits.MessagingByPlan.GetValueOrDefault(planName, 0);
 
         var whatsAppUsed = row?.WhatsAppCount ?? 0;

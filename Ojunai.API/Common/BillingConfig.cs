@@ -214,4 +214,132 @@ public static class BillingConfig
         if (!Enum.TryParse<BillingCycle>(cycle, true, out var bc)) return false;
         return GetVoiceAIPrice(bc, currency).HasValue;
     }
+
+    // ── WhatsApp pack pricing ───────────────────────────────────────────────
+    // WhatsApp is sold separately from the main tier — these packs cover Meta's per-conversation
+    // fees + Sent's platform fee. -1 actions = unlimited. Africa-PPP-adjusted vs strict USD
+    // conversion (see pricing brief: USD/GBP full price, ZAR ~10% below, NGN/GHS/KES ~30% below).
+    // Annual = monthly × 10 (2 months free).
+
+    public static readonly string[] WhatsAppPackCodes = { "start", "grow", "pro", "scale", "unlimited" };
+
+    /// <summary>Pack code → max actions/mo for the WhatsApp meter. -1 = unlimited.</summary>
+    public static readonly Dictionary<string, int> WhatsAppPackActions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["start"] = 100,
+        ["grow"] = 300,
+        ["pro"] = 800,
+        ["scale"] = 2000,
+        ["unlimited"] = -1,
+    };
+
+    /// <summary>Pack code → human-readable display name (used in UI + invoices).</summary>
+    public static readonly Dictionary<string, string> WhatsAppPackLabels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["start"] = "WhatsApp Start",
+        ["grow"] = "WhatsApp Grow",
+        ["pro"] = "WhatsApp Pro",
+        ["scale"] = "WhatsApp Scale",
+        ["unlimited"] = "WhatsApp Unlimited",
+    };
+
+    private static readonly Dictionary<string, Dictionary<BillingCycle, Dictionary<string, decimal>>> WhatsAppPackPrices = new()
+    {
+        ["start"] = new()
+        {
+            [BillingCycle.Monthly] = new()
+            {
+                ["NGN"] = 9500, ["GHS"] = 95, ["USD"] = 9, ["GBP"] = 7, ["KES"] = 799, ["ZAR"] = 149
+            },
+            [BillingCycle.Annual] = new()
+            {
+                ["NGN"] = 95000, ["GHS"] = 950, ["USD"] = 90, ["GBP"] = 70, ["KES"] = 7990, ["ZAR"] = 1490
+            }
+        },
+        ["grow"] = new()
+        {
+            [BillingCycle.Monthly] = new()
+            {
+                ["NGN"] = 19500, ["GHS"] = 199, ["USD"] = 19, ["GBP"] = 15, ["KES"] = 1699, ["ZAR"] = 329
+            },
+            [BillingCycle.Annual] = new()
+            {
+                ["NGN"] = 195000, ["GHS"] = 1990, ["USD"] = 190, ["GBP"] = 150, ["KES"] = 16990, ["ZAR"] = 3290
+            }
+        },
+        ["pro"] = new()
+        {
+            [BillingCycle.Monthly] = new()
+            {
+                ["NGN"] = 39999, ["GHS"] = 399, ["USD"] = 39, ["GBP"] = 31, ["KES"] = 3499, ["ZAR"] = 649
+            },
+            [BillingCycle.Annual] = new()
+            {
+                ["NGN"] = 399990, ["GHS"] = 3990, ["USD"] = 390, ["GBP"] = 310, ["KES"] = 34990, ["ZAR"] = 6490
+            }
+        },
+        ["scale"] = new()
+        {
+            [BillingCycle.Monthly] = new()
+            {
+                ["NGN"] = 82000, ["GHS"] = 829, ["USD"] = 79, ["GBP"] = 63, ["KES"] = 7199, ["ZAR"] = 1349
+            },
+            [BillingCycle.Annual] = new()
+            {
+                ["NGN"] = 820000, ["GHS"] = 8290, ["USD"] = 790, ["GBP"] = 630, ["KES"] = 71990, ["ZAR"] = 13490
+            }
+        },
+        ["unlimited"] = new()
+        {
+            [BillingCycle.Monthly] = new()
+            {
+                ["NGN"] = 155000, ["GHS"] = 1549, ["USD"] = 149, ["GBP"] = 119, ["KES"] = 13499, ["ZAR"] = 2549
+            },
+            [BillingCycle.Annual] = new()
+            {
+                ["NGN"] = 1550000, ["GHS"] = 15490, ["USD"] = 1490, ["GBP"] = 1190, ["KES"] = 134990, ["ZAR"] = 25490
+            }
+        }
+    };
+
+    public static decimal? GetWhatsAppPackPrice(string packCode, BillingCycle cycle, string currency)
+    {
+        if (WhatsAppPackPrices.TryGetValue(packCode.ToLower(), out var cycles)
+            && cycles.TryGetValue(cycle, out var currencies)
+            && currencies.TryGetValue(currency.ToUpper(), out var price))
+            return price;
+        return null;
+    }
+
+    public static decimal GetWhatsAppPackPriceOrThrow(string packCode, BillingCycle cycle, string currency)
+    {
+        var price = GetWhatsAppPackPrice(packCode, cycle, currency);
+        if (price.HasValue) return price.Value;
+        throw new InvalidOperationException(
+            $"No price for WhatsApp pack '{packCode}' / {cycle} / {currency}.");
+    }
+
+    public static bool IsValidWhatsAppPackCombination(string packCode, string cycle, string currency)
+    {
+        if (!Enum.TryParse<BillingCycle>(cycle, true, out var bc)) return false;
+        return GetWhatsAppPackPrice(packCode, bc, currency).HasValue;
+    }
+
+    /// <summary>All pack catalog data for the frontend pack picker.</summary>
+    public static object GetAllWhatsAppPackPricing()
+    {
+        var packs = new Dictionary<string, object>();
+        foreach (var code in WhatsAppPackCodes)
+        {
+            packs[code] = new
+            {
+                code,
+                label = WhatsAppPackLabels[code],
+                actions = WhatsAppPackActions[code],
+                monthly = WhatsAppPackPrices[code][BillingCycle.Monthly],
+                annual = WhatsAppPackPrices[code][BillingCycle.Annual]
+            };
+        }
+        return new { packs, currencies = SupportedCurrencies };
+    }
 }
