@@ -262,6 +262,56 @@ public class PaystackService
     }
 
     /// <summary>
+    /// Initialize a one-time charge for a WhatsApp pack purchase. Unlike tier subscriptions,
+    /// packs are NOT auto-renewing — the merchant re-purchases each cycle. This matches Sent's
+    /// per-conversation cost model (volume varies; we shouldn't auto-renew based on usage we
+    /// can't predict).
+    ///
+    /// The webhook recognizes pack purchases by metadata.mode == "whatsapp_pack" + packCode,
+    /// validates the amount matches the canonical price, then upserts a BusinessAddOn row.
+    /// </summary>
+    public async Task<string> InitializeWhatsAppPackChargeAsync(Guid businessId, string packCode, string email)
+    {
+        var business = await _db.Businesses.FindAsync(businessId)
+            ?? throw new KeyNotFoundException("Business not found.");
+
+        if (!business.IsBillable)
+            throw new InvalidOperationException("This account is not billable.");
+
+        var billingCurrency = business.BillingCurrency ?? business.Currency ?? "NGN";
+        if (BillingConfig.GetProvider(billingCurrency) != BillingConfig.BillingProvider.Paystack)
+        {
+            throw new InvalidOperationException(
+                $"PaystackService received a {billingCurrency} pack purchase — that currency routes to Flutterwave.");
+        }
+
+        var cycle = (business.BillingCycle ?? "monthly").Equals("annual", StringComparison.OrdinalIgnoreCase)
+            ? BillingConfig.BillingCycle.Annual
+            : BillingConfig.BillingCycle.Monthly;
+        var amount = BillingConfig.GetWhatsAppPackPriceOrThrow(packCode, cycle, billingCurrency);
+
+        var body = new
+        {
+            email,
+            amount = (int)(amount * 100), // kobo for NGN
+            callback_url = $"{_config["App:DashboardUrl"] ?? "https://app.ojunai.com"}/settings?pack=true",
+            metadata = new
+            {
+                businessId = businessId.ToString(),
+                mode = "whatsapp_pack",
+                packCode,
+                cycle = cycle.ToString().ToLowerInvariant(),
+            }
+        };
+
+        var response = await PostAsync("/transaction/initialize", body);
+        _logger.LogInformation(
+            "Initialized Paystack pack purchase: business={Business} pack={Pack} amount={Amount} {Currency}",
+            business.Name, packCode, amount, billingCurrency);
+        return response.GetProperty("data").GetProperty("authorization_url").GetString()!;
+    }
+
+    /// <summary>
     /// Processes a Paystack webhook event after signature validation (done in SubscriptionController).
     /// Enforces idempotency (Paystack retries on failure) and dispatches to the right handler.
     /// </summary>
@@ -534,6 +584,13 @@ public class PaystackService
             return;
         }
 
+        // WhatsApp pack payment (one-time charge, no auto-renew)
+        if (string.Equals(metaMode, "whatsapp_pack", StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleWhatsAppPackChargeAsync(business, meta, data);
+            return;
+        }
+
         // Plan name resolution:
         //  1. Prefer metadata.plan (first-charge initialization)
         //  2. Fall back to deriving from data.plan.plan_code (renewal events)
@@ -658,6 +715,104 @@ public class PaystackService
             _logger.LogInformation("{Type} confirmed: {Business} → {Plan} (auto-renew={AutoRenew}, ends={EndsAt})",
                 isDeltaUpgrade ? "Delta upgrade" : "Payment", business.Name, plan, business.IsAutoRenew, business.SubscriptionEndsAt);
         }
+    }
+
+    /// <summary>
+    /// Activates a WhatsApp pack after a verified Paystack charge.success webhook. Validates the
+    /// charged amount matches the canonical pack price (defense against tampering), cancels any
+    /// existing active pack for the business, then upserts a new BusinessAddOn row.
+    /// </summary>
+    private async Task HandleWhatsAppPackChargeAsync(Business business, JsonElement meta, JsonElement data)
+    {
+        var packCode = meta.TryGetProperty("packCode", out var pcEl) ? pcEl.GetString() : null;
+        var cycleStr = meta.TryGetProperty("cycle", out var cyEl) ? cyEl.GetString() : "monthly";
+
+        if (string.IsNullOrEmpty(packCode) || !BillingConfig.WhatsAppPackCodes.Contains(packCode.ToLowerInvariant()))
+        {
+            _logger.LogWarning(
+                "Paystack pack webhook: unknown pack code '{Pack}' for business {Business}",
+                packCode, business.Name);
+            return;
+        }
+
+        var cycle = string.Equals(cycleStr, "annual", StringComparison.OrdinalIgnoreCase)
+            ? BillingConfig.BillingCycle.Annual
+            : BillingConfig.BillingCycle.Monthly;
+        var currency = business.BillingCurrency ?? business.Currency ?? "NGN";
+        var expectedAmount = BillingConfig.GetWhatsAppPackPrice(packCode, cycle, currency);
+        if (!expectedAmount.HasValue)
+        {
+            _logger.LogWarning(
+                "Paystack pack webhook: no canonical price for {Pack}/{Cycle}/{Currency} — rejecting",
+                packCode, cycle, currency);
+            return;
+        }
+
+        // Paystack amounts are in kobo (smallest unit). For NGN, expected naira × 100.
+        var chargedMinorUnits = data.TryGetProperty("amount", out var amtEl) ? amtEl.GetInt64() : 0;
+        var expectedMinorUnits = (long)(expectedAmount.Value * 100);
+        if (chargedMinorUnits != expectedMinorUnits)
+        {
+            _logger.LogWarning(
+                "Paystack pack webhook: amount mismatch for {Business}/{Pack}: expected={Expected} charged={Charged}",
+                business.Name, packCode, expectedMinorUnits, chargedMinorUnits);
+            return;
+        }
+
+        await UpsertWhatsAppPackAddOnAsync(business.Id, packCode.ToLowerInvariant(), expectedAmount.Value, currency, cycle);
+
+        _db.BillingEvents.Add(new BillingEvent
+        {
+            BusinessId = business.Id,
+            EventType = "whatsapp_pack.activated",
+            Provider = "paystack",
+            Plan = $"whatsapp_pack.{packCode}",
+            Amount = expectedAmount.Value,
+            Currency = currency,
+            PaymentMethod = "card",
+            Status = "success"
+        });
+
+        await _db.SaveChangesAsync();
+        _logger.LogInformation(
+            "WhatsApp pack activated via Paystack: business={Business} pack={Pack} amount={Amount} {Currency}",
+            business.Name, packCode, expectedAmount.Value, currency);
+    }
+
+    /// <summary>
+    /// Cancel any existing active WhatsApp pack rows, then insert a new active one. Shared by
+    /// the Paystack webhook path. (FlutterwaveService has its own equivalent that calls this
+    /// same DB pattern.)
+    /// </summary>
+    private async Task UpsertWhatsAppPackAddOnAsync(
+        Guid businessId, string packCode, decimal amount, string currency, BillingConfig.BillingCycle cycle)
+    {
+        var now = DateTime.UtcNow;
+        var existing = await _db.BusinessAddOns
+            .Where(a => a.BusinessId == businessId
+                && a.Status == "active"
+                && a.AddOnCode.StartsWith("whatsapp_pack."))
+            .ToListAsync();
+        foreach (var old in existing)
+        {
+            old.Status = "cancelled";
+            old.CancelledAtUtc = now;
+            old.UpdatedAtUtc = now;
+        }
+
+        var nextBilling = cycle == BillingConfig.BillingCycle.Annual ? now.AddYears(1) : now.AddMonths(1);
+        _db.BusinessAddOns.Add(new BusinessAddOn
+        {
+            BusinessId = businessId,
+            AddOnCode = $"whatsapp_pack.{packCode}",
+            Status = "active",
+            Quantity = 1,
+            BilledAmount = amount,
+            BilledCurrency = currency,
+            AddedAtUtc = now,
+            NextBillingAtUtc = nextBilling,
+            UpdatedAtUtc = now,
+        });
     }
 
     private async Task HandleSubscriptionCancelled(JsonElement data)

@@ -11,8 +11,8 @@ import { toBillingCurrency, formatPrice } from "@/lib/pricing";
 
 /**
  * WhatsAppPackPicker — surfaces the 5 WhatsApp pack options + the business's currently active
- * pack. Activation goes through POST /subscription/whatsapp-packs/activate, which is currently
- * an interim no-payment endpoint (Phase 2.5 will replace it with Paystack/Flutterwave checkout).
+ * pack. Real purchase via POST /subscription/whatsapp-packs/purchase, which routes to Paystack
+ * (NGN) or Flutterwave (everything else). One-time charges, not auto-renewing subscriptions.
  *
  * Sits inside Settings → Plan & Billing, below the existing tier picker. Renders nothing while
  * loading; the parent quota meter already gives visible loading feedback.
@@ -45,13 +45,46 @@ type WhatsAppPacksResponse = {
   activePack: ActivePack;
 };
 
+type PurchaseInitResult = {
+  provider: "paystack" | "flutterwave";
+  paymentUrl?: string;
+  publicKey?: string;
+  txRef?: string;
+  amount?: number;
+  currency?: string;
+  email?: string;
+  packCode?: string;
+  billingCycle?: string;
+  callbackUrl?: string;
+  businessId?: string;
+  businessName?: string;
+};
+
 const PACK_ORDER = ["start", "grow", "pro", "scale", "unlimited"];
+
+/**
+ * Lazily loads Flutterwave's checkout script. Idempotent — repeat calls resolve immediately
+ * if the script is already on the page.
+ */
+function loadFlutterwaveScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector('script[src*="checkout.flutterwave.com"]')) {
+      resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://checkout.flutterwave.com/v3.js";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Failed to load Flutterwave SDK"));
+    document.head.appendChild(script);
+  });
+}
 
 export function WhatsAppPackPicker() {
   const business = useBusiness();
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [activating, setActivating] = useState<string | null>(null);
+  const [purchasing, setPurchasing] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery<WhatsAppPacksResponse>({
     queryKey: ["whatsapp-packs"],
@@ -65,22 +98,83 @@ export function WhatsAppPackPicker() {
     staleTime: 30_000,
   });
 
-  async function handleActivate(code: string) {
-    setActivating(code);
+  async function handlePurchase(code: string) {
+    setPurchasing(code);
     try {
-      await api.post("/subscription/whatsapp-packs/activate", { code });
-      const label = data?.catalog.packs[code]?.label ?? "WhatsApp pack";
-      toast.success(`${label} activated`, "Your WhatsApp quota updates next refresh.");
-      qc.invalidateQueries({ queryKey: ["whatsapp-packs"] });
-      qc.invalidateQueries({ queryKey: ["subscription-quota"] });
+      const { data: resp } = await api.post<{ data: PurchaseInitResult }>(
+        "/subscription/whatsapp-packs/purchase",
+        { code },
+      );
+      const result = resp.data!;
+
+      if (result.provider === "paystack") {
+        // Paystack — full-page redirect to their hosted checkout
+        if (!result.paymentUrl) {
+          throw new Error("No paymentUrl returned for Paystack purchase");
+        }
+        window.location.href = result.paymentUrl;
+        return;
+      }
+
+      // Flutterwave — inline modal
+      await loadFlutterwaveScript();
+      const win = window as unknown as {
+        FlutterwaveCheckout?: (config: Record<string, unknown>) => void;
+      };
+      if (!win.FlutterwaveCheckout) {
+        toast.error("Payment widget failed to load", "Refresh and try again.");
+        setPurchasing(null);
+        return;
+      }
+
+      win.FlutterwaveCheckout({
+        public_key: result.publicKey,
+        tx_ref: result.txRef,
+        amount: result.amount,
+        currency: result.currency,
+        redirect_url: result.callbackUrl,
+        customer: { email: result.email },
+        meta: {
+          businessId: result.businessId,
+          packCode: result.packCode,
+          billingCycle: result.billingCycle,
+          currency: result.currency,
+        },
+        customizations: {
+          title: "Ojunai",
+          description: `${data?.catalog.packs[code]?.label ?? "WhatsApp Pack"} — ${result.billingCycle}`,
+          logo: "https://app.ojunai.com/favicon.ico",
+        },
+        // Packs are one-time charges so we don't need a payment_plan. All payment_options open.
+        payment_options: "card,mobilemoney,banktransfer,ussd",
+        callback: async (response: { transaction_id?: string; tx_ref?: string }) => {
+          try {
+            await api.post("/subscription/verify-flutterwave", {
+              transactionId: response.transaction_id?.toString(),
+              txRef: response.tx_ref,
+            });
+            toast.success("WhatsApp pack activated", "Your WhatsApp quota updates next refresh.");
+            qc.invalidateQueries({ queryKey: ["whatsapp-packs"] });
+            qc.invalidateQueries({ queryKey: ["subscription-quota"] });
+          } catch (err: unknown) {
+            const ax = err as { response?: { data?: { errors?: string[] } } };
+            toast.error(
+              "Payment received, verification pending",
+              ax.response?.data?.errors?.[0] ?? "We'll activate your pack as soon as Flutterwave confirms.",
+            );
+          } finally {
+            setPurchasing(null);
+          }
+        },
+        onclose: () => setPurchasing(null),
+      });
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { errors?: string[] } } };
       toast.error(
-        "Couldn't activate pack",
+        "Couldn't start purchase",
         ax.response?.data?.errors?.[0] ?? "Try again or contact support.",
       );
-    } finally {
-      setActivating(null);
+      setPurchasing(null);
     }
   }
 
@@ -154,21 +248,17 @@ export function WhatsAppPackPicker() {
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={activating === code}
-                  onClick={() => handleActivate(code)}
+                  disabled={purchasing === code}
+                  onClick={() => handlePurchase(code)}
                   className="w-full mt-2 text-[11px] h-7"
                 >
-                  {activating === code ? "Activating…" : activeCode ? "Switch" : "Activate"}
+                  {purchasing === code ? "Starting…" : activeCode ? "Switch" : "Buy"}
                 </Button>
               )}
             </div>
           );
         })}
       </div>
-
-      <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-3 italic">
-        Beta: pack activation is currently free for testing. Real billing via Paystack / Flutterwave coming next.
-      </p>
     </div>
   );
 }

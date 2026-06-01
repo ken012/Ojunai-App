@@ -91,10 +91,79 @@ public class SubscriptionController : OjunaiBaseController
     }
 
     /// <summary>
-    /// Manually activate a WhatsApp pack for the current business. PHASE-2 INTERIM —
-    /// bypasses Paystack/Flutterwave so the pack picker UX is testable end-to-end (cap on the
-    /// quota meter updates, purchase flow validates the catalog). Phase 2.5 will replace this
-    /// with a real payment-gated activation via the existing checkout webhook.
+    /// Initialize a real WhatsApp pack purchase. Routes to Paystack (NGN) or Flutterwave
+    /// (everything else) — one-time charge, no auto-renew. On successful payment the
+    /// provider's webhook upserts the BusinessAddOn row.
+    /// </summary>
+    [HttpPost("whatsapp-packs/purchase")]
+    [RequirePermission(Permission.ManageSettings)]
+    public async Task<ActionResult<ApiResponse<object>>> PurchaseWhatsAppPack(
+        [FromBody] ActivateWhatsAppPackRequest request,
+        CancellationToken ct)
+    {
+        var packCode = (request.Code ?? "").ToLowerInvariant().Trim();
+        if (string.IsNullOrEmpty(packCode) || !BillingConfig.WhatsAppPackCodes.Contains(packCode))
+            return BadRequest(ApiResponse<object>.Fail("Unknown WhatsApp pack code."));
+
+        var business = await _db.Businesses.FindAsync(new object[] { BusinessId }, ct);
+        if (business == null) return NotFound(ApiResponse<object>.Fail("Business not found."));
+        if (!business.IsBillable) return BadRequest(ApiResponse<object>.Fail("This account is not billable."));
+
+        var currency = (business.BillingCurrency ?? business.Currency ?? "NGN").ToUpperInvariant();
+        if (!BillingConfig.IsCurrencySupported(currency))
+            return BadRequest(ApiResponse<object>.Fail($"Billing in {currency} isn't supported yet."));
+
+        var cycleStr = (business.BillingCycle ?? "monthly").ToLowerInvariant();
+        if (!BillingConfig.IsValidWhatsAppPackCombination(packCode, cycleStr, currency))
+            return BadRequest(ApiResponse<object>.Fail(
+                $"No price for pack '{packCode}' / {cycleStr} / {currency}."));
+
+        var user = await _db.Users.FindAsync(new object[] { UserId }, ct);
+        var email = user?.Email ?? $"{user?.PhoneNumber}@ojunai.com";
+
+        var provider = BillingConfig.GetProvider(currency);
+
+        if (provider == BillingConfig.BillingProvider.Paystack)
+        {
+            var url = await _paystack.InitializeWhatsAppPackChargeAsync(BusinessId, packCode, email);
+            return Ok(ApiResponse<object>.Ok(new { paymentUrl = url, provider = "paystack" },
+                "Redirecting to payment..."));
+        }
+
+        // Flutterwave inline checkout — same shape as the tier flow so frontend reuses the
+        // existing checkout component.
+        var cycle = cycleStr == "annual"
+            ? BillingConfig.BillingCycle.Annual
+            : BillingConfig.BillingCycle.Monthly;
+        var amount = BillingConfig.GetWhatsAppPackPriceOrThrow(packCode, cycle, currency);
+        var txRef = FlutterwaveService.BuildPackTxRef(packCode, BusinessId);
+        var publicKey = _config["Flutterwave:PublicKey"];
+        if (string.IsNullOrEmpty(publicKey))
+            return StatusCode(500, ApiResponse<object>.Fail("Payment gateway not configured."));
+        var callbackUrl = (_config["Flutterwave:CallbackUrl"] ?? "https://app.ojunai.com/settings")
+            + "?pack=true";
+
+        return Ok(ApiResponse<object>.Ok(new
+        {
+            provider = "flutterwave",
+            inlineCheckout = true,
+            publicKey,
+            txRef,
+            amount,
+            currency,
+            email,
+            packCode,
+            billingCycle = cycleStr,
+            callbackUrl,
+            businessId = BusinessId.ToString(),
+            businessName = business.Name,
+        }, "Ready for checkout."));
+    }
+
+    /// <summary>
+    /// Manually activate a WhatsApp pack for the current business. ADMIN/DEV — bypasses
+    /// Paystack/Flutterwave so internal staff can grant packs without a real charge (support
+    /// flow, testing). End-user UI uses /whatsapp-packs/purchase instead.
     ///
     /// Behavior:
     ///   - Cancels any existing active WhatsApp pack on this business (one pack at a time).

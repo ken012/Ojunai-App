@@ -146,6 +146,15 @@ public class FlutterwaveService
             _db.PaystackEventLogs.Add(new PaystackEventLog { EventId = verifiedTxRef, EventType = "flutterwave.inline.verified" });
         }
 
+        // WhatsApp pack purchase — tx_ref pattern "ojunai-pack-{packCode}-{guid:N}-{ticks}".
+        // Handle this BEFORE the tier-plan parsing below so a pack purchase doesn't accidentally
+        // mutate business.Plan.
+        if (!string.IsNullOrEmpty(verifiedTxRef) && verifiedTxRef.StartsWith("ojunai-pack-", StringComparison.Ordinal))
+        {
+            var packResult = await HandleWhatsAppPackVerifiedAsync(businessId, business, verifiedTxRef, chargeData);
+            return packResult;
+        }
+
         // Extract target plan and cycle from tx_ref: "ojunai-{guid:N}-{plan}-{cycle}-{ticks}"
         var validPlans = new[] { "starter", "shop", "pro", "business" };
         var validCycles = new[] { "monthly", "annual" };
@@ -760,5 +769,92 @@ public class FlutterwaveService
         {
             _logger.LogWarning(ex, "Failed to send Flutterwave payment confirmation for {Business}", business.Name);
         }
+    }
+
+    /// <summary>
+    /// Build the tx_ref for a WhatsApp pack purchase. Pattern: ojunai-pack-{packCode}-{businessId:N}-{ticks}.
+    /// Webhook + verify recognize this prefix and route to pack activation.
+    /// </summary>
+    public static string BuildPackTxRef(string packCode, Guid businessId)
+        => $"ojunai-pack-{packCode.ToLowerInvariant()}-{businessId:N}-{DateTime.UtcNow.Ticks}";
+
+    /// <summary>
+    /// Activate a WhatsApp pack after a verified Flutterwave charge. Validates amount matches
+    /// the canonical pack price, cancels any existing active pack, upserts a new BusinessAddOn,
+    /// logs a BillingEvent. Returns null on success or an error message string for the caller
+    /// to surface (mirrors VerifyAndActivateAsync's return convention).
+    /// </summary>
+    private async Task<string?> HandleWhatsAppPackVerifiedAsync(
+        Guid businessId, Business business, string txRef, JsonElement chargeData)
+    {
+        // Pattern: ojunai-pack-{packCode}-{guid:N}-{ticks}
+        var parts = txRef.Split('-');
+        if (parts.Length != 5 || parts[0] != "ojunai" || parts[1] != "pack")
+            return "Malformed pack tx_ref.";
+        var packCode = parts[2].ToLowerInvariant();
+        if (!BillingConfig.WhatsAppPackCodes.Contains(packCode))
+            return $"Unknown WhatsApp pack code: {packCode}.";
+
+        var currency = business.BillingCurrency ?? business.Currency ?? "USD";
+        var cycle = (business.BillingCycle ?? "monthly").Equals("annual", StringComparison.OrdinalIgnoreCase)
+            ? BillingConfig.BillingCycle.Annual
+            : BillingConfig.BillingCycle.Monthly;
+        var expected = BillingConfig.GetWhatsAppPackPrice(packCode, cycle, currency);
+        if (!expected.HasValue)
+            return $"No price for pack {packCode}/{cycle}/{currency}.";
+
+        decimal? paid = chargeData.TryGetProperty("amount", out var amtEl) ? amtEl.GetDecimal() : null;
+        if (paid.HasValue && Math.Abs(paid.Value - expected.Value) > 1)
+        {
+            _logger.LogWarning(
+                "Flutterwave pack amount mismatch for {Business}/{Pack}: paid={Paid} expected={Expected}",
+                business.Name, packCode, paid.Value, expected.Value);
+            return $"Amount mismatch. Expected {BillingConfig.FormatPrice(expected.Value, currency)}, received {BillingConfig.FormatPrice(paid ?? 0, currency)}.";
+        }
+
+        // Cancel existing + insert new
+        var now = DateTime.UtcNow;
+        var existing = await _db.BusinessAddOns
+            .Where(a => a.BusinessId == businessId
+                && a.Status == "active"
+                && a.AddOnCode.StartsWith("whatsapp_pack."))
+            .ToListAsync();
+        foreach (var old in existing)
+        {
+            old.Status = "cancelled";
+            old.CancelledAtUtc = now;
+            old.UpdatedAtUtc = now;
+        }
+        var nextBilling = cycle == BillingConfig.BillingCycle.Annual ? now.AddYears(1) : now.AddMonths(1);
+        _db.BusinessAddOns.Add(new BusinessAddOn
+        {
+            BusinessId = businessId,
+            AddOnCode = $"whatsapp_pack.{packCode}",
+            Status = "active",
+            Quantity = 1,
+            BilledAmount = expected.Value,
+            BilledCurrency = currency,
+            AddedAtUtc = now,
+            NextBillingAtUtc = nextBilling,
+            UpdatedAtUtc = now,
+        });
+
+        _db.BillingEvents.Add(new BillingEvent
+        {
+            BusinessId = businessId,
+            EventType = "whatsapp_pack.activated",
+            Provider = "flutterwave",
+            Plan = $"whatsapp_pack.{packCode}",
+            Amount = expected.Value,
+            Currency = currency,
+            PaymentMethod = "card",
+            Status = "success"
+        });
+
+        await _db.SaveChangesAsync();
+        _logger.LogInformation(
+            "WhatsApp pack activated via Flutterwave: business={Business} pack={Pack} amount={Amount} {Currency}",
+            business.Name, packCode, expected.Value, currency);
+        return null;
     }
 }
