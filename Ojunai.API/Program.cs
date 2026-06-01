@@ -128,6 +128,7 @@ builder.Services.AddScoped<IPdfExportService, PdfExportService>();
 builder.Services.AddScoped<IReceiptService, ReceiptService>();
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 builder.Services.AddScoped<ISuppressionService, SuppressionService>();
+builder.Services.AddScoped<IUsageService, UsageService>();
 builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
 builder.Services.AddScoped<IClaudeParsingService, ClaudeParsingService>();
 builder.Services.AddScoped<IEntityResolverService, EntityResolverService>();

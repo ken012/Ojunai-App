@@ -42,6 +42,7 @@ import {
   getDefaultCurrency,
   toBillingCurrency,
 } from "@/lib/pricing";
+import { QuotaMeter } from "@/components/quota-meter";
 
 const CURRENCIES = [
   "NGN", "GHS", "KES", "ZAR", "TZS", "UGX", "RWF", "XAF", "XOF", "EGP", "ETB",
@@ -290,6 +291,10 @@ function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection id="plan" title="Plan & Billing" icon={<CreditCard size={14} />}>
+      {/* Current-month assistant action usage — sits above the plan picker so a merchant
+          who's hit a cap sees the trigger right where they decide whether to upgrade. */}
+      <QuotaMeter />
+      <div className="h-3" />
       {/* Plan */}
       <PlanCard business={business} />
       </SettingsSection>

@@ -18,15 +18,34 @@ public class SubscriptionController : OjunaiBaseController
     private readonly FlutterwaveService _flutterwave;
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
+    private readonly IUsageService _usage;
     private readonly ILogger<SubscriptionController> _logger;
 
-    public SubscriptionController(PaystackService paystack, FlutterwaveService flutterwave, AppDbContext db, IConfiguration config, ILogger<SubscriptionController> logger)
+    public SubscriptionController(
+        PaystackService paystack,
+        FlutterwaveService flutterwave,
+        AppDbContext db,
+        IConfiguration config,
+        IUsageService usage,
+        ILogger<SubscriptionController> logger)
     {
         _paystack = paystack;
         _flutterwave = flutterwave;
         _db = db;
         _config = config;
+        _usage = usage;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Per-business quota snapshot for the current calendar month. Read by the dashboard's
+    /// quota meters + cap-hit upsell modal — refreshed every minute or so on the client.
+    /// </summary>
+    [HttpGet("quota")]
+    public async Task<IActionResult> GetQuota(CancellationToken ct)
+    {
+        var snapshot = await _usage.GetSnapshotAsync(BusinessId, ct);
+        return Ok(snapshot);
     }
 
     /// <summary>

@@ -9,6 +9,7 @@ import { TrialBanner } from "@/components/trial-banner";
 import { InstallBanner } from "@/components/install-banner";
 import { EmailVerificationBanner } from "@/components/email-verification-banner";
 import { DashboardBackground } from "@/components/dashboard-background";
+import { CapHitDialog } from "@/components/cap-hit-dialog";
 
 export default function DashboardLayout({
   children,
@@ -37,10 +38,20 @@ export default function DashboardLayout({
             className="lg:hidden"
             style={{ height: "calc(env(safe-area-inset-top) + 3rem)" }}
           />
-          <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">{children}</div>
+          <div
+            className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto"
+            style={{
+              // In landscape on iPhone the front camera / dynamic island sits on
+              // the left or right edge of the viewport. Add safe-area insets so
+              // dashboard content doesn't slide under it.
+              paddingLeft: "max(1rem, env(safe-area-inset-left))",
+              paddingRight: "max(1rem, env(safe-area-inset-right))",
+            }}
+          >{children}</div>
         </main>
       </div>
       <InstallBanner />
+      <CapHitDialog />
     </DataSyncProvider>
   );
 }

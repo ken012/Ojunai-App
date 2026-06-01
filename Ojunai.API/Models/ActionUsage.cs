@@ -22,6 +22,16 @@ public class ActionUsage
     public ProductLine ProductLine { get; set; }
     public DateTime PeriodStartUtc { get; set; }
 
+    /// <summary>Total actions across all channels — historical / aggregate counter.</summary>
     public int Count { get; set; }
+
+    /// <summary>Actions where the inbound channel was WhatsApp. Sub-count of <see cref="Count"/>.
+    /// Drives the WhatsApp pack quota meter — capped by whichever WhatsApp pack the business has.</summary>
+    public int WhatsAppCount { get; set; }
+
+    /// <summary>Actions where the inbound channel was Telegram or Messenger (the combined pool).
+    /// Sub-count of <see cref="Count"/>. Drives the T+M meter — capped by the business's plan tier.</summary>
+    public int MessagingCount { get; set; }
+
     public DateTime LastIncrementedAtUtc { get; set; } = DateTime.UtcNow;
 }

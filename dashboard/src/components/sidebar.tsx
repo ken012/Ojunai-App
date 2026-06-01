@@ -9,6 +9,7 @@ import { logout } from "@/lib/auth";
 import { useBusiness } from "@/lib/data-sync";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
+import { QuotaMeter } from "@/components/quota-meter";
 import {
   Home,
   ShoppingCart,
@@ -118,6 +119,7 @@ export function Sidebar() {
       >
         <LogoMark size="sm" className="text-cyan-300" />
         <div className="flex items-center gap-1">
+          <QuotaMeter compact />
           <NotificationBell />
           <button
             onClick={() => setOpen(!open)}
@@ -164,10 +166,11 @@ export function Sidebar() {
         <div className="p-5 border-b border-slate-700">
           <div className="flex items-center justify-between">
             <LogoMark size="md" className="text-cyan-300" />
-            {/* Bell only in this sidebar on desktop. Mobile shows the bell in the
-                top bar (line ~113), so we'd render it twice if it stayed visible
-                here when the drawer slides open. */}
-            <div className="hidden lg:block">
+            {/* Quota meter + bell only on desktop here. Mobile shows them in the
+                top bar (line ~113), so they'd render twice if visible here when
+                the drawer slides open. */}
+            <div className="hidden lg:flex items-center gap-1">
+              <QuotaMeter compact />
               <NotificationBell />
             </div>
           </div>
