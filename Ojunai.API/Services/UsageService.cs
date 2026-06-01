@@ -90,17 +90,27 @@ public static class QuotaLimits
 
     // ── WhatsApp paywall tuning ────────────────────────────────────────────
     // The numbers below drive both the meter (cap displayed when no pack is active) and the
-    // gate (what the bot does when caps are crossed). Free-taste = 15 actions/mo with no
-    // grace; paid pack = cap + 5 grace actions then blocked.
+    // gate (what the bot does when caps are crossed). Behavior depends on the plan tier:
+    //   - Free tier (Starter): WhatsApp is not available at all without a pack. The merchant
+    //     already gets 15 free T+M actions as their taste; WhatsApp is fully paid.
+    //   - Paid tier without a pack: 15 free WhatsApp actions/mo as a taste-test, then block.
+    //   - Paid tier with a pack: pack cap + 5 grace, then block.
 
-    /// <summary>Free WhatsApp taste-test cap for businesses without an active pack.</summary>
+    /// <summary>Plans that DON'T get a free WhatsApp taste-test. Free tier — must buy a pack
+    /// or upgrade the plan to even try WhatsApp.</summary>
+    public static readonly HashSet<string> FreeTierPlans = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "starter",   // current free plan name
+    };
+
+    /// <summary>Free WhatsApp taste-test cap for PAID-plan businesses without an active pack.</summary>
     public const int WhatsAppFreeTasteActions = 15;
 
     /// <summary>Grace allowance after a paid pack's cap is exhausted — soft buffer before
     /// hard block, lets a merchant cross the line mid-conversation without going dark.</summary>
     public const int WhatsAppPackGraceActions = 5;
 
-    /// <summary>Send the "approaching cap" warning at this fraction of cap (free or pack).</summary>
+    /// <summary>Send the "approaching cap" warning at this fraction of cap (taste or pack).</summary>
     public const double WhatsAppApproachingThreshold = 0.80;
 }
 
@@ -183,14 +193,15 @@ public class UsageService : IUsageService
         var packName = packCode?["whatsapp_pack.".Length..].ToLowerInvariant() ?? "none";
 
         // Pull WhatsApp cap from the BillingConfig catalog (single source of truth for pack
-        // metadata). Fall back to 0 if the active pack code isn't in the catalog — i.e. a
-        // stale row from a deprecated SKU. Treat as "no pack" rather than crashing the meter.
-        // When the business has NO pack at all ("none"), surface the free taste-test cap
-        // (15) so the meter shows "X / 15 free" rather than "X / 0 — not included". The gate
-        // honors the same number.
-        var whatsAppCap = packName == "none"
-            ? QuotaLimits.WhatsAppFreeTasteActions
-            : BillingConfig.WhatsAppPackActions.GetValueOrDefault(packName, 0);
+        // metadata). When the business has NO pack:
+        //   - PAID plan → surface the 15-action taste-test cap.
+        //   - FREE tier (Starter) → cap is 0; the taste-test is reserved for paid plans because
+        //     the Starter merchant already gets a free 15 T+M actions and pays for everything
+        //     else. WhatsApp specifically requires a pack purchase (or plan upgrade).
+        var isFreeTier = QuotaLimits.FreeTierPlans.Contains(planName);
+        var whatsAppCap = packName != "none"
+            ? BillingConfig.WhatsAppPackActions.GetValueOrDefault(packName, 0)
+            : isFreeTier ? 0 : QuotaLimits.WhatsAppFreeTasteActions;
         var messagingCap = QuotaLimits.MessagingByPlan.GetValueOrDefault(planName, 0);
 
         var whatsAppUsed = row?.WhatsAppCount ?? 0;
@@ -224,16 +235,31 @@ public class UsageService : IUsageService
         var used = snapshot.WhatsApp.Used;
         var cap = snapshot.WhatsApp.Cap;
         var hasNoPack = string.Equals(snapshot.WhatsAppPackName, "none", StringComparison.OrdinalIgnoreCase);
+        var isFreeTier = QuotaLimits.FreeTierPlans.Contains(snapshot.PlanName);
+
+        // ── Free tier (Starter) without a pack: WhatsApp is fully gated. ──────
+        // The Starter merchant already gets 15 T+M actions free; WhatsApp itself requires
+        // either a pack or a plan upgrade.
+        if (hasNoPack && isFreeTier)
+        {
+            return new WhatsAppGateResult(
+                WhatsAppGate.Block,
+                "WhatsApp isn't included on the Starter plan. " +
+                "Upgrade your plan or add a WhatsApp pack at https://app.ojunai.com/settings#plan.",
+                WhatsAppGateNotificationKind.Block);
+        }
+
         var approachingAt = (int)Math.Ceiling(cap * QuotaLimits.WhatsAppApproachingThreshold);
 
-        // ── Free taste-test path ───────────────────────────────────────────
+        // ── Paid plan, no pack: 15-action taste-test ───────────────────────
         if (hasNoPack)
         {
             if (used >= QuotaLimits.WhatsAppFreeTasteActions)
             {
                 return new WhatsAppGateResult(
                     WhatsAppGate.Block,
-                    "WhatsApp is a paid channel. Add a pack at https://app.ojunai.com/settings#plan to continue messaging.",
+                    $"You've used your free WhatsApp taste-test ({QuotaLimits.WhatsAppFreeTasteActions} actions). " +
+                    "Add a pack at https://app.ojunai.com/settings#plan to continue messaging.",
                     WhatsAppGateNotificationKind.Block);
             }
             if (used >= approachingAt)
