@@ -425,9 +425,35 @@ public class AuthController : OjunaiBaseController
     }
 
     /// <summary>
-    /// Consumes the magic-link JWT issued by the Telegram signup handler. Sets the user's
-    /// password and returns a normal AuthResponse (real session JWT) so the dashboard treats
-    /// the visitor as logged in.
+    /// Start a signup-via-Messenger flow. Same shape as the Telegram variant — issues a
+    /// single-use token, returns an m.me deep link that opens the page's bot with the token
+    /// as the ref parameter.
+    /// </summary>
+    [AllowAnonymous]
+    [AuthRateLimit]
+    [HttpPost("signup-via-messenger/start")]
+    public async Task<ActionResult<ApiResponse<SignupViaMessengerStartResponse>>> StartSignupViaMessenger()
+    {
+        var pageUsername = _config["Messenger:PageUsername"];
+        if (string.IsNullOrEmpty(pageUsername))
+            return StatusCode(503, ApiResponse<SignupViaMessengerStartResponse>.Fail(
+                "Messenger signup is not configured on this server."));
+
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var (token, deepLink) = await _authConcrete.StartMessengerSignupAsync(pageUsername, ip);
+
+        return Ok(ApiResponse<SignupViaMessengerStartResponse>.Ok(new SignupViaMessengerStartResponse
+        {
+            DeepLink = deepLink,
+            PageUsername = pageUsername,
+            ExpiresInSeconds = 30 * 60,
+        }, "Open the link in Messenger and tap Get Started."));
+    }
+
+    /// <summary>
+    /// Consumes the magic-link JWT issued by the Telegram OR Messenger signup handler. Sets
+    /// the user's password and returns a normal AuthResponse (real session JWT) so the
+    /// dashboard treats the visitor as logged in.
     /// </summary>
     [AllowAnonymous]
     [AuthRateLimit]
@@ -438,6 +464,13 @@ public class AuthController : OjunaiBaseController
         SetAuthCookie(result.Token!, result.ExpiresAt);
         return Ok(ApiResponse<AuthResponse>.Ok(result, "Welcome to Ojunai."));
     }
+}
+
+public class SignupViaMessengerStartResponse
+{
+    public string DeepLink { get; set; } = string.Empty;
+    public string PageUsername { get; set; } = string.Empty;
+    public int ExpiresInSeconds { get; set; }
 }
 
 public class SignupViaTelegramStartResponse

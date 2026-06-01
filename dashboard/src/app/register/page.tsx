@@ -41,6 +41,7 @@ export default function RegisterPage() {
   const [verifying, setVerifying] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [telegramStarting, setTelegramStarting] = useState(false);
+  const [messengerStarting, setMessengerStarting] = useState(false);
 
   const {
     register,
@@ -120,6 +121,33 @@ export default function RegisterPage() {
       }
     } finally {
       setTelegramStarting(false);
+    }
+  }
+
+  async function handleSignupViaMessenger() {
+    setError(null);
+    setMessengerStarting(true);
+    try {
+      const { data } = await api.post<{ data: { deepLink: string; pageUsername: string } }>(
+        "/auth/signup-via-messenger/start",
+        {},
+      );
+      const deepLink = data.data?.deepLink;
+      if (!deepLink) {
+        setError("Couldn't start Messenger signup. Try the phone-OTP flow above.");
+        setMessengerStarting(false);
+        return;
+      }
+      window.open(deepLink, "_blank", "noopener,noreferrer");
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { errors?: string[] }; status?: number } };
+      if (axiosErr.response?.status === 503) {
+        setError("Messenger signup isn't enabled on this server yet. Use the phone-OTP flow above for now.");
+      } else {
+        setError(axiosErr.response?.data?.errors?.[0] ?? "Couldn't start Messenger signup.");
+      }
+    } finally {
+      setMessengerStarting(false);
     }
   }
 
@@ -232,19 +260,28 @@ export default function RegisterPage() {
           )}
 
           {step === "details" && (
-            <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-800">
-              <p className="text-xs text-center text-slate-500 dark:text-slate-400 mb-3">Or</p>
+            <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-800 space-y-2">
+              <p className="text-xs text-center text-slate-500 dark:text-slate-400 mb-1">Or</p>
               <Button
                 type="button"
                 variant="outline"
                 className="w-full"
                 onClick={handleSignupViaTelegram}
-                disabled={telegramStarting}
+                disabled={telegramStarting || messengerStarting}
               >
                 {telegramStarting ? "Opening Telegram…" : "Sign up via Telegram"}
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={handleSignupViaMessenger}
+                disabled={telegramStarting || messengerStarting}
+              >
+                {messengerStarting ? "Opening Messenger…" : "Sign up via Messenger"}
+              </Button>
               <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center mt-2">
-                Verifies your phone through Telegram. You&apos;ll set a password after.
+                Verifies your phone through the chat app. You&apos;ll set a password after.
               </p>
             </div>
           )}

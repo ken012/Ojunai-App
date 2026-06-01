@@ -428,6 +428,122 @@ public class AuthService : IAuthService
     }
 
     /// <summary>
+    /// Mirror of <see cref="StartTelegramSignupAsync"/> for Messenger. Deep link points to
+    /// m.me with the signup token as the ref parameter — the MessengerAdapter surfaces this
+    /// back to the orchestrator prefixed as "mref:".
+    /// </summary>
+    public async Task<(string token, string deepLink)> StartMessengerSignupAsync(
+        string pageUsername,
+        string? requestIp,
+        CancellationToken ct = default)
+    {
+        var raw = System.Security.Cryptography.RandomNumberGenerator.GetHexString(64).ToLowerInvariant();
+        var token = $"signup_{raw}";
+
+        var row = new SignupChannelToken
+        {
+            Channel = Models.Messaging.Channel.Messenger,
+            Token = token,
+            ExpiresAtUtc = DateTime.UtcNow.AddMinutes(30),
+            RequestIp = requestIp,
+        };
+        _db.SignupChannelTokens.Add(row);
+        await _db.SaveChangesAsync(ct);
+
+        var deepLink = $"https://m.me/{pageUsername}?ref={token}";
+        return (token, deepLink);
+    }
+
+    /// <summary>
+    /// Mirror of <see cref="CompleteTelegramSignupAsync"/> for Messenger. Same flow — bot
+    /// captures phone in chat, this method creates the User + Business + Messenger
+    /// ContactIdentity, returns the post-signup JWT for the /post-signup page.
+    ///
+    /// Identity model note: Messenger PSIDs are page-scoped (verified by Meta as the same
+    /// user identity for each Page), but they don't carry a phone like Telegram's verified
+    /// contact-share. The phone here is user-typed and trusted — for stronger verification
+    /// (e.g. SMS OTP) we'd add a second factor before calling this method.
+    /// </summary>
+    public async Task<string> CompleteMessengerSignupAsync(
+        string token,
+        string phoneNumber,
+        string fullName,
+        string businessName,
+        string messengerPsid,
+        CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        var row = await _db.SignupChannelTokens.FirstOrDefaultAsync(t => t.Token == token, ct)
+            ?? throw new KeyNotFoundException("Signup link not found or expired.");
+
+        if (row.ConsumedAtUtc.HasValue)
+            throw new InvalidOperationException("This signup link has already been used.");
+        if (row.ExpiresAtUtc < now)
+            throw new InvalidOperationException("This signup link has expired. Start over from the dashboard.");
+        if (row.Channel != Models.Messaging.Channel.Messenger)
+            throw new InvalidOperationException("Token channel mismatch.");
+
+        var normalizedPhone = WhatsAppService.NormalizePhone(phoneNumber);
+        if (string.IsNullOrEmpty(normalizedPhone))
+            throw new InvalidOperationException("Valid phone number required.");
+
+        var phoneExists = await _db.Users.AnyAsync(u => u.PhoneNumber == normalizedPhone && u.IsActive, ct);
+        if (phoneExists)
+            throw new InvalidOperationException("Phone number already registered.");
+        var deactivated = await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == normalizedPhone && !u.IsActive, ct);
+        if (deactivated != null)
+        {
+            deactivated.PhoneNumber = $"x{deactivated.Id.ToString("N")[..18]}";
+            await _db.SaveChangesAsync(ct);
+        }
+
+        var inferred = Common.CountryLookup.InferFromPhone(normalizedPhone) ?? Common.CountryLookup.Default;
+        var business = new Business
+        {
+            Name = string.IsNullOrWhiteSpace(businessName) ? $"{fullName}'s Business" : businessName,
+            Country = inferred.Name,
+            Currency = inferred.Currency,
+            Timezone = inferred.Timezone,
+            Plan = "starter",
+            TrialEndsAt = now.AddDays(30),
+            AccountNumber = await Common.AccountNumberGenerator.GenerateUniqueAsync(_db)
+        };
+        _db.Businesses.Add(business);
+
+        var user = new User
+        {
+            BusinessId = business.Id,
+            FullName = string.IsNullOrWhiteSpace(fullName) ? "Owner" : fullName,
+            PhoneNumber = normalizedPhone,
+            PasswordHash = string.Empty,
+            MustChangePassword = true,
+            Role = UserRole.Owner,
+        };
+        _db.Users.Add(user);
+        business.OwnerUserId = user.Id;
+
+        _db.ContactIdentities.Add(new Models.ContactIdentity
+        {
+            UserId = user.Id,
+            BusinessId = business.Id,
+            Channel = Models.Messaging.Channel.Messenger,
+            ChannelIdentityValue = messengerPsid,
+            DisplayName = fullName,
+            LinkedAtUtc = now,
+            LastSeenAtUtc = now,
+        });
+
+        row.ConsumedAtUtc = now;
+        row.ConsumedByIdentity = messengerPsid;
+        row.CreatedUserId = user.Id;
+        row.CreatedBusinessId = business.Id;
+
+        await _db.SaveChangesAsync(ct);
+
+        return GeneratePostSignupJwt(user, business);
+    }
+
+    /// <summary>
     /// Consumes the magic-link JWT on /post-signup. Sets the user's password, returns a normal
     /// AuthResponse so the dashboard treats them as logged in.
     /// </summary>

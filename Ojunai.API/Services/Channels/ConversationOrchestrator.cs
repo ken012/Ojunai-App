@@ -27,6 +27,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
     private readonly Telegram.ITelegramIntentHandler _telegramIntent;
     private readonly Telegram.ITelegramSignupHandler _telegramSignup;
     private readonly Messenger.IMessengerIntentHandler _messengerIntent;
+    private readonly Messenger.IMessengerSignupHandler _messengerSignup;
     private readonly ILogger<ConversationOrchestrator> _logger;
 
     public ConversationOrchestrator(
@@ -37,6 +38,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         Telegram.ITelegramIntentHandler telegramIntent,
         Telegram.ITelegramSignupHandler telegramSignup,
         Messenger.IMessengerIntentHandler messengerIntent,
+        Messenger.IMessengerSignupHandler messengerSignup,
         ILogger<ConversationOrchestrator> logger)
     {
         _db = db;
@@ -46,6 +48,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         _telegramIntent = telegramIntent;
         _telegramSignup = telegramSignup;
         _messengerIntent = messengerIntent;
+        _messengerSignup = messengerSignup;
         _logger = logger;
     }
 
@@ -263,6 +266,16 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         if (text.StartsWith("mref:", StringComparison.Ordinal))
         {
             var token = text["mref:".Length..];
+
+            // Phase 3.5: signup tokens are prefixed "signup_" — route to a separate handler that
+            // doesn't require an existing User/Business. Regular ChannelLinkToken consume below
+            // runs only when the prefix doesn't match, so behavior for existing users is unchanged.
+            if (token.StartsWith("signup_", StringComparison.Ordinal))
+            {
+                await _messengerSignup.StartAsync(token, message, adapter, ct);
+                return;
+            }
+
             var bound = await _linking.ConsumeAsync(
                 token,
                 Channel.Messenger,
@@ -287,6 +300,15 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
                     "✅ Connected! This Messenger chat is now linked to your Ojunai business.\n\n" +
                     "I'll be able to record sales, expenses, and payments via chat shortly — full handling rolls out next.",
             }, ct);
+            return;
+        }
+
+        // Phase 3.5: if this PSID has a pending signup reservation (set by mref:signup_xxx
+        // earlier), treat this text as the phone number step. Existing-user flows aren't
+        // affected because they'd be identified by the linked ContactIdentity below.
+        if (await _messengerSignup.IsAwaitingSignupAsync(message.SenderIdentity, ct))
+        {
+            await _messengerSignup.HandlePhoneAsync(message, adapter, ct);
             return;
         }
 
