@@ -257,6 +257,7 @@ public class WhatsAppService : IWhatsAppService
     private readonly PlanGuard _planGuard;
     private readonly IServiceProvider _serviceProvider;
     private readonly IConfiguration _config;
+    private readonly IUsageService _usage;
     private readonly ILogger<WhatsAppService> _logger;
 
     public WhatsAppService(
@@ -271,6 +272,7 @@ public class WhatsAppService : IWhatsAppService
         PlanGuard planGuard,
         IServiceProvider serviceProvider,
         IConfiguration config,
+        IUsageService usage,
         ILogger<WhatsAppService> logger)
     {
         _db = db;
@@ -284,6 +286,7 @@ public class WhatsAppService : IWhatsAppService
         _planGuard = planGuard;
         _serviceProvider = serviceProvider;
         _config = config;
+        _usage = usage;
         _logger = logger;
     }
 
@@ -335,6 +338,13 @@ public class WhatsAppService : IWhatsAppService
         };
         _db.MessageLogs.Add(log);
         await _db.SaveChangesAsync();
+
+        // Count the action against quota only when the message reached a real business —
+        // onboarding / unknown numbers / rate-limited / duplicate retries don't count.
+        if (user?.BusinessId is Guid bId)
+        {
+            await _usage.RecordActionAsync(bId, AssistantChannel.WhatsApp);
+        }
 
         // Unknown number OR deactivated account → hand off to the onboarding flow.
         // Onboarding presents a menu (1=new business, 2=staff, 3=help) and guides new signups.

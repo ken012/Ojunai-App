@@ -45,6 +45,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
     private readonly MessengerAdapter _messenger;
     private readonly IWhatsAppService _whatsappDispatch;
     private readonly IAlertService _alerts;
+    private readonly IUsageService _usage;
     private readonly ILogger<MessengerIntentHandler> _logger;
 
     public MessengerIntentHandler(
@@ -59,6 +60,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         MessengerAdapter messenger,
         IWhatsAppService whatsappDispatch,
         IAlertService alerts,
+        IUsageService usage,
         ILogger<MessengerIntentHandler> logger)
     {
         _db = db;
@@ -72,6 +74,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         _messenger = messenger;
         _whatsappDispatch = whatsappDispatch;
         _alerts = alerts;
+        _usage = usage;
         _logger = logger;
     }
 
@@ -122,6 +125,10 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         var businessId = boundIdentity.BusinessId.Value;
         var userId = boundIdentity.UserId.Value;
         var rawText = message.Text ?? string.Empty;
+
+        // Count this against the business's Telegram+Messenger quota. Both fresh messages and
+        // quick-reply / postback taps bump the counter — same rationale as Telegram.
+        await _usage.RecordActionAsync(businessId, AssistantChannel.Messenger, ct);
 
         // Quick-reply / postback taps surface as ConversationMessage.Text set to the button's
         // payload string (MessengerAdapter pulls it from quick_reply.payload or postback.payload).
