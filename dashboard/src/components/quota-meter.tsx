@@ -97,7 +97,7 @@ function CompactQuotaButton({
   setOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
 }) {
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const [coords, setCoords] = useState<{ top: number; right: number } | null>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -107,11 +107,18 @@ function CompactQuotaButton({
   useEffect(() => {
     if (!open || !buttonRef.current) return;
     const rect = buttonRef.current.getBoundingClientRect();
-    // Right-align: distance from viewport right edge. mt-2 = 8px below button.
-    setCoords({
-      top: rect.bottom + 8,
-      right: Math.max(8, window.innerWidth - rect.right),
-    });
+    const popoverWidth = 320; // matches the w-80 below
+    const margin = 8;
+
+    // Anchor the popover's left edge to the button's left, then clamp so it stays on-screen.
+    // When the button sits in the sidebar (left side of the viewport), the popover naturally
+    // extends rightward into the main content area. On narrow screens the right-clamp keeps it
+    // visible. The left-clamp protects against pathological cases (very narrow phones).
+    const idealLeft = rect.left;
+    const maxLeft = window.innerWidth - popoverWidth - margin;
+    const left = Math.max(margin, Math.min(idealLeft, maxLeft));
+
+    setCoords({ top: rect.bottom + 8, left });
   }, [open]);
 
   return (
@@ -133,7 +140,7 @@ function CompactQuotaButton({
             <div className="fixed inset-0 z-[9998]" onClick={() => setOpen(false)} />
             <div
               className="fixed z-[9999] w-80 max-w-[calc(100vw-1rem)] rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg p-4"
-              style={{ top: coords.top, right: coords.right }}
+              style={{ top: coords.top, left: coords.left }}
             >
               <QuotaCardBody data={data} />
             </div>
