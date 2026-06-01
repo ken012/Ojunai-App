@@ -339,15 +339,9 @@ public class WhatsAppService : IWhatsAppService
         _db.MessageLogs.Add(log);
         await _db.SaveChangesAsync();
 
-        // Count the action against quota only when the message reached a real business —
-        // onboarding / unknown numbers / rate-limited / duplicate retries don't count.
-        if (user?.BusinessId is Guid bId)
-        {
-            await _usage.RecordActionAsync(bId, AssistantChannel.WhatsApp);
-        }
-
         // Unknown number OR deactivated account → hand off to the onboarding flow.
         // Onboarding presents a menu (1=new business, 2=staff, 3=help) and guides new signups.
+        // EXEMPT from the WhatsApp pack gate by design — new signups can't have a pack yet.
         if (user == null)
         {
             var onboarding = _serviceProvider.GetRequiredService<OnboardingService>();
@@ -364,6 +358,42 @@ public class WhatsAppService : IWhatsAppService
             await _db.SaveChangesAsync();
             return;
         }
+
+        // ── WhatsApp paywall gate ─────────────────────────────────────────────
+        // Phase 2.5 introduced WhatsApp packs as a paid add-on. This gate enforces the
+        // model end-to-end: free taste-test of 15 actions when no pack is active, then
+        // block. Paid packs get their cap + a 5-action grace before hard block. The bot
+        // sends ONE warning/block message per day per business (per kind) so a user
+        // hitting the cap doesn't get spammed on every subsequent message.
+        var gate = await _usage.GetWhatsAppGateAsync(user.BusinessId);
+
+        if (gate.State == WhatsAppGate.Block)
+        {
+            if (gate.NotificationKind.HasValue
+                && !string.IsNullOrEmpty(gate.Message)
+                && _usage.MarkNotifiedIfNewDay(user.BusinessId, gate.NotificationKind.Value))
+            {
+                await SendMessageAsync(from, gate.Message);
+            }
+            log.ProcessingStatus = MessageProcessingStatus.Failed;
+            log.ParsedIntent = "whatsapp_gate.blocked";
+            await _db.SaveChangesAsync();
+            return;
+        }
+
+        if ((gate.State == WhatsAppGate.WarnApproaching || gate.State == WhatsAppGate.WarnGrace)
+            && gate.NotificationKind.HasValue
+            && !string.IsNullOrEmpty(gate.Message)
+            && _usage.MarkNotifiedIfNewDay(user.BusinessId, gate.NotificationKind.Value))
+        {
+            // One-shot heads-up before continuing — user still gets their normal response below.
+            await SendMessageAsync(from, gate.Message);
+        }
+
+        // Count the action — we're going to process it. Blocked messages above never reach
+        // this point and don't push the counter further over the cap (would inflate usage
+        // metrics for a service we didn't actually deliver).
+        await _usage.RecordActionAsync(user.BusinessId, AssistantChannel.WhatsApp);
 
         // Enforce monthly message limit per plan (e.g., Starter = 150/month, Shop = 850, Pro = unlimited).
         // This only counts registered users' messages — onboarding messages (null BusinessId) are excluded.
