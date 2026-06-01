@@ -297,6 +297,212 @@ public class AuthService : IAuthService
     public AuthResponse BuildAuthResponsePublic(User user, Business business, bool? overrideMustChange = null)
         => BuildAuthResponse(user, business, overrideMustChange);
 
+    // ─── Phase 3: Channel-native signup (Telegram) ────────────────────────────────
+    //
+    // Visitor on /register opts into "Sign up via Telegram". We issue a single-use token,
+    // hand it to the user via a t.me deep link, and wait for the bot to complete signup.
+    //
+    // Why a separate flow vs. the existing RegisterOwnerAsync:
+    //  - No password collected on-screen — set after signup on /post-signup
+    //  - Phone proven via Telegram's verified contact-share, not a 6-digit OTP
+    //  - Business name + owner name captured in the chat, not on the web form
+    //
+    // This path is purely additive — RegisterOwnerAsync still backs the web phone-OTP path.
+
+    public async Task<(string token, string deepLink)> StartTelegramSignupAsync(
+        string botUsername,
+        string? requestIp,
+        CancellationToken ct = default)
+    {
+        // 64 random hex chars + prefix. Prefix distinguishes signup tokens from regular
+        // ChannelLinkToken values at the orchestrator's /start dispatch.
+        var raw = System.Security.Cryptography.RandomNumberGenerator.GetHexString(64).ToLowerInvariant();
+        var token = $"signup_{raw}";
+
+        var row = new SignupChannelToken
+        {
+            Channel = Models.Messaging.Channel.Telegram,
+            Token = token,
+            ExpiresAtUtc = DateTime.UtcNow.AddMinutes(30),
+            RequestIp = requestIp,
+        };
+        _db.SignupChannelTokens.Add(row);
+        await _db.SaveChangesAsync(ct);
+
+        // Telegram deep link: tap = opens Telegram client + sends "/start <token>" to the bot.
+        var deepLink = $"https://t.me/{botUsername}?start={token}";
+        return (token, deepLink);
+    }
+
+    /// <summary>
+    /// Called by the Telegram signup handler after the bot has captured phone + name. Creates
+    /// the User + Business + ContactIdentity, stamps the IDs back on the token row, and returns
+    /// a one-time JWT the user redeems on /post-signup to set their password and log in.
+    ///
+    /// Idempotency: a token can only be consumed once (ConsumedAtUtc check); a re-consume
+    /// throws so the caller surfaces a clear error to the user.
+    /// </summary>
+    public async Task<string> CompleteTelegramSignupAsync(
+        string token,
+        string phoneNumber,
+        string fullName,
+        string businessName,
+        string telegramChatId,
+        CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        var row = await _db.SignupChannelTokens.FirstOrDefaultAsync(t => t.Token == token, ct)
+            ?? throw new KeyNotFoundException("Signup link not found or expired.");
+
+        if (row.ConsumedAtUtc.HasValue)
+            throw new InvalidOperationException("This signup link has already been used.");
+        if (row.ExpiresAtUtc < now)
+            throw new InvalidOperationException("This signup link has expired. Start over from the dashboard.");
+        if (row.Channel != Models.Messaging.Channel.Telegram)
+            throw new InvalidOperationException("Token channel mismatch.");
+
+        var normalizedPhone = WhatsAppService.NormalizePhone(phoneNumber);
+        if (string.IsNullOrEmpty(normalizedPhone))
+            throw new InvalidOperationException("Valid phone number required.");
+
+        // Deactivated-user swap mirrors RegisterOwnerAsync — keep audit history intact.
+        var phoneExists = await _db.Users.AnyAsync(u => u.PhoneNumber == normalizedPhone && u.IsActive, ct);
+        if (phoneExists)
+            throw new InvalidOperationException("Phone number already registered.");
+        var deactivated = await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == normalizedPhone && !u.IsActive, ct);
+        if (deactivated != null)
+        {
+            deactivated.PhoneNumber = $"x{deactivated.Id.ToString("N")[..18]}";
+            await _db.SaveChangesAsync(ct);
+        }
+
+        var inferred = Common.CountryLookup.InferFromPhone(normalizedPhone) ?? Common.CountryLookup.Default;
+        var business = new Business
+        {
+            Name = string.IsNullOrWhiteSpace(businessName) ? $"{fullName}'s Business" : businessName,
+            Country = inferred.Name,
+            Currency = inferred.Currency,
+            Timezone = inferred.Timezone,
+            Plan = "starter",
+            TrialEndsAt = now.AddDays(30),
+            AccountNumber = await Common.AccountNumberGenerator.GenerateUniqueAsync(_db)
+        };
+        _db.Businesses.Add(business);
+
+        var user = new User
+        {
+            BusinessId = business.Id,
+            FullName = string.IsNullOrWhiteSpace(fullName) ? "Owner" : fullName,
+            PhoneNumber = normalizedPhone,
+            // No password yet — user sets it on /post-signup.
+            PasswordHash = string.Empty,
+            MustChangePassword = true,
+            Role = UserRole.Owner,
+        };
+        _db.Users.Add(user);
+        business.OwnerUserId = user.Id;
+
+        // Bind the Telegram identity right away — they can use the bot from the same chat.
+        _db.ContactIdentities.Add(new Models.ContactIdentity
+        {
+            UserId = user.Id,
+            BusinessId = business.Id,
+            Channel = Models.Messaging.Channel.Telegram,
+            ChannelIdentityValue = telegramChatId,
+            DisplayName = fullName,
+            LinkedAtUtc = now,
+            LastSeenAtUtc = now,
+        });
+
+        row.ConsumedAtUtc = now;
+        row.ConsumedByIdentity = telegramChatId;
+        row.CreatedUserId = user.Id;
+        row.CreatedBusinessId = business.Id;
+
+        await _db.SaveChangesAsync(ct);
+
+        // One-time JWT for the magic link. Same signing key as login JWTs — but with a
+        // claim that marks it as a "post-signup" token so we can validate it server-side
+        // and prevent reuse for arbitrary login.
+        return GeneratePostSignupJwt(user, business);
+    }
+
+    /// <summary>
+    /// Consumes the magic-link JWT on /post-signup. Sets the user's password, returns a normal
+    /// AuthResponse so the dashboard treats them as logged in.
+    /// </summary>
+    public async Task<AuthResponse> CompletePostSignupAsync(string postSignupJwt, string newPassword, CancellationToken ct = default)
+    {
+        var (pwOk, pwReason) = PasswordPolicy.Validate(newPassword);
+        if (!pwOk)
+            throw new InvalidOperationException(pwReason!);
+
+        var (userId, businessId) = ValidatePostSignupJwt(postSignupJwt);
+
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && u.IsActive, ct)
+            ?? throw new KeyNotFoundException("Signup session not found.");
+        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId, ct)
+            ?? throw new KeyNotFoundException("Signup session not found.");
+
+        // Only allow if the user genuinely has no password yet — replay guard. A normal
+        // logged-in user changing their password goes through ChangePasswordAsync instead.
+        if (!string.IsNullOrEmpty(user.PasswordHash))
+            throw new InvalidOperationException("Account already has a password. Use the login page.");
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+        user.MustChangePassword = false;
+        user.TokenVersion++;
+        await _db.SaveChangesAsync(ct);
+
+        return BuildAuthResponse(user, business);
+    }
+
+    private string GeneratePostSignupJwt(User user, Business business)
+    {
+        var key = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:SecretKey"]!));
+        var creds = new Microsoft.IdentityModel.Tokens.SigningCredentials(key, Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256);
+        var claims = new List<System.Security.Claims.Claim>
+        {
+            new System.Security.Claims.Claim("uid", user.Id.ToString()),
+            new System.Security.Claims.Claim("bid", business.Id.ToString()),
+            new System.Security.Claims.Claim("typ", "post_signup"),
+        };
+        // Short-lived: 30 min — long enough to read the chat, click the link, set a password.
+        var jwt = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken(
+            issuer: _config["Jwt:Issuer"] ?? "Ojunai",
+            audience: _config["Jwt:Audience"] ?? "Ojunai",
+            claims: claims,
+            expires: DateTime.UtcNow.AddMinutes(30),
+            signingCredentials: creds);
+        return new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(jwt);
+    }
+
+    private (Guid userId, Guid businessId) ValidatePostSignupJwt(string token)
+    {
+        var key = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:SecretKey"]!));
+        var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+        var principal = handler.ValidateToken(token,
+            new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuer = _config["Jwt:Issuer"] ?? "Ojunai",
+                ValidateAudience = true,
+                ValidAudience = _config["Jwt:Audience"] ?? "Ojunai",
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = key,
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.FromMinutes(2),
+            }, out _);
+
+        var typ = principal.FindFirst("typ")?.Value;
+        if (!string.Equals(typ, "post_signup", StringComparison.Ordinal))
+            throw new InvalidOperationException("Wrong token type.");
+
+        var uid = Guid.Parse(principal.FindFirst("uid")!.Value);
+        var bid = Guid.Parse(principal.FindFirst("bid")!.Value);
+        return (uid, bid);
+    }
+
     private AuthResponse BuildAuthResponse(User user, Business business, bool? overrideMustChange = null)
     {
         var token = GenerateJwt(user, business.Id);

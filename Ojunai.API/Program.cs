@@ -147,6 +147,7 @@ builder.Services.AddScoped<Ojunai.API.Services.Channels.IChannelLinkingService, 
 builder.Services.AddScoped<Ojunai.API.Services.Channels.INotificationDispatcher, Ojunai.API.Services.Channels.NotificationDispatcher>();
 builder.Services.AddScoped<Ojunai.API.Services.Channels.Telegram.IPendingTelegramActionService, Ojunai.API.Services.Channels.Telegram.PendingTelegramActionService>();
 builder.Services.AddScoped<Ojunai.API.Services.Channels.Telegram.ITelegramIntentHandler, Ojunai.API.Services.Channels.Telegram.TelegramIntentHandler>();
+builder.Services.AddScoped<Ojunai.API.Services.Channels.Telegram.ITelegramSignupHandler, Ojunai.API.Services.Channels.Telegram.TelegramSignupHandler>();
 builder.Services.AddScoped<Ojunai.API.Services.Channels.Messenger.IMessengerIntentHandler, Ojunai.API.Services.Channels.Messenger.MessengerIntentHandler>();
 builder.Services.AddScoped<Ojunai.API.Services.Channels.IConversationOrchestrator, Ojunai.API.Services.Channels.ConversationOrchestrator>();
 builder.Services.AddScoped<OnboardingService>();

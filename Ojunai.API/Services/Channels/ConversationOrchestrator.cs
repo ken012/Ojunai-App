@@ -25,6 +25,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
     private readonly IChannelRegistry _channels;
     private readonly IChannelLinkingService _linking;
     private readonly Telegram.ITelegramIntentHandler _telegramIntent;
+    private readonly Telegram.ITelegramSignupHandler _telegramSignup;
     private readonly Messenger.IMessengerIntentHandler _messengerIntent;
     private readonly ILogger<ConversationOrchestrator> _logger;
 
@@ -34,6 +35,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         IChannelRegistry channels,
         IChannelLinkingService linking,
         Telegram.ITelegramIntentHandler telegramIntent,
+        Telegram.ITelegramSignupHandler telegramSignup,
         Messenger.IMessengerIntentHandler messengerIntent,
         ILogger<ConversationOrchestrator> logger)
     {
@@ -42,6 +44,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         _channels = channels;
         _linking = linking;
         _telegramIntent = telegramIntent;
+        _telegramSignup = telegramSignup;
         _messengerIntent = messengerIntent;
         _logger = logger;
     }
@@ -123,6 +126,15 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
                 return;
             }
 
+            // Phase 3: signup tokens are prefixed "signup_" — route to a separate handler that
+            // doesn't require an existing User/Business. Regular ChannelLinkToken consume below
+            // runs only when the prefix doesn't match, so behavior for existing users is unchanged.
+            if (token.StartsWith("signup_", StringComparison.Ordinal))
+            {
+                await _telegramSignup.StartAsync(token, message, adapter, ct);
+                return;
+            }
+
             var bound = await _linking.ConsumeAsync(
                 token,
                 Channel.Telegram,
@@ -153,6 +165,15 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         // "help" and "/help" both flow through to the intent handler now (the short-circuit
         // dictionary in ClaudeParsingService matches both). Keeping help text in one place over
         // there makes it easy to keep Telegram, Messenger, and WhatsApp formats coherent.
+
+        // Phase 3: if this chat has a pending signup reservation (set by /start signup_xxx
+        // earlier), treat this text as the phone number step. Existing-user flows aren't
+        // affected because they would have been identified by the linked ContactIdentity below.
+        if (await _telegramSignup.IsAwaitingSignupAsync(message.SenderIdentity, ct))
+        {
+            await _telegramSignup.HandlePhoneAsync(message, adapter, ct);
+            return;
+        }
 
         // Anything else — natural language. Resolve the binding, hand to the intent handler.
         var identity = await _db.ContactIdentities

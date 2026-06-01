@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordStrengthHint } from "@/components/password-strength-hint";
 import { validatePassword } from "@/lib/password-policy";
+import { api } from "@/lib/api";
 
 const schema = z.object({
   fullName: z.string().min(2, "Full name required"),
@@ -39,6 +40,7 @@ export default function RegisterPage() {
   const [code, setCode] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [telegramStarting, setTelegramStarting] = useState(false);
 
   const {
     register,
@@ -90,6 +92,34 @@ export default function RegisterPage() {
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { errors?: string[] } } };
       setError(axiosErr.response?.data?.errors?.[0] ?? "Couldn't resend code.");
+    }
+  }
+
+  async function handleSignupViaTelegram() {
+    setError(null);
+    setTelegramStarting(true);
+    try {
+      const { data } = await api.post<{ data: { deepLink: string; botUsername: string } }>(
+        "/auth/signup-via-telegram/start",
+        {},
+      );
+      const deepLink = data.data?.deepLink;
+      if (!deepLink) {
+        setError("Couldn't start Telegram signup. Try the phone-OTP flow above.");
+        setTelegramStarting(false);
+        return;
+      }
+      // Open in a new tab so the user can come back here if Telegram isn't installed.
+      window.open(deepLink, "_blank", "noopener,noreferrer");
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { errors?: string[] }; status?: number } };
+      if (axiosErr.response?.status === 503) {
+        setError("Telegram signup isn't enabled on this server yet. Use the phone-OTP flow above for now.");
+      } else {
+        setError(axiosErr.response?.data?.errors?.[0] ?? "Couldn't start Telegram signup.");
+      }
+    } finally {
+      setTelegramStarting(false);
     }
   }
 
@@ -199,6 +229,24 @@ export default function RegisterPage() {
                 <Link href="/privacy" className="underline hover:text-slate-600">Privacy Policy</Link>.
               </p>
             </form>
+          )}
+
+          {step === "details" && (
+            <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-800">
+              <p className="text-xs text-center text-slate-500 dark:text-slate-400 mb-3">Or</p>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={handleSignupViaTelegram}
+                disabled={telegramStarting}
+              >
+                {telegramStarting ? "Opening Telegram…" : "Sign up via Telegram"}
+              </Button>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center mt-2">
+                Verifies your phone through Telegram. You&apos;ll set a password after.
+              </p>
+            </div>
           )}
 
           {step === "verify" && (

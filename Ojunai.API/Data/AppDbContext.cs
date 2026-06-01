@@ -42,6 +42,11 @@ public class AppDbContext : DbContext
     // ── Channel linking (Phase 2: Telegram, future: Messenger) ────────────────
     public DbSet<ChannelLinkToken> ChannelLinkTokens => Set<ChannelLinkToken>();
 
+    // ── Channel-native signup (Phase 3) — issued when a visitor opts into
+    // signup-via-Telegram on /register. Single-use; on consume, the bot creates a
+    // User + Business + ContactIdentity and stamps those IDs back onto the token row.
+    public DbSet<SignupChannelToken> SignupChannelTokens => Set<SignupChannelToken>();
+
     // ── Telegram pending actions (Phase 2.8: callback flows) ──────────────────
     public DbSet<PendingTelegramAction> PendingTelegramActions => Set<PendingTelegramAction>();
 
@@ -431,6 +436,18 @@ public class AppDbContext : DbContext
             // Lookup "find unconsumed token by value" — hot path for /start flow.
             e.HasIndex(x => x.Token).IsUnique();
             // For cleanup jobs that purge old tokens.
+            e.HasIndex(x => x.ExpiresAtUtc);
+        });
+
+        mb.Entity<SignupChannelToken>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Channel).HasConversion<int>();
+            e.Property(x => x.Token).HasMaxLength(80).IsRequired();
+            e.Property(x => x.ConsumedByIdentity).HasMaxLength(120);
+            e.Property(x => x.RequestIp).HasMaxLength(64);
+
+            e.HasIndex(x => x.Token).IsUnique();
             e.HasIndex(x => x.ExpiresAtUtc);
         });
 

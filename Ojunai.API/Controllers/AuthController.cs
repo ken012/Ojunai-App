@@ -22,6 +22,7 @@ public class AuthController : OjunaiBaseController
     private readonly IEmailService _emailSender;
     private readonly IAccountRecoveryService _recovery;
     private readonly IBackgroundJobClient _jobs;
+    private readonly IConfiguration _config;
     private readonly ILogger<AuthController> _logger;
 
     public AuthController(
@@ -33,6 +34,7 @@ public class AuthController : OjunaiBaseController
         IEmailService emailSender,
         IAccountRecoveryService recovery,
         IBackgroundJobClient jobs,
+        IConfiguration config,
         ILogger<AuthController> logger)
     {
         _auth = auth;
@@ -44,6 +46,7 @@ public class AuthController : OjunaiBaseController
         _emailSender = emailSender;
         _recovery = recovery;
         _jobs = jobs;
+        _config = config;
         _logger = logger;
     }
 
@@ -392,6 +395,62 @@ public class AuthController : OjunaiBaseController
         SetAuthCookie(result.Token!, result.ExpiresAt);
         return Ok(ApiResponse<AuthResponse>.Ok(result, "Phone changed. You're signed in with the new number."));
     }
+
+    // ─── Phase 3: Channel-native signup ──────────────────────────────────────────
+
+    /// <summary>
+    /// Start a signup-via-Telegram flow. Issues a single-use token, returns the deep link
+    /// that opens the Telegram bot with the token pre-attached. The flow completes inside
+    /// the chat (bot captures phone via request_contact + business/owner name in chat).
+    /// </summary>
+    [AllowAnonymous]
+    [AuthRateLimit]
+    [HttpPost("signup-via-telegram/start")]
+    public async Task<ActionResult<ApiResponse<SignupViaTelegramStartResponse>>> StartSignupViaTelegram()
+    {
+        var botUsername = _config["Telegram:BotUsername"];
+        if (string.IsNullOrEmpty(botUsername))
+            return StatusCode(503, ApiResponse<SignupViaTelegramStartResponse>.Fail(
+                "Telegram signup is not configured on this server."));
+
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var (token, deepLink) = await _authConcrete.StartTelegramSignupAsync(botUsername, ip);
+
+        return Ok(ApiResponse<SignupViaTelegramStartResponse>.Ok(new SignupViaTelegramStartResponse
+        {
+            DeepLink = deepLink,
+            BotUsername = botUsername,
+            ExpiresInSeconds = 30 * 60,
+        }, "Open the link in Telegram and tap Start."));
+    }
+
+    /// <summary>
+    /// Consumes the magic-link JWT issued by the Telegram signup handler. Sets the user's
+    /// password and returns a normal AuthResponse (real session JWT) so the dashboard treats
+    /// the visitor as logged in.
+    /// </summary>
+    [AllowAnonymous]
+    [AuthRateLimit]
+    [HttpPost("post-signup")]
+    public async Task<ActionResult<ApiResponse<AuthResponse>>> CompletePostSignup([FromBody] PostSignupRequest request)
+    {
+        var result = await _authConcrete.CompletePostSignupAsync(request.PostSignupToken, request.Password);
+        SetAuthCookie(result.Token!, result.ExpiresAt);
+        return Ok(ApiResponse<AuthResponse>.Ok(result, "Welcome to Ojunai."));
+    }
+}
+
+public class SignupViaTelegramStartResponse
+{
+    public string DeepLink { get; set; } = string.Empty;
+    public string BotUsername { get; set; } = string.Empty;
+    public int ExpiresInSeconds { get; set; }
+}
+
+public class PostSignupRequest
+{
+    public string PostSignupToken { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
 }
 
 public class ChangePasswordRequest
