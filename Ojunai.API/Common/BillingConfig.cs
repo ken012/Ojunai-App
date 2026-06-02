@@ -24,18 +24,22 @@ public static class BillingConfig
 
     public record CurrencyMeta(string Symbol, string Name, string Code);
 
-    // Annual discount percentages per plan (for display badges)
+    // Annual discount percentages per plan (for display badges) — 2 months free = ~17%.
     public static readonly Dictionary<string, int> AnnualDiscountPercent = new()
     {
-        ["starter"] = 10,
-        ["shop"] = 15,
+        ["starter"] = 0,
+        ["lite"] = 17,
+        ["operator"] = 17,
         ["pro"] = 17,
-        ["business"] = 20,
+        ["scale"] = 17,
     };
 
     /// <summary>
     /// Fixed localized pricing. [plan][cycle][currency] → amount in the currency's smallest displayable unit.
-    /// These are NOT converted at runtime. Each price is manually set for the market.
+    /// These are NOT converted at runtime. PPP-adjusted (not strict FX) so the African market doesn't
+    /// see USD-equivalent prices that don't match local purchasing power. Annual = monthly × 10
+    /// ("2 months free"). WhatsApp is sold separately via BillingConfig.WhatsAppPackPrices — these
+    /// tier prices cover dashboard + Telegram + Messenger only.
     /// </summary>
     private static readonly Dictionary<string, Dictionary<BillingCycle, Dictionary<string, decimal>>> Prices = new()
     {
@@ -43,44 +47,55 @@ public static class BillingConfig
         {
             [BillingCycle.Monthly] = new()
             {
-                ["NGN"] = 3500, ["GHS"] = 32, ["USD"] = 3.49m, ["GBP"] = 2.99m, ["KES"] = 480, ["ZAR"] = 50
+                ["NGN"] = 0, ["GHS"] = 0, ["USD"] = 0, ["GBP"] = 0, ["KES"] = 0, ["ZAR"] = 0
             },
             [BillingCycle.Annual] = new()
             {
-                ["NGN"] = 37800, ["GHS"] = 346, ["USD"] = 37.69m, ["GBP"] = 32.29m, ["KES"] = 5184, ["ZAR"] = 540
+                ["NGN"] = 0, ["GHS"] = 0, ["USD"] = 0, ["GBP"] = 0, ["KES"] = 0, ["ZAR"] = 0
             }
         },
-        ["shop"] = new()
+        ["lite"] = new()
         {
             [BillingCycle.Monthly] = new()
             {
-                ["NGN"] = 7500, ["GHS"] = 65, ["USD"] = 6.99m, ["GBP"] = 5.99m, ["KES"] = 1000, ["ZAR"] = 95
+                ["NGN"] = 12500, ["GHS"] = 125, ["USD"] = 11.99m, ["GBP"] = 9.99m, ["KES"] = 1099, ["ZAR"] = 199
             },
             [BillingCycle.Annual] = new()
             {
-                ["NGN"] = 76500, ["GHS"] = 663, ["USD"] = 71.30m, ["GBP"] = 61.10m, ["KES"] = 10200, ["ZAR"] = 969
+                ["NGN"] = 125000, ["GHS"] = 1250, ["USD"] = 119.90m, ["GBP"] = 99.90m, ["KES"] = 10990, ["ZAR"] = 1990
+            }
+        },
+        ["operator"] = new()
+        {
+            [BillingCycle.Monthly] = new()
+            {
+                ["NGN"] = 29999, ["GHS"] = 299, ["USD"] = 28.99m, ["GBP"] = 22.99m, ["KES"] = 2599, ["ZAR"] = 499
+            },
+            [BillingCycle.Annual] = new()
+            {
+                ["NGN"] = 299990, ["GHS"] = 2990, ["USD"] = 289.90m, ["GBP"] = 229.90m, ["KES"] = 25990, ["ZAR"] = 4990
             }
         },
         ["pro"] = new()
         {
             [BillingCycle.Monthly] = new()
             {
-                ["NGN"] = 12500, ["GHS"] = 115, ["USD"] = 11.99m, ["GBP"] = 9.99m, ["KES"] = 1650, ["ZAR"] = 160
+                ["NGN"] = 72500, ["GHS"] = 729, ["USD"] = 69.99m, ["GBP"] = 55.99m, ["KES"] = 6299, ["ZAR"] = 1199
             },
             [BillingCycle.Annual] = new()
             {
-                ["NGN"] = 124500, ["GHS"] = 1145, ["USD"] = 119.42m, ["GBP"] = 99.50m, ["KES"] = 16434, ["ZAR"] = 1594
+                ["NGN"] = 725000, ["GHS"] = 7290, ["USD"] = 699.90m, ["GBP"] = 559.90m, ["KES"] = 62990, ["ZAR"] = 11990
             }
         },
-        ["business"] = new()
+        ["scale"] = new()
         {
             [BillingCycle.Monthly] = new()
             {
-                ["NGN"] = 30000, ["GHS"] = 270, ["USD"] = 24.99m, ["GBP"] = 19.99m, ["KES"] = 3900, ["ZAR"] = 380
+                ["NGN"] = 155000, ["GHS"] = 1549, ["USD"] = 149.99m, ["GBP"] = 119.99m, ["KES"] = 13499, ["ZAR"] = 2549
             },
             [BillingCycle.Annual] = new()
             {
-                ["NGN"] = 288000, ["GHS"] = 2592, ["USD"] = 239.90m, ["GBP"] = 191.90m, ["KES"] = 37440, ["ZAR"] = 3648
+                ["NGN"] = 1550000, ["GHS"] = 15490, ["USD"] = 1499.90m, ["GBP"] = 1199.90m, ["KES"] = 134990, ["ZAR"] = 25490
             }
         }
     };

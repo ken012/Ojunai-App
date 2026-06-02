@@ -165,6 +165,18 @@ public class SubscriptionController : OjunaiBaseController
     }
 
     /// <summary>
+    /// Cancel auto-renew on the business's currently active WhatsApp pack. Pack stays usable
+    /// until the end of the current billing period; PackExpiryJobService expires it afterwards.
+    /// </summary>
+    [HttpPost("whatsapp-packs/cancel-auto-renew")]
+    [RequirePermission(Permission.ManageSettings)]
+    public async Task<ActionResult<ApiResponse<object>>> CancelWhatsAppPackAutoRenew()
+    {
+        await _paystack.CancelWhatsAppPackAutoRenewAsync(BusinessId);
+        return Ok(ApiResponse<object>.Ok(null!, "Auto-renew cancelled. Pack stays active until the end of the current billing period."));
+    }
+
+    /// <summary>
     /// Manually activate a WhatsApp pack for the current business. ADMIN/DEV — bypasses
     /// Paystack/Flutterwave so internal staff can grant packs without a real charge (support
     /// flow, testing). End-user UI uses /whatsapp-packs/purchase instead.

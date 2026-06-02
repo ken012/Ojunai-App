@@ -2,23 +2,27 @@ namespace Ojunai.API.Common;
 
 public class PlanConfig
 {
-    public int MaxProducts { get; init; } = -1; // -1 = unlimited
-    public int MaxMessagesPerMonth { get; init; } = -1;
-    public int MaxStaff { get; init; } = -1; // includes owner
+    public int MaxProducts { get; init; }
+    public int MaxMessagesPerMonth { get; init; }
+    public int MaxStaff { get; init; }
     public decimal PricePerMonth { get; init; }
     public int TrialDays { get; init; }
-    public bool HasLedger { get; init; } = true;
-    public bool HasCsvImport { get; init; } = true;
-    public bool HasAdvancedReports { get; init; } = true;
-    public bool HasMonthlyCharts { get; init; } = true;
-    public bool HasStockHolds { get; init; } = true;
-    public bool HasMultiBranch { get; init; } = false;
-    public bool HasApiAccess { get; init; } = false;
-    public bool HasCustomExports { get; init; } = false;
-    /// <summary>Custom dashboard background image. Pro + Business plans only.</summary>
-    public bool HasCustomBranding { get; init; } = false;
+    public bool HasLedger { get; init; }
+    public bool HasCsvImport { get; init; }
+    public bool HasAdvancedReports { get; init; }
+    public bool HasMonthlyCharts { get; init; }
+    public bool HasStockHolds { get; init; }
+    public bool HasMultiBranch { get; init; }
+    public bool HasApiAccess { get; init; }
+    public bool HasCustomExports { get; init; }
+    public bool HasCustomBranding { get; init; }
 }
 
+/// <summary>
+/// Feature limits per plan tier. Display prices come from <see cref="BillingConfig.Prices"/>;
+/// the PricePerMonth field here is used by legacy paths that haven't been migrated to the
+/// currency-aware lookup yet. Tier codes match what's stored in Business.Plan.
+/// </summary>
 public static class PlanLimits
 {
     private static readonly Dictionary<string, PlanConfig> Plans = new(StringComparer.OrdinalIgnoreCase)
@@ -28,7 +32,7 @@ public static class PlanLimits
             MaxProducts = 30,
             MaxMessagesPerMonth = 150,
             MaxStaff = 1,
-            PricePerMonth = 3500,
+            PricePerMonth = 0,
             TrialDays = 30,
             HasLedger = true,
             HasCsvImport = false,
@@ -36,12 +40,12 @@ public static class PlanLimits
             HasMonthlyCharts = false,
             HasStockHolds = false,
         },
-        ["shop"] = new PlanConfig
+        ["lite"] = new PlanConfig
         {
             MaxProducts = -1,
-            MaxMessagesPerMonth = 850,
-            MaxStaff = 4,
-            PricePerMonth = 7500,
+            MaxMessagesPerMonth = 500,
+            MaxStaff = 1,
+            PricePerMonth = 12500,
             TrialDays = 30,
             HasLedger = true,
             HasCsvImport = false,
@@ -49,12 +53,25 @@ public static class PlanLimits
             HasMonthlyCharts = false,
             HasStockHolds = true,
         },
+        ["operator"] = new PlanConfig
+        {
+            MaxProducts = -1,
+            MaxMessagesPerMonth = 1500,
+            MaxStaff = 1,
+            PricePerMonth = 29999,
+            TrialDays = 30,
+            HasLedger = true,
+            HasCsvImport = false,
+            HasAdvancedReports = false,
+            HasMonthlyCharts = true,
+            HasStockHolds = true,
+        },
         ["pro"] = new PlanConfig
         {
             MaxProducts = -1,
-            MaxMessagesPerMonth = -1,
-            MaxStaff = 11,
-            PricePerMonth = 12500,
+            MaxMessagesPerMonth = 4000,
+            MaxStaff = 3,
+            PricePerMonth = 72500,
             TrialDays = 30,
             HasLedger = true,
             HasCsvImport = true,
@@ -63,19 +80,19 @@ public static class PlanLimits
             HasStockHolds = true,
             HasCustomBranding = true,
         },
-        ["business"] = new PlanConfig
+        ["scale"] = new PlanConfig
         {
             MaxProducts = -1,
             MaxMessagesPerMonth = -1,
-            MaxStaff = -1,
-            PricePerMonth = 30000,
+            MaxStaff = 6,
+            PricePerMonth = 155000,
             HasLedger = true,
             HasCsvImport = true,
             HasAdvancedReports = true,
             HasMonthlyCharts = true,
             HasStockHolds = true,
             HasMultiBranch = true,
-            HasApiAccess = true,
+            HasApiAccess = false,
             HasCustomExports = true,
             HasCustomBranding = true,
         },
@@ -84,5 +101,5 @@ public static class PlanLimits
     public static PlanConfig Get(string? plan)
         => Plans.TryGetValue(plan ?? "starter", out var config) ? config : Plans["starter"];
 
-    public static readonly string[] AllPlans = { "starter", "shop", "pro", "business" };
+    public static readonly string[] AllPlans = { "starter", "lite", "operator", "pro", "scale" };
 }

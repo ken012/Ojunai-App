@@ -2146,59 +2146,72 @@ function loadFlutterwaveScript(): Promise<void> {
 
 type PlanFeature = { text: string; included: boolean };
 
-const PLAN_ORDER = ["starter", "shop", "pro", "business"];
+const PLAN_ORDER = ["starter", "lite", "operator", "pro", "scale"];
 
 const PLAN_DETAILS: Record<string, { label: string; tagline: string; color: string; features: PlanFeature[] }> = {
   starter: {
     label: "Starter",
-    tagline: "Best for solo traders just starting out",
+    tagline: "Free taste — 15 actions/mo across Telegram & Messenger",
     color: "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300",
     features: [
-      { text: "1-month free trial", included: true },
-      { text: "WhatsApp bot access", included: true },
-      { text: "Up to 30 products", included: true },
-      { text: "150 messages / month", included: true },
-      { text: "Daily summaries", included: true },
+      { text: "Free forever — no card required", included: true },
+      { text: "Sales, expenses, inventory", included: true },
+      { text: "15 Telegram + Messenger actions/mo", included: true },
       { text: "Basic web dashboard", included: true },
+      { text: "WhatsApp — needs a separately-purchased pack", included: false },
       { text: "Staff accounts", included: false },
       { text: "Advanced reports", included: false },
     ],
   },
-  shop: {
-    label: "Shop",
-    tagline: "For growing shops with staff",
-    color: "bg-cyan-100 text-cyan-700",
+  lite: {
+    label: "Lite",
+    tagline: "Solo merchant just getting started",
+    color: "bg-cyan-100 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300",
     features: [
       { text: "Everything in Starter", included: true },
-      { text: "Unlimited products", included: true },
-      { text: "850 messages / month", included: true },
-      { text: "Ledger & stock holds", included: true },
-      { text: "Up to 4 users", included: true },
+      { text: "500 Telegram + Messenger actions/mo", included: true },
+      { text: "15-action WhatsApp taste-test", included: true },
+      { text: "Stock holds + customer ledger", included: true },
+      { text: "1 user", included: true },
+      { text: "Advanced reports", included: false },
+    ],
+  },
+  operator: {
+    label: "Operator",
+    tagline: "Active solo merchant",
+    color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+    features: [
+      { text: "Everything in Lite", included: true },
+      { text: "1,500 Telegram + Messenger actions/mo", included: true },
+      { text: "Monthly insights & charts", included: true },
+      { text: "1 user", included: true },
       { text: "CSV import", included: false },
-      { text: "Advanced reports & charts", included: false },
     ],
   },
   pro: {
     label: "Pro",
-    tagline: "Full power for serious businesses",
-    color: "bg-violet-100 text-violet-700",
+    tagline: "Small team scaling up",
+    color: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
     features: [
-      { text: "Everything in Shop", included: true },
-      { text: "Unlimited messages", included: true },
-      { text: "CSV import", included: true },
-      { text: "Advanced reports & charts", included: true },
-      { text: "Up to 11 users", included: true },
+      { text: "Everything in Operator", included: true },
+      { text: "4,000 Telegram + Messenger actions/mo", included: true },
+      { text: "Advanced reports + custom dashboards", included: true },
+      { text: "CSV import + data export", included: true },
+      { text: "Custom branding", included: true },
+      { text: "Up to 3 users", included: true },
     ],
   },
-  business: {
-    label: "Business",
-    tagline: "Enterprise-grade for multi-location businesses",
-    color: "bg-amber-100 text-amber-700",
+  scale: {
+    label: "Scale",
+    tagline: "Multi-location with priority support",
+    color: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
     features: [
       { text: "Everything in Pro", included: true },
-      { text: "Unlimited staff", included: true },
-      { text: "Multi-branch support", included: true },
-      { text: "API access & custom exports", included: true },
+      { text: "Unlimited Telegram + Messenger", included: true },
+      { text: "Multi-location support", included: true },
+      { text: "Audit logs + automation alerts", included: true },
+      { text: "Up to 6 users", included: true },
+      { text: "Priority support", included: true },
     ],
   },
 };

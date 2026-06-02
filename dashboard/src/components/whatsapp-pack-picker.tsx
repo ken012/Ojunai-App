@@ -89,6 +89,22 @@ export function WhatsAppPackPicker() {
   // Two-step purchase: clicking Buy opens a confirm dialog so the user can choose
   // one-time vs auto-renew before being sent to the payment gateway.
   const [confirming, setConfirming] = useState<{ code: string; autoRenew: boolean } | null>(null);
+  const [cancellingRenew, setCancellingRenew] = useState(false);
+
+  async function handleCancelAutoRenew() {
+    if (!confirm("Cancel auto-renew? Your pack stays active until the end of the current billing period.")) return;
+    setCancellingRenew(true);
+    try {
+      await api.post("/subscription/whatsapp-packs/cancel-auto-renew");
+      toast.success("Auto-renew cancelled", "Your pack stays active until the next billing date.");
+      qc.invalidateQueries({ queryKey: ["whatsapp-packs"] });
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error("Couldn't cancel auto-renew", ax.response?.data?.errors?.[0] ?? "Try again or contact support.");
+    } finally {
+      setCancellingRenew(false);
+    }
+  }
 
   const { data, isLoading } = useQuery<WhatsAppPacksResponse>({
     queryKey: ["whatsapp-packs"],
@@ -214,6 +230,16 @@ export function WhatsAppPackPicker() {
                   year: "numeric",
                 })}
               </p>
+            )}
+            {data.activePack?.isAutoRenew && (
+              <button
+                type="button"
+                onClick={handleCancelAutoRenew}
+                disabled={cancellingRenew}
+                className="text-[10px] text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 underline mt-0.5"
+              >
+                {cancellingRenew ? "Cancelling…" : "Cancel auto-renew"}
+              </button>
             )}
           </div>
         )}

@@ -162,6 +162,7 @@ builder.Services.AddScoped<PaymentReconciliationJobService>();
 builder.Services.AddScoped<AdminSnapshotJobService>();
 builder.Services.AddScoped<MessageLogRetentionJobService>();
 builder.Services.AddScoped<PackExpiryJobService>();
+builder.Services.AddScoped<PackRenewalReminderJobService>();
 builder.Services.AddScoped<AdminAlertJobService>();
 
 // ── Hangfire ──────────────────────────────────────────────────────────────────
@@ -448,6 +449,13 @@ RecurringJob.AddOrUpdate<PackExpiryJobService>(
     "whatsapp-pack-expiry",
     svc => svc.RunDailyAsync(),
     "0 3 * * *");
+
+// Send pack renewal reminders 3 days before expiry — 03:30 UTC, after the expiry sweep so we
+// don't remind merchants about packs that just got expired in the same job tick.
+RecurringJob.AddOrUpdate<PackRenewalReminderJobService>(
+    "whatsapp-pack-renewal-reminder",
+    svc => svc.RunDailyAsync(),
+    "30 3 * * *");
 
 // Metric-spike alerting every 15 min. No-op when no delivery channels are configured.
 RecurringJob.AddOrUpdate<AdminAlertJobService>(

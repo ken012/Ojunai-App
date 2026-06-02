@@ -844,10 +844,12 @@ public class PaystackService
         var subscriptionCode = scEl.GetString();
         if (string.IsNullOrEmpty(subscriptionCode)) return false;
 
+        // Match against active OR past_due rows — a successful renewal after a failed charge
+        // should flip the pack back to active rather than no-op'ing because Status changed.
         var addon = await _db.BusinessAddOns.FirstOrDefaultAsync(a =>
             a.BusinessId == business.Id
             && a.ProviderSubscriptionId == subscriptionCode
-            && a.Status == "active"
+            && (a.Status == "active" || a.Status == "past_due")
             && a.AddOnCode.StartsWith("whatsapp_pack."));
         if (addon == null) return false;
 
@@ -856,6 +858,7 @@ public class PaystackService
             ? BillingConfig.BillingCycle.Annual
             : BillingConfig.BillingCycle.Monthly;
         addon.NextBillingAtUtc = cycle == BillingConfig.BillingCycle.Annual ? now.AddYears(1) : now.AddMonths(1);
+        addon.Status = "active"; // back from past_due if applicable
         addon.UpdatedAtUtc = now;
 
         decimal? chargedNaira = data.TryGetProperty("amount", out var amtEl) ? amtEl.GetInt64() / 100m : null;
@@ -876,6 +879,79 @@ public class PaystackService
             "WhatsApp pack renewed via Paystack: business={Business} addon={AddOn} nextBilling={Next}",
             business.Name, addon.AddOnCode, addon.NextBillingAtUtc);
         return true;
+    }
+
+    /// <summary>
+    /// Cancel auto-renew on an active WhatsApp pack subscription. Calls Paystack's
+    /// /subscription/disable endpoint, then flips the BusinessAddOn's IsAutoRenew flag.
+    /// The pack stays active until <c>NextBillingAtUtc</c> — at which point the daily
+    /// PackExpiryJobService will mark it expired (because IsAutoRenew is now false).
+    ///
+    /// Idempotent: callable on a pack that's already non-renewing or already cancelled — both
+    /// are no-ops with a logged note.
+    /// </summary>
+    public async Task CancelWhatsAppPackAutoRenewAsync(Guid businessId)
+    {
+        var addon = await _db.BusinessAddOns.FirstOrDefaultAsync(a =>
+            a.BusinessId == businessId
+            && a.Status == "active"
+            && a.AddOnCode.StartsWith("whatsapp_pack."));
+        if (addon == null)
+        {
+            _logger.LogInformation("CancelPackAutoRenew: no active WhatsApp pack for business {Business}", businessId);
+            return;
+        }
+        if (!addon.IsAutoRenew)
+        {
+            _logger.LogInformation("CancelPackAutoRenew: pack {AddOn} is already one-time — nothing to cancel", addon.AddOnCode);
+            return;
+        }
+
+        // Best-effort cancellation at Paystack. If their API fails we still flip the local
+        // flag so the merchant doesn't see a "cancel" button that does nothing — the daily
+        // expiry job will close the loop locally even if Paystack keeps trying to renew.
+        if (!string.IsNullOrEmpty(addon.ProviderSubscriptionId))
+        {
+            try
+            {
+                var detail = await GetAsync($"/subscription/{Uri.EscapeDataString(addon.ProviderSubscriptionId)}");
+                if (detail.TryGetProperty("data", out var d) && d.TryGetProperty("email_token", out var et))
+                {
+                    var token = et.GetString();
+                    if (!string.IsNullOrEmpty(token))
+                    {
+                        await PostAsync("/subscription/disable", new
+                        {
+                            code = addon.ProviderSubscriptionId,
+                            token,
+                        });
+                        _logger.LogInformation("Paystack pack subscription disabled: business={Business} sub={Sub}",
+                            businessId, addon.ProviderSubscriptionId);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Paystack disable failed for pack sub {Sub} — flipping locally anyway",
+                    addon.ProviderSubscriptionId);
+            }
+        }
+
+        addon.IsAutoRenew = false;
+        addon.UpdatedAtUtc = DateTime.UtcNow;
+
+        _db.BillingEvents.Add(new BillingEvent
+        {
+            BusinessId = businessId,
+            EventType = "whatsapp_pack.auto_renew_cancelled",
+            Provider = "paystack",
+            Plan = addon.AddOnCode,
+            Amount = addon.BilledAmount,
+            Currency = addon.BilledCurrency,
+            Status = "cancelled",
+        });
+
+        await _db.SaveChangesAsync();
     }
 
     /// <summary>
@@ -1028,6 +1104,34 @@ public class PaystackService
         if (!data.TryGetProperty("subscription", out var sub)) return;
         var subscriptionCode = sub.TryGetProperty("subscription_code", out var sc) ? sc.GetString() : null;
         if (subscriptionCode == null) return;
+
+        // Pack subscription failure: subscription_code matches a pack's ProviderSubscriptionId.
+        // Mark pack past_due and log; the PackExpiryJobService will expire it after 5 days if
+        // no successful renewal charge fires before then. A successful renewal will flip the
+        // Status back to "active" via TryHandleWhatsAppPackRenewalAsync.
+        var packAddon = await _db.BusinessAddOns.FirstOrDefaultAsync(a =>
+            a.ProviderSubscriptionId == subscriptionCode
+            && a.AddOnCode.StartsWith("whatsapp_pack."));
+        if (packAddon != null)
+        {
+            var now = DateTime.UtcNow;
+            packAddon.Status = "past_due";
+            packAddon.UpdatedAtUtc = now;
+            _db.BillingEvents.Add(new BillingEvent
+            {
+                BusinessId = packAddon.BusinessId,
+                EventType = "whatsapp_pack.payment_failed",
+                Provider = "paystack",
+                Plan = packAddon.AddOnCode,
+                Status = "failed",
+                SubscriptionId = subscriptionCode,
+                CreatedAtUtc = now,
+            });
+            await _db.SaveChangesAsync();
+            _logger.LogWarning("WhatsApp pack payment failed: business={Business} pack={Pack}",
+                packAddon.BusinessId, packAddon.AddOnCode);
+            return;
+        }
 
         var business = await _db.Businesses.FirstOrDefaultAsync(b => b.PaystackSubscriptionCode == subscriptionCode);
         if (business == null) return;

@@ -156,7 +156,7 @@ public class FlutterwaveService
         }
 
         // Extract target plan and cycle from tx_ref: "ojunai-{guid:N}-{plan}-{cycle}-{ticks}"
-        var validPlans = new[] { "starter", "shop", "pro", "business" };
+        var validPlans = new[] { "starter", "lite", "operator", "pro", "scale" };
         var validCycles = new[] { "monthly", "annual" };
         var plan = business.Plan;
         var billingCycle = business.BillingCycle ?? "monthly";
@@ -620,7 +620,7 @@ public class FlutterwaveService
             return;
         }
 
-        var validPlans = new[] { "starter", "shop", "pro", "business" };
+        var validPlans = new[] { "starter", "lite", "operator", "pro", "scale" };
         var validCycles = new[] { "monthly", "annual" };
         if (plan != null && !validPlans.Contains(plan))
         {
@@ -775,6 +775,24 @@ public class FlutterwaveService
     /// Build the tx_ref for a WhatsApp pack purchase. Pattern: ojunai-pack-{packCode}-{businessId:N}-{ticks}.
     /// Webhook + verify recognize this prefix and route to pack activation.
     /// </summary>
+    /// <remarks>
+    /// KNOWN GAP — Flutterwave WhatsApp pack auto-renew is not yet implemented:
+    ///
+    /// Flutterwave's inline-checkout subscription flow needs a payment_plan_id attached to
+    /// the transaction so the card auto-renews. We have the infrastructure for tier
+    /// subscriptions but haven't verified the meta-forwarding behavior on recurring charges
+    /// for packs specifically. Two questions to confirm with Flutterwave before wiring it up:
+    ///   1. Does inline-checkout meta (packCode, billingCycle) get forwarded to the renewal
+    ///      charge.completed webhook? Their docs are inconsistent.
+    ///   2. Can we reliably look up the renewal by tx_ref pattern or do we need the
+    ///      subscription ID? FetchCustomerSubscriptionIdAsync is one route, but it's by
+    ///      email — packs may collide with tier subs on the same customer.
+    ///
+    /// Until that's verified, Flutterwave pack purchases stay one-time regardless of the
+    /// frontend's autoRenew flag. The frontend disables the auto-renew checkbox for non-NGN
+    /// currencies and shows a "currently NGN only" note. Paystack pack auto-renew works
+    /// end-to-end (see PaystackService.InitializeWhatsAppPackChargeAsync).
+    /// </remarks>
     public static string BuildPackTxRef(string packCode, Guid businessId)
         => $"ojunai-pack-{packCode.ToLowerInvariant()}-{businessId:N}-{DateTime.UtcNow.Ticks}";
 

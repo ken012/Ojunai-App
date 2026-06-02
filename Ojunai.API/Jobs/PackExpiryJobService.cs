@@ -34,16 +34,25 @@ public sealed class PackExpiryJobService
         _logger = logger;
     }
 
+    /// <summary>How long a past_due pack stays around before final expiry. Gives Paystack
+    /// time to retry the failed charge (their auto-retry cadence is approximately daily for
+    /// the first 3 days then escalating).</summary>
+    private static readonly TimeSpan PastDueGrace = TimeSpan.FromDays(5);
+
     public async Task RunDailyAsync()
     {
         var now = DateTime.UtcNow;
+        var pastDueCutoff = now - PastDueGrace;
 
         var expiring = await _db.BusinessAddOns
-            .Where(a => a.Status == "active"
-                && !a.IsAutoRenew
-                && a.AddOnCode.StartsWith("whatsapp_pack.")
-                && a.NextBillingAtUtc != null
-                && a.NextBillingAtUtc < now)
+            .Where(a => a.AddOnCode.StartsWith("whatsapp_pack.")
+                && (
+                    // One-time pack whose billing period rolled over.
+                    (a.Status == "active" && !a.IsAutoRenew
+                        && a.NextBillingAtUtc != null && a.NextBillingAtUtc < now)
+                    // Auto-renewing pack that's been past_due (failed renewal) for >5 days.
+                    || (a.Status == "past_due" && a.UpdatedAtUtc < pastDueCutoff)
+                ))
             .ToListAsync();
 
         if (expiring.Count == 0)
@@ -54,6 +63,9 @@ public sealed class PackExpiryJobService
 
         foreach (var addon in expiring)
         {
+            var eventType = addon.Status == "past_due"
+                ? "whatsapp_pack.expired_after_failed_renewal"
+                : "whatsapp_pack.expired";
             addon.Status = "expired";
             addon.CancelledAtUtc = now;
             addon.UpdatedAtUtc = now;
@@ -61,7 +73,7 @@ public sealed class PackExpiryJobService
             _db.BillingEvents.Add(new Models.BillingEvent
             {
                 BusinessId = addon.BusinessId,
-                EventType = "whatsapp_pack.expired",
+                EventType = eventType,
                 Provider = "system",
                 Plan = addon.AddOnCode,
                 Amount = addon.BilledAmount,

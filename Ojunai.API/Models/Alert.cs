@@ -51,6 +51,8 @@ public enum AlertType
     StaffAdded = 13,
     StaffRemoved = 14,
     SalesGoalHit = 15,
+    WhatsAppPackExpiringSoon = 16,
+    WhatsAppPackExpired = 17,
 }
 
 public enum AlertSeverity

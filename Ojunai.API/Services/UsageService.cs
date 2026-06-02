@@ -82,10 +82,10 @@ public static class QuotaLimits
     {
         // Free tier: 15 actions TOTAL across all channels (capped here on Messaging side; WhatsApp pack = 0).
         ["starter"] = 15,
-        ["shop"] = 500,        // Lite
-        ["pro"] = 1500,        // Operator
-        ["business"] = 4000,   // Pro
-        // Future: ["scale"] = -1
+        ["lite"] = 500,
+        ["operator"] = 1500,
+        ["pro"] = 4000,
+        ["scale"] = -1,        // unlimited
     };
 
     // ── WhatsApp paywall tuning ────────────────────────────────────────────

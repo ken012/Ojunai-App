@@ -30,12 +30,12 @@ public class PlanGuard
     // Default length of every new trial.
     public const int TrialDurationDays = 30;
 
-    // Only these plans offer a free trial. Business tier users must pay from day one.
+    // Only these plans offer a free trial. Scale users must pay from day one.
     public static readonly HashSet<string> TrialEligiblePlans = new(StringComparer.OrdinalIgnoreCase)
-        { "starter", "shop", "pro" };
+        { "starter", "lite", "operator", "pro" };
 
     // Hierarchy of plans from cheapest to most capable. Used to compare ranks (upgrade vs downgrade).
-    private static readonly string[] PlanOrder = { "starter", "shop", "pro", "business" };
+    private static readonly string[] PlanOrder = { "starter", "lite", "operator", "pro", "scale" };
 
     private static readonly Dictionary<string, string> FeatureLabels = new()
     {
@@ -53,9 +53,10 @@ public class PlanGuard
     private static readonly Dictionary<string, string> PlanLabels = new(StringComparer.OrdinalIgnoreCase)
     {
         ["starter"] = "Starter",
-        ["shop"] = "Shop",
+        ["lite"] = "Lite",
+        ["operator"] = "Operator",
         ["pro"] = "Pro",
-        ["business"] = "Business",
+        ["scale"] = "Scale",
     };
 
     public PlanGuard(AppDbContext db) => _db = db;
