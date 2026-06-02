@@ -2,9 +2,9 @@
 // Fixed localized prices. No FX conversion. Selected currency drives provider routing.
 
 export type BillingCycle = "monthly" | "annual";
-export type SupportedCurrency = "NGN" | "GHS" | "USD" | "GBP" | "KES" | "ZAR";
+export type SupportedCurrency = "NGN" | "GHS" | "USD" | "GBP" | "KES" | "ZAR" | "UGX";
 
-export const SUPPORTED_CURRENCIES: SupportedCurrency[] = ["NGN", "GHS", "USD", "GBP", "KES", "ZAR"];
+export const SUPPORTED_CURRENCIES: SupportedCurrency[] = ["NGN", "GHS", "USD", "GBP", "KES", "ZAR", "UGX"];
 
 export const CURRENCY_META: Record<SupportedCurrency, { symbol: string; label: string }> = {
   NGN: { symbol: "₦", label: "NGN" },
@@ -13,6 +13,7 @@ export const CURRENCY_META: Record<SupportedCurrency, { symbol: string; label: s
   GBP: { symbol: "£", label: "GBP" },
   KES: { symbol: "KSh", label: "KES" },
   ZAR: { symbol: "R", label: "ZAR" },
+  UGX: { symbol: "USh", label: "UGX" },
 };
 
 type PlanPrices = Record<SupportedCurrency, number>;
@@ -29,8 +30,8 @@ interface PlanPricing {
 
 export const PRICING: Record<string, PlanPricing> = {
   starter: {
-    monthly: { NGN: 3500, GHS: 32, USD: 3.49, GBP: 2.99, KES: 480, ZAR: 50 },
-    annual: { NGN: 37800, GHS: 346, USD: 37.69, GBP: 32.29, KES: 5184, ZAR: 540 },
+    monthly: { NGN: 3500, GHS: 32, USD: 3.49, GBP: 2.99, KES: 480, ZAR: 50, UGX: 0 },
+    annual: { NGN: 37800, GHS: 346, USD: 37.69, GBP: 32.29, KES: 5184, ZAR: 540, UGX: 0 },
     annualDiscount: 10,
     tagline: "Best for solo traders just starting out",
     features: [
@@ -44,8 +45,8 @@ export const PRICING: Record<string, PlanPricing> = {
     badge: "Save 10%",
   },
   shop: {
-    monthly: { NGN: 7500, GHS: 65, USD: 6.99, GBP: 5.99, KES: 1000, ZAR: 95 },
-    annual: { NGN: 76500, GHS: 663, USD: 71.30, GBP: 61.10, KES: 10200, ZAR: 969 },
+    monthly: { NGN: 7500, GHS: 65, USD: 6.99, GBP: 5.99, KES: 1000, ZAR: 95, UGX: 17500 },
+    annual: { NGN: 76500, GHS: 663, USD: 71.30, GBP: 61.10, KES: 10200, ZAR: 969, UGX: 175000 },
     annualDiscount: 15,
     tagline: "For growing shops with staff",
     features: [
@@ -59,8 +60,8 @@ export const PRICING: Record<string, PlanPricing> = {
     badge: "Save 15%",
   },
   pro: {
-    monthly: { NGN: 12500, GHS: 115, USD: 11.99, GBP: 9.99, KES: 1650, ZAR: 160 },
-    annual: { NGN: 124500, GHS: 1145, USD: 119.42, GBP: 99.50, KES: 16434, ZAR: 1594 },
+    monthly: { NGN: 12500, GHS: 115, USD: 11.99, GBP: 9.99, KES: 1650, ZAR: 160, UGX: 29000 },
+    annual: { NGN: 124500, GHS: 1145, USD: 119.42, GBP: 99.50, KES: 16434, ZAR: 1594, UGX: 290000 },
     annualDiscount: 17,
     tagline: "Full power for serious businesses",
     features: [
@@ -73,8 +74,8 @@ export const PRICING: Record<string, PlanPricing> = {
     popular: true,
   },
   business: {
-    monthly: { NGN: 30000, GHS: 270, USD: 24.99, GBP: 19.99, KES: 3900, ZAR: 380 },
-    annual: { NGN: 288000, GHS: 2592, USD: 239.90, GBP: 191.90, KES: 37440, ZAR: 3648 },
+    monthly: { NGN: 30000, GHS: 270, USD: 24.99, GBP: 19.99, KES: 3900, ZAR: 380, UGX: 69000 },
+    annual: { NGN: 288000, GHS: 2592, USD: 239.90, GBP: 191.90, KES: 37440, ZAR: 3648, UGX: 690000 },
     annualDiscount: 20,
     tagline: "Enterprise-grade for multi-location businesses",
     features: [

@@ -584,11 +584,18 @@ public class FlutterwaveService
             var vaChargeAmt = data.TryGetProperty("amount", out var vaAmtEl) ? vaAmtEl.GetDecimal() : (decimal?)null;
             var vaIsAnnual = (billingCycle ?? "monthly").Equals("annual", StringComparison.OrdinalIgnoreCase);
             var vaPayMethod = data.TryGetProperty("payment_type", out var vaPtEl) ? vaPtEl.GetString()?.ToLower() : "card";
+            // Tier comes through meta.tier (set on /voice-ai/initialize). Default to existing tier
+            // so we don't clobber it on edge cases where meta is incomplete.
+            var vaTier = meta.TryGetProperty("tier", out var vaTierEl) ? vaTierEl.GetString()?.ToLower() : null;
+            if (string.IsNullOrEmpty(vaTier) || !BillingConfig.VoiceAITierCodes.Contains(vaTier))
+                vaTier = vaBiz.VoiceAITier;
 
             vaBiz.VoiceAIEnabled = true;
             vaBiz.VoiceAIPlanStatus = "active";
             vaBiz.VoiceAIEnabledAt ??= DateTime.UtcNow;
             vaBiz.VoiceAITrialEndsAt = null;
+            vaBiz.VoiceAITier = vaTier;
+            vaBiz.VoiceAICycleMinutesUsed = 0;
             var vaBase = (vaBiz.VoiceAISubscriptionEndsAt.HasValue && vaBiz.VoiceAISubscriptionEndsAt > DateTime.UtcNow)
                 ? vaBiz.VoiceAISubscriptionEndsAt.Value : DateTime.UtcNow;
             vaBiz.VoiceAISubscriptionEndsAt = vaIsAnnual ? vaBase.AddYears(1) : vaBase.AddMonths(1);
@@ -598,7 +605,7 @@ public class FlutterwaveService
                 BusinessId = businessId,
                 EventType = "voiceai.payment.success",
                 Provider = "flutterwave",
-                Plan = "voice_ai",
+                Plan = $"voice_ai.{vaTier ?? "unknown"}",
                 Amount = vaChargeAmt,
                 Currency = currency,
                 TransactionRef = txRef,
@@ -607,7 +614,7 @@ public class FlutterwaveService
             });
 
             await _db.SaveChangesAsync();
-            _logger.LogInformation("Voice AI Flutterwave payment confirmed: {Business}, txRef: {TxRef}", vaBiz.Name, txRef);
+            _logger.LogInformation("Voice AI Flutterwave payment confirmed: {Business} ({Tier}), txRef: {TxRef}", vaBiz.Name, vaTier, txRef);
 
             var provisioner = _serviceProvider.GetRequiredService<VoiceAIProvisioningService>();
             await provisioner.EnsureProvisionedAsync(vaBiz);

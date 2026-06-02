@@ -21,7 +21,14 @@ public class VoiceAIGuard
     public static bool HasAccess(Business business)
     {
         if (business.VoiceAIInternalOverride) return true;
-        return business.VoiceAIPlanStatus is "active" or "trial";
+        if (business.VoiceAIPlanStatus == "active") return true;
+        // Trial access ends the moment the user has consumed their trial minutes — gate at read time
+        // so the Voice AI service can't accidentally let a call through after the cap was hit (the
+        // sweeper job is a backstop, not the primary enforcement).
+        if (business.VoiceAIPlanStatus == "trial"
+            && business.VoiceAITrialMinutesUsed < BillingConfig.VoiceAITrialMinutes)
+            return true;
+        return false;
     }
 
     public async Task<(bool Allowed, string? Error)> CheckAccessAsync(Guid businessId)
@@ -42,15 +49,21 @@ public class VoiceAIGuard
     public static string GetVoiceAITrialStatus(Business business)
     {
         if (business.VoiceAIPlanStatus != "trial") return "none";
-        if (!business.VoiceAITrialEndsAt.HasValue) return "none";
-        if (DateTime.UtcNow < business.VoiceAITrialEndsAt.Value) return "active";
-        return "expired";
+        return business.VoiceAITrialMinutesUsed < BillingConfig.VoiceAITrialMinutes ? "active" : "expired";
     }
 
-    public static int? GetVoiceAITrialDaysLeft(Business business)
+    /// <summary>Inbound minutes still available on the free trial (0 once used up).</summary>
+    public static int? GetVoiceAITrialMinutesRemaining(Business business)
     {
-        if (business.VoiceAIPlanStatus != "trial" || !business.VoiceAITrialEndsAt.HasValue)
-            return null;
-        return Math.Max(0, (int)Math.Ceiling((business.VoiceAITrialEndsAt.Value - DateTime.UtcNow).TotalDays));
+        if (business.VoiceAIPlanStatus != "trial") return null;
+        return Math.Max(0, BillingConfig.VoiceAITrialMinutes - business.VoiceAITrialMinutesUsed);
+    }
+
+    /// <summary>Inbound minutes still available in the current paid billing cycle. Null if not on a tier.</summary>
+    public static int? GetVoiceAICycleMinutesRemaining(Business business)
+    {
+        if (string.IsNullOrEmpty(business.VoiceAITier)) return null;
+        if (!BillingConfig.VoiceAITierMinutes.TryGetValue(business.VoiceAITier, out var included)) return null;
+        return Math.Max(0, included - business.VoiceAICycleMinutesUsed);
     }
 }

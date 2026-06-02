@@ -532,26 +532,32 @@ public class SubscriptionController : OjunaiBaseController
         if (business == null) return NotFound(ApiResponse<object>.Fail("Business not found."));
         if (!business.IsBillable) return BadRequest(ApiResponse<object>.Fail("This account is not billable."));
 
+        var tier = request.Tier?.ToLower();
+        if (string.IsNullOrEmpty(tier) || !BillingConfig.VoiceAITierCodes.Contains(tier))
+            return BadRequest(ApiResponse<object>.Fail(
+                $"Invalid Voice AI tier. Pick one of: {string.Join(", ", BillingConfig.VoiceAITierCodes)}."));
+
         var currency = request.Currency?.ToUpper() ?? business.BillingCurrency ?? business.Currency ?? "NGN";
         var cycle = request.BillingCycle?.ToLower() ?? "monthly";
 
-        if (!BillingConfig.IsValidVoiceAICombination(cycle, currency))
-            return BadRequest(ApiResponse<object>.Fail($"Invalid cycle/currency for Voice AI: {cycle}/{currency}"));
+        if (!BillingConfig.IsValidVoiceAITierCombination(tier, cycle, currency))
+            return BadRequest(ApiResponse<object>.Fail(
+                $"Invalid Voice tier/cycle/currency: {tier}/{cycle}/{currency}"));
 
         if (!Enum.TryParse<BillingConfig.BillingCycle>(cycle, true, out var billingCycle))
             return BadRequest(ApiResponse<object>.Fail("Invalid billing cycle."));
 
-        var amount = BillingConfig.GetVoiceAIPrice(billingCycle, currency) ?? 0m;
+        var amount = BillingConfig.GetVoiceAITierPriceOrThrow(tier, billingCycle, currency);
         var user = await _db.Users.FindAsync(UserId);
         var email = user?.Email ?? $"{user?.PhoneNumber}@ojunai.com";
         var provider = BillingConfig.GetProvider(currency);
 
-        var txRef = $"ojunai-voiceai-{BusinessId:N}-{cycle}-{DateTime.UtcNow.Ticks}";
+        var txRef = $"ojunai-voiceai-{tier}-{BusinessId:N}-{cycle}-{DateTime.UtcNow.Ticks}";
 
         if (provider == BillingConfig.BillingProvider.Paystack)
         {
-            var url = await _paystack.InitializeVoiceAIAsync(BusinessId, email, amount, currency, cycle);
-            return Ok(ApiResponse<object>.Ok(new { paymentUrl = url, provider = "paystack" },
+            var url = await _paystack.InitializeVoiceAIAsync(BusinessId, email, amount, currency, cycle, tier);
+            return Ok(ApiResponse<object>.Ok(new { paymentUrl = url, provider = "paystack", tier },
                 "Redirecting to payment..."));
         }
 
@@ -574,7 +580,8 @@ public class SubscriptionController : OjunaiBaseController
             callbackUrl,
             businessId = BusinessId.ToString(),
             businessName = business.Name,
-            meta = new { product = "voice_ai" },
+            // tier is carried in meta so the Flutterwave webhook persists it onto Business.VoiceAITier
+            meta = new { product = "voice_ai", tier },
         }, "Ready for checkout."));
     }
 
@@ -636,6 +643,8 @@ public class VerifyFlutterwaveRequest
 
 public class InitializeVoiceAIRequest
 {
+    /// <summary>"starter" ($39/mo, 300 min, 1 line) or "pro" ($79/mo, 1000 min, 3 lines).</summary>
+    public string? Tier { get; set; }
     public string? Currency { get; set; }
     public string? BillingCycle { get; set; }
 }

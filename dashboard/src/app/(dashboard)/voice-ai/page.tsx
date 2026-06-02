@@ -17,7 +17,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
 import { Phone, CheckCircle, AlertTriangle, Clock, Save, ShoppingCart, Receipt as ReceiptIcon, Package, ArrowRight, Activity as ActivityIcon } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
-import { VOICE_AI_PRICING, VOICE_AI_ANNUAL_DISCOUNT, VOICE_AI_FEATURES } from "@/lib/voice-ai-pricing";
+import {
+  VOICE_AI_ANNUAL_DISCOUNT,
+  VOICE_AI_TIER_CODES,
+  VOICE_AI_TIER_LABELS,
+  VOICE_AI_TIER_MINUTES,
+  VOICE_AI_TIER_CONCURRENT_LINES,
+  VOICE_AI_TIER_PRICING,
+  VOICE_AI_TIER_FEATURES,
+  VOICE_AI_TIER_TAGLINES,
+  VOICE_AI_TRIAL_MINUTES,
+  type VoiceAITier,
+} from "@/lib/voice-ai-pricing";
 import { CURRENCY_META, SUPPORTED_CURRENCIES } from "@/lib/pricing";
 import type { SupportedCurrency, BillingCycle } from "@/lib/pricing";
 
@@ -215,63 +226,140 @@ function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurre
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
   const [currency, setCurrency] = useState<SupportedCurrency>(defaultCurrency);
 
-  const price = VOICE_AI_PRICING[cycle]?.[currency] ?? 0;
-  const monthlyEquiv = cycle === "annual" ? Math.round(price / 12) : price;
-  const sym = CURRENCY_META[currency]?.symbol ?? currency;
-
-  const contactSubject = encodeURIComponent("Voice AI — Enable for my business");
-  const contactBody = encodeURIComponent("Hi Ojunai Team,\n\nI'm interested in enabling Voice AI for my business.\n\nPlease get in touch to set it up.\n\nThank you.");
+  const contactSubject = encodeURIComponent("OjunaiVoice — Enable for my business");
+  const contactBody = encodeURIComponent("Hi Ojunai Team,\n\nI'm interested in enabling OjunaiVoice for my business.\n\nPlease get in touch to set it up.\n\nThank you.");
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
+    <div className="space-y-6 max-w-5xl mx-auto">
       <div className="text-center">
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-violet-100 mb-4">
           <Phone size={28} className="text-violet-600" />
         </div>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Voice AI Inventory Control Specialist</h2>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-50">OjunaiVoice</h2>
         <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-md mx-auto">
-          An AI-powered phone assistant that handles customer calls 24/7 — stock checks,
-          reservations, bookings, and more. In English, Yoruba, Hausa, and Igbo.
+          AI-powered phone receptionist that handles customer calls in English, Yoruba, Hausa, and Igbo.
+          Pick the tier that matches your call volume.
+        </p>
+        <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-3">
+          ✓ Try it free — {VOICE_AI_TRIAL_MINUTES} inbound minutes on the house
         </p>
       </div>
-      <Card>
-        <CardContent className="pt-6">
-          <div className="space-y-3 mb-6">
-            {VOICE_AI_FEATURES.map((f) => (
-              <div key={f} className="flex items-start gap-2">
-                <CheckCircle size={16} className="text-emerald-500 mt-0.5 flex-shrink-0" />
-                <span className="text-sm text-slate-700 dark:text-slate-300">{f}</span>
-              </div>
-            ))}
-          </div>
-          <div className="border-t pt-5">
-            <p className="text-xs text-slate-500 dark:text-slate-400 text-center mb-3">Starting from</p>
-            <div className="flex items-center justify-center gap-2 mb-4">
-              <button onClick={() => setCycle("monthly")} className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${cycle === "monthly" ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900" : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"}`}>Monthly</button>
-              <button onClick={() => setCycle("annual")} className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${cycle === "annual" ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900" : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"}`}>Annual <span className="ml-1 text-xs text-emerald-500">-{VOICE_AI_ANNUAL_DISCOUNT}%</span></button>
-            </div>
-            <div className="flex items-center justify-center gap-3 mb-4">
-              <select value={currency} onChange={(e) => setCurrency(e.target.value as SupportedCurrency)} className="h-8 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-xs">
-                {SUPPORTED_CURRENCIES.map((c) => <option key={c} value={c}>{CURRENCY_META[c].symbol} {c}</option>)}
-              </select>
-            </div>
-            <div className="text-center mb-5">
-              <p className="text-3xl font-bold text-slate-900 dark:text-slate-50">{sym}{price.toLocaleString()}</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">{cycle === "annual" ? `per year (${sym}${monthlyEquiv.toLocaleString()}/mo)` : "per month"}</p>
-            </div>
-            <a
-              href={`mailto:contact@ojunai.com?subject=${contactSubject}&body=${contactBody}`}
-              className="flex items-center justify-center gap-2 w-full py-3 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-sm font-semibold transition-colors"
-            >
-              <Phone size={16} />
-              Contact Our Team to Get Started
-            </a>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center mt-3">
-              Our team will walk you through the setup, configure your phone number, and get your AI receptionist live within 24 hours.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+
+      <div className="flex items-center justify-center gap-3">
+        <div className="inline-flex items-center gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-800">
+          <button
+            onClick={() => setCycle("monthly")}
+            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${cycle === "monthly" ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-50 shadow-sm" : "text-slate-600 dark:text-slate-400"}`}
+          >
+            Monthly
+          </button>
+          <button
+            onClick={() => setCycle("annual")}
+            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${cycle === "annual" ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-50 shadow-sm" : "text-slate-600 dark:text-slate-400"}`}
+          >
+            Annual <span className="ml-1 text-xs text-emerald-500">-{VOICE_AI_ANNUAL_DISCOUNT}%</span>
+          </button>
+        </div>
+        <select
+          value={currency}
+          onChange={(e) => setCurrency(e.target.value as SupportedCurrency)}
+          className="h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-xs bg-white dark:bg-slate-900"
+        >
+          {SUPPORTED_CURRENCIES.map((c) => <option key={c} value={c}>{CURRENCY_META[c].symbol} {c}</option>)}
+        </select>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {VOICE_AI_TIER_CODES.map((tier) => {
+          const price = VOICE_AI_TIER_PRICING[tier][cycle][currency] ?? 0;
+          const monthlyEquiv = cycle === "annual" ? Math.round(price / 12) : price;
+          const sym = CURRENCY_META[currency]?.symbol ?? currency;
+          const isPro = tier === "pro";
+          return (
+            <Card key={tier} className={isPro ? "border-violet-300 dark:border-violet-700 ring-1 ring-violet-200 dark:ring-violet-800/50" : undefined}>
+              <CardContent className="pt-6">
+                <div className="flex items-baseline justify-between mb-1">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-50">{VOICE_AI_TIER_LABELS[tier]}</h3>
+                  {isPro && <Badge className="bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">Recommended</Badge>}
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">{VOICE_AI_TIER_TAGLINES[tier]}</p>
+                <div className="mb-5">
+                  <p className="text-3xl font-bold text-slate-900 dark:text-slate-50">
+                    {sym}{price.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">
+                    {cycle === "annual" ? `per year (≈ ${sym}${monthlyEquiv.toLocaleString()}/mo)` : "per month"}
+                  </p>
+                </div>
+                <div className="space-y-2 mb-5">
+                  {VOICE_AI_TIER_FEATURES[tier].map((f) => (
+                    <div key={f} className="flex items-start gap-2">
+                      <CheckCircle size={14} className="text-emerald-500 mt-0.5 flex-shrink-0" />
+                      <span className="text-sm text-slate-700 dark:text-slate-300">{f}</span>
+                    </div>
+                  ))}
+                </div>
+                <a
+                  href={`mailto:contact@ojunai.com?subject=${contactSubject}&body=${contactBody}`}
+                  className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+                    isPro
+                      ? "bg-violet-600 hover:bg-violet-700 text-white"
+                      : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-50"
+                  }`}
+                >
+                  <Phone size={14} />
+                  Contact us to enable
+                </a>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center">
+        Our team configures your phone number, voice persona, and call routing. Most businesses are live within 24 hours.
+      </p>
+    </div>
+  );
+}
+
+// ── Tier + Minutes meter (shown inside EnabledView header) ──────────────────
+
+function VoiceMeter({ planStatus }: {
+  planStatus: {
+    voiceAIPlanStatus: string;
+    voiceAITier: VoiceAITier | null;
+    voiceAITierMinutesIncluded: number | null;
+    voiceAICycleMinutesUsed: number;
+    voiceAICycleMinutesRemaining: number | null;
+    voiceAITrialMinutesRemaining: number | null;
+    voiceAITrialMinutesUsed: number;
+  };
+}) {
+  const isTrial = planStatus.voiceAIPlanStatus === "trial";
+  const used = isTrial ? planStatus.voiceAITrialMinutesUsed : planStatus.voiceAICycleMinutesUsed;
+  const cap = isTrial ? VOICE_AI_TRIAL_MINUTES : (planStatus.voiceAITierMinutesIncluded ?? 0);
+  const remaining = isTrial ? (planStatus.voiceAITrialMinutesRemaining ?? 0) : (planStatus.voiceAICycleMinutesRemaining ?? 0);
+  const pct = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
+  const tone = pct >= 90 ? "bg-rose-500" : pct >= 70 ? "bg-amber-500" : "bg-emerald-500";
+
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4 bg-white dark:bg-slate-900">
+      <div className="flex items-baseline justify-between mb-2">
+        <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
+          {isTrial ? "Free trial usage" : `${planStatus.voiceAITier ? VOICE_AI_TIER_LABELS[planStatus.voiceAITier] : "Voice"} — this cycle`}
+        </p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+          {used} / {cap} min
+        </p>
+      </div>
+      <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+        <div className={`h-full ${tone} transition-all`} style={{ width: `${pct}%` }} />
+      </div>
+      <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">
+        {remaining} inbound minute{remaining === 1 ? "" : "s"} remaining
+        {isTrial && " on your trial — subscribe to keep your line live"}
+      </p>
     </div>
   );
 }
@@ -279,11 +367,23 @@ function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurre
 // ── Enabled View (with settings) ─────────────────────────────────────────────
 
 function EnabledView({ planStatus, business }: {
-  planStatus: { voiceAIPlanStatus: string; voiceAITrialDaysLeft: number | null; voiceAITrialEndsAt: string | null; voiceAISubscriptionEndsAt: string | null };
+  planStatus: {
+    voiceAIPlanStatus: string;
+    voiceAITier: VoiceAITier | null;
+    voiceAITierMinutesIncluded: number | null;
+    voiceAICycleMinutesUsed: number;
+    voiceAICycleMinutesRemaining: number | null;
+    voiceAITrialMinutesRemaining: number | null;
+    voiceAITrialMinutesUsed: number;
+    voiceAISubscriptionEndsAt: string | null;
+  };
   business: { name?: string; accountNumber?: string; timezone?: string } | null;
 }) {
   const isTrial = planStatus.voiceAIPlanStatus === "trial";
-  const daysLeft = planStatus.voiceAITrialDaysLeft;
+  const minutesLeft = isTrial
+    ? (planStatus.voiceAITrialMinutesRemaining ?? 0)
+    : (planStatus.voiceAICycleMinutesRemaining ?? 0);
+  const tierLabel = planStatus.voiceAITier ? VOICE_AI_TIER_LABELS[planStatus.voiceAITier] : null;
 
   const { data: settings, isLoading, error: fetchError } = useQuery({
     queryKey: ["voice-ai-settings"],
@@ -298,21 +398,25 @@ function EnabledView({ planStatus, business }: {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Voice AI"
+        title="OjunaiVoice"
         subtitle="Configure your AI phone inventory specialist"
         actions={
           <Badge className={isTrial ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}>
-            {isTrial ? `Trial — ${daysLeft} day${daysLeft !== 1 ? "s" : ""} left` : "Active"}
+            {isTrial ? `Trial — ${minutesLeft} min left` : (tierLabel ?? "Active")}
           </Badge>
         }
       />
 
-      {isTrial && daysLeft !== null && daysLeft <= 5 && (
+      <VoiceMeter planStatus={planStatus} />
+
+      {isTrial && minutesLeft <= 3 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
           <Clock size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-amber-800">Trial ending soon</p>
-            <p className="text-xs text-amber-600 mt-0.5">Your Voice AI trial expires in {daysLeft} day{daysLeft !== 1 ? "s" : ""}. Subscribe to keep it active.</p>
+            <p className="text-sm font-semibold text-amber-800">Trial nearly out</p>
+            <p className="text-xs text-amber-600 mt-0.5">
+              You have {minutesLeft} inbound minute{minutesLeft === 1 ? "" : "s"} left on your free trial. Subscribe to a tier to keep your line live.
+            </p>
           </div>
         </div>
       )}
@@ -328,9 +432,20 @@ function EnabledView({ planStatus, business }: {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
-            <div><span className="text-slate-500 dark:text-slate-400 block text-xs">Status</span><span className="font-medium">{isTrial ? "Trial" : "Active"}</span></div>
+            <div><span className="text-slate-500 dark:text-slate-400 block text-xs">Status</span><span className="font-medium">{isTrial ? "Trial" : (tierLabel ?? "Active")}</span></div>
             {business?.accountNumber && <div><span className="text-slate-500 dark:text-slate-400 block text-xs">Account #</span><span className="font-mono font-medium">{business.accountNumber}</span></div>}
-            {planStatus.voiceAISubscriptionEndsAt && <div><span className="text-slate-500 dark:text-slate-400 block text-xs">{isTrial ? "Trial ends" : "Renews"}</span><span className="font-medium">{new Date(isTrial ? planStatus.voiceAITrialEndsAt! : planStatus.voiceAISubscriptionEndsAt).toLocaleDateString()}</span></div>}
+            {!isTrial && planStatus.voiceAISubscriptionEndsAt && (
+              <div>
+                <span className="text-slate-500 dark:text-slate-400 block text-xs">Renews</span>
+                <span className="font-medium">{new Date(planStatus.voiceAISubscriptionEndsAt).toLocaleDateString()}</span>
+              </div>
+            )}
+            {isTrial && (
+              <div>
+                <span className="text-slate-500 dark:text-slate-400 block text-xs">Trial cap</span>
+                <span className="font-medium">{VOICE_AI_TRIAL_MINUTES} min</span>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

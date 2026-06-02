@@ -971,7 +971,9 @@ function VoiceAISettingsCard() {
           Voice AI Receptionist
           {isActive && (
             <Badge className={isTrial ? "bg-amber-100 text-amber-700 ml-auto" : "bg-emerald-100 text-emerald-700 ml-auto"}>
-              {isTrial ? `Trial — ${planStatus.voiceAITrialDaysLeft}d left` : "Active"}
+              {isTrial
+                ? `Trial — ${planStatus.voiceAITrialMinutesRemaining ?? 0} min left`
+                : (planStatus.voiceAITier === "pro" ? "Voice Pro" : planStatus.voiceAITier === "starter" ? "Voice Starter" : "Active")}
             </Badge>
           )}
           {isSuspended && (

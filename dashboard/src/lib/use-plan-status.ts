@@ -27,12 +27,16 @@ export type PlanStatus = {
   paymentMethod: string | null;
   subscriptionStatus: string;
   pendingPlanChange: string | null;
-  // Voice AI add-on
+  // OjunaiVoice (standalone, two-tier)
   voiceAIFeatureVisible: boolean;
   voiceAIEnabled: boolean;
   voiceAIPlanStatus: string;
-  voiceAITrialDaysLeft: number | null;
-  voiceAITrialEndsAt: string | null;
+  voiceAITier: "starter" | "pro" | null;
+  voiceAITierMinutesIncluded: number | null;
+  voiceAICycleMinutesUsed: number;
+  voiceAICycleMinutesRemaining: number | null;
+  voiceAITrialMinutesRemaining: number | null;
+  voiceAITrialMinutesUsed: number;
   voiceAISubscriptionEndsAt: string | null;
 };
 

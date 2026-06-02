@@ -11,7 +11,10 @@ type VoiceAIBusiness = {
   voiceAIPlanStatus: string;
   voiceAIInternalOverride: boolean;
   voiceAIEnabledAt: string | null;
-  voiceAITrialEndsAt: string | null;
+  voiceAITier: "starter" | "pro" | null;
+  voiceAITrialMinutesUsed: number;
+  voiceAICycleMinutesUsed: number;
+  voiceAISubscriptionEndsAt: string | null;
 };
 
 type Overview = {

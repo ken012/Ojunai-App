@@ -196,40 +196,102 @@ public static class BillingConfig
         return new { plans = result, currencies = SupportedCurrencies };
     }
 
-    // ── Voice AI add-on pricing ──────────────────────────────────────────────
+    // ── OjunaiVoice pricing ──────────────────────────────────────────────────
+    // OjunaiVoice is a standalone two-tier product (sold separately from the dashboard plan).
+    // Tiers differ in inbound minutes, concurrent lines, and feature surface — pick one at
+    // checkout. Trial gives anyone 10 inbound minutes free regardless of tier; after that
+    // they must subscribe to keep using it. Annual = monthly × 10 (2 months free, ~17%).
 
-    private static readonly Dictionary<BillingCycle, Dictionary<string, decimal>> VoiceAIPrices = new()
+    public static readonly string[] VoiceAITierCodes = { "starter", "pro" };
+
+    public static readonly Dictionary<string, string> VoiceAITierLabels = new(StringComparer.OrdinalIgnoreCase)
     {
-        [BillingCycle.Monthly] = new()
+        ["starter"] = "Voice Starter",
+        ["pro"] = "Voice Pro",
+    };
+
+    /// <summary>Tier → inbound minutes included per billing cycle (the Voice AI service enforces this cap).</summary>
+    public static readonly Dictionary<string, int> VoiceAITierMinutes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["starter"] = 300,
+        ["pro"] = 1000,
+    };
+
+    /// <summary>Tier → number of concurrent inbound lines allowed (enforced by the Voice AI service).</summary>
+    public static readonly Dictionary<string, int> VoiceAITierConcurrentLines = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["starter"] = 1,
+        ["pro"] = 3,
+    };
+
+    /// <summary>Inbound minutes granted as free trial before requiring a subscription.</summary>
+    public const int VoiceAITrialMinutes = 10;
+
+    private static readonly Dictionary<string, Dictionary<BillingCycle, Dictionary<string, decimal>>> VoiceAITierPrices = new()
+    {
+        ["starter"] = new()
         {
-            ["NGN"] = 5000, ["GHS"] = 45, ["USD"] = 5, ["GBP"] = 4, ["KES"] = 700, ["ZAR"] = 70, ["UGX"] = 11000
+            [BillingCycle.Monthly] = new()
+            {
+                ["NGN"] = 39999, ["GHS"] = 399, ["USD"] = 39, ["GBP"] = 31, ["KES"] = 3499, ["ZAR"] = 649, ["UGX"] = 89000
+            },
+            [BillingCycle.Annual] = new()
+            {
+                ["NGN"] = 399990, ["GHS"] = 3990, ["USD"] = 390, ["GBP"] = 310, ["KES"] = 34990, ["ZAR"] = 6490, ["UGX"] = 890000
+            }
         },
-        [BillingCycle.Annual] = new()
+        ["pro"] = new()
         {
-            ["NGN"] = 48000, ["GHS"] = 432, ["USD"] = 48, ["GBP"] = 38, ["KES"] = 6720, ["ZAR"] = 672, ["UGX"] = 110000
+            [BillingCycle.Monthly] = new()
+            {
+                ["NGN"] = 82000, ["GHS"] = 829, ["USD"] = 79, ["GBP"] = 63, ["KES"] = 7199, ["ZAR"] = 1349, ["UGX"] = 180000
+            },
+            [BillingCycle.Annual] = new()
+            {
+                ["NGN"] = 820000, ["GHS"] = 8290, ["USD"] = 790, ["GBP"] = 630, ["KES"] = 71990, ["ZAR"] = 13490, ["UGX"] = 1800000
+            }
         }
     };
 
-    public static decimal? GetVoiceAIPrice(BillingCycle cycle, string currency)
+    public static decimal? GetVoiceAITierPrice(string tier, BillingCycle cycle, string currency)
     {
-        if (VoiceAIPrices.TryGetValue(cycle, out var currencies)
+        if (VoiceAITierPrices.TryGetValue(tier?.ToLower() ?? "", out var cycles)
+            && cycles.TryGetValue(cycle, out var currencies)
             && currencies.TryGetValue(currency.ToUpper(), out var price))
             return price;
         return null;
     }
 
-    public static object GetVoiceAIPricing() => new
+    public static decimal GetVoiceAITierPriceOrThrow(string tier, BillingCycle cycle, string currency)
     {
-        monthly = VoiceAIPrices[BillingCycle.Monthly],
-        annual = VoiceAIPrices[BillingCycle.Annual],
-        annualDiscount = 20
-    };
+        var price = GetVoiceAITierPrice(tier, cycle, currency);
+        if (price.HasValue) return price.Value;
+        throw new InvalidOperationException(
+            $"No price configured for Voice tier '{tier}' / cycle '{cycle}' / currency '{currency}'.");
+    }
 
-    public static bool IsValidVoiceAICombination(string cycle, string currency)
+    public static bool IsValidVoiceAITierCombination(string tier, string cycle, string currency)
     {
         if (!Enum.TryParse<BillingCycle>(cycle, true, out var bc)) return false;
-        return GetVoiceAIPrice(bc, currency).HasValue;
+        return GetVoiceAITierPrice(tier, bc, currency).HasValue;
     }
+
+    /// <summary>Full Voice catalog for the dashboard tier picker.</summary>
+    public static object GetVoiceAIPricing() => new
+    {
+        tiers = VoiceAITierCodes.Select(code => new
+        {
+            code,
+            label = VoiceAITierLabels[code],
+            minutesIncluded = VoiceAITierMinutes[code],
+            concurrentLines = VoiceAITierConcurrentLines[code],
+            monthly = VoiceAITierPrices[code][BillingCycle.Monthly],
+            annual = VoiceAITierPrices[code][BillingCycle.Annual]
+        }).ToArray(),
+        trialMinutes = VoiceAITrialMinutes,
+        annualDiscount = 17,
+        currencies = SupportedCurrencies,
+    };
 
     // ── WhatsApp pack pricing ───────────────────────────────────────────────
     // WhatsApp is sold separately from the main tier — these packs cover Meta's per-conversation

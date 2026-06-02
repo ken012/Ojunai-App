@@ -1062,10 +1062,12 @@ public class AdminController : ControllerBase
             }
             else if (request.PlanStatus == "trial" && oldStatus != "trial")
             {
+                // Trial is now minute-based (10 inbound minutes regardless of tier). Resetting the
+                // counter here lets admin grant a fresh trial without touching the DB directly.
                 business.VoiceAIEnabled = true;
                 business.VoiceAIEnabledAt ??= DateTime.UtcNow;
-                var trialDays = _config.GetValue<int>("VoiceAI:TrialDurationDays", 14);
-                business.VoiceAITrialEndsAt = DateTime.UtcNow.AddDays(trialDays);
+                business.VoiceAITrialMinutesUsed = 0;
+                business.VoiceAITier = null;
             }
             else if (request.PlanStatus is "inactive" or "suspended")
             {
@@ -1094,9 +1096,11 @@ public class AdminController : ControllerBase
             businessName = business.Name,
             voiceAIEnabled = business.VoiceAIEnabled,
             voiceAIPlanStatus = business.VoiceAIPlanStatus,
+            voiceAITier = business.VoiceAITier,
             voiceAIInternalOverride = business.VoiceAIInternalOverride,
             voiceAIEnabledAt = business.VoiceAIEnabledAt,
-            voiceAITrialEndsAt = business.VoiceAITrialEndsAt,
+            voiceAITrialMinutesUsed = business.VoiceAITrialMinutesUsed,
+            voiceAICycleMinutesUsed = business.VoiceAICycleMinutesUsed,
             voiceAIBusinessId = business.VoiceAIBusinessId
         });
     }
@@ -1109,7 +1113,13 @@ public class AdminController : ControllerBase
 
         var businesses = await _db.Businesses
             .Where(b => b.IsActive && (b.VoiceAIEnabled || b.VoiceAIInternalOverride))
-            .Select(b => new { b.Id, b.Name, b.AccountNumber, b.VoiceAIPlanStatus, b.VoiceAIInternalOverride, b.VoiceAIEnabledAt, b.VoiceAITrialEndsAt })
+            .Select(b => new
+            {
+                b.Id, b.Name, b.AccountNumber,
+                b.VoiceAIPlanStatus, b.VoiceAIInternalOverride, b.VoiceAIEnabledAt,
+                b.VoiceAITier, b.VoiceAITrialMinutesUsed, b.VoiceAICycleMinutesUsed,
+                b.VoiceAISubscriptionEndsAt
+            })
             .ToListAsync();
 
         return Ok(new

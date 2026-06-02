@@ -231,14 +231,17 @@ public class PaystackService
         }
     }
 
-    public async Task<string> InitializeVoiceAIAsync(Guid businessId, string email, decimal amount, string currency, string cycle)
+    public async Task<string> InitializeVoiceAIAsync(Guid businessId, string email, decimal amount, string currency, string cycle, string tier)
     {
         var business = await _db.Businesses.FindAsync(businessId)
             ?? throw new KeyNotFoundException("Business not found.");
 
         var isAnnual = cycle.Equals("annual", StringComparison.OrdinalIgnoreCase);
         var interval = isAnnual ? "annually" : "monthly";
-        var paystackPlanCode = await GetOrCreatePlanAsync($"voice-ai-{cycle}", amount, interval);
+        // Tier in the plan name so Paystack has a distinct subscription per tier (lets a merchant
+        // switch tiers cleanly without colliding plan codes). Voice Starter ≠ Voice Pro at the
+        // billing-provider level.
+        var paystackPlanCode = await GetOrCreatePlanAsync($"voice-ai-{tier}-{cycle}", amount, interval);
 
         var customerCode = business.PaystackCustomerCode;
         if (string.IsNullOrEmpty(customerCode))
@@ -254,7 +257,7 @@ public class PaystackService
             amount = (int)(amount * 100),
             plan = paystackPlanCode,
             callback_url = $"{_config["App:DashboardUrl"] ?? "https://app.ojunai.com"}/settings?voiceai=true",
-            metadata = new { businessId = businessId.ToString(), product = "voice_ai" }
+            metadata = new { businessId = businessId.ToString(), product = "voice_ai", tier }
         };
 
         var response = await PostAsync("/transaction/initialize", body);
@@ -581,16 +584,26 @@ public class PaystackService
             return;
         }
 
-        // Voice AI add-on payment
+        // Voice AI standalone-product payment
         if (product == "voice_ai")
         {
             decimal? chargedNaira = data.TryGetProperty("amount", out var vaAmtEl) ? vaAmtEl.GetInt64() / 100m : null;
             var isAnnual = business.BillingCycle?.Equals("annual", StringComparison.OrdinalIgnoreCase) == true;
+            // Tier comes from metadata.tier set in InitializeVoiceAIAsync. Default to the existing
+            // tier on renewals (Paystack subscription charges carry the original metadata).
+            var newTier = meta.TryGetProperty("tier", out var tierEl) ? tierEl.GetString()?.ToLower() : null;
+            if (string.IsNullOrEmpty(newTier) || !BillingConfig.VoiceAITierCodes.Contains(newTier))
+                newTier = business.VoiceAITier;
 
             business.VoiceAIEnabled = true;
             business.VoiceAIPlanStatus = "active";
             business.VoiceAIEnabledAt ??= DateTime.UtcNow;
             business.VoiceAITrialEndsAt = null;
+            // First charge on a tier OR a tier switch → zero the cycle counter so the new cap starts
+            // fresh. Renewal charges (same tier) also reset because the merchant just paid for
+            // another month of inbound minutes.
+            business.VoiceAITier = newTier;
+            business.VoiceAICycleMinutesUsed = 0;
             var baseDate = (business.VoiceAISubscriptionEndsAt.HasValue && business.VoiceAISubscriptionEndsAt > DateTime.UtcNow)
                 ? business.VoiceAISubscriptionEndsAt.Value : DateTime.UtcNow;
             business.VoiceAISubscriptionEndsAt = isAnnual ? baseDate.AddYears(1) : baseDate.AddMonths(1);
@@ -603,7 +616,7 @@ public class PaystackService
                 BusinessId = business.Id,
                 EventType = "voiceai.payment.success",
                 Provider = "paystack",
-                Plan = "voice_ai",
+                Plan = $"voice_ai.{newTier ?? "unknown"}",
                 Amount = chargedNaira,
                 Currency = business.BillingCurrency ?? business.Currency,
                 PaymentMethod = "card",
@@ -611,7 +624,7 @@ public class PaystackService
             });
 
             await _db.SaveChangesAsync();
-            _logger.LogInformation("Voice AI payment confirmed: {Business}", business.Name);
+            _logger.LogInformation("Voice AI {Tier} payment confirmed: {Business}", newTier, business.Name);
 
             var provisioner = _serviceProvider.GetRequiredService<VoiceAIProvisioningService>();
             await provisioner.EnsureProvisionedAsync(business);

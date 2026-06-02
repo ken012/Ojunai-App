@@ -91,12 +91,17 @@ public class BusinessController : OjunaiBaseController
             IsAutoRenew = biz.IsAutoRenew,
             PaymentMethod = biz.PaymentMethod,
             SubscriptionStatus = PlanGuard.GetSubscriptionStatus(biz),
-            // Voice AI add-on
+            // OjunaiVoice (standalone, two-tier)
             VoiceAIFeatureVisible = _config.GetValue<bool>("VoiceAI:FeatureEnabled"),
             VoiceAIEnabled = VoiceAIGuard.HasAccess(biz),
             VoiceAIPlanStatus = biz.VoiceAIPlanStatus,
-            VoiceAITrialDaysLeft = VoiceAIGuard.GetVoiceAITrialDaysLeft(biz),
-            VoiceAITrialEndsAt = biz.VoiceAITrialEndsAt,
+            VoiceAITier = biz.VoiceAITier,
+            VoiceAITierMinutesIncluded = !string.IsNullOrEmpty(biz.VoiceAITier)
+                && BillingConfig.VoiceAITierMinutes.TryGetValue(biz.VoiceAITier, out var inc) ? inc : null,
+            VoiceAICycleMinutesUsed = biz.VoiceAICycleMinutesUsed,
+            VoiceAICycleMinutesRemaining = VoiceAIGuard.GetVoiceAICycleMinutesRemaining(biz),
+            VoiceAITrialMinutesUsed = biz.VoiceAITrialMinutesUsed,
+            VoiceAITrialMinutesRemaining = VoiceAIGuard.GetVoiceAITrialMinutesRemaining(biz),
             VoiceAISubscriptionEndsAt = biz.VoiceAISubscriptionEndsAt,
         }));
     }
@@ -362,13 +367,103 @@ public class BusinessController : OjunaiBaseController
             return NotFound(new { allowed = false, error = "Business not found." });
 
         var allowed = VoiceAIGuard.HasAccess(business);
+        // Tier-aware response. The Voice AI service uses these fields to enforce concurrent-line
+        // and per-cycle minute caps in its telephony layer. When the merchant is on trial, tier
+        // is null and the service should enforce the 10-minute trial cap using trialMinutesRemaining.
+        int? tierMinutes = !string.IsNullOrEmpty(business.VoiceAITier)
+            && BillingConfig.VoiceAITierMinutes.TryGetValue(business.VoiceAITier, out var inc) ? inc : null;
+        int? tierLines = !string.IsNullOrEmpty(business.VoiceAITier)
+            && BillingConfig.VoiceAITierConcurrentLines.TryGetValue(business.VoiceAITier, out var lines) ? lines : null;
         return Ok(new
         {
             allowed,
             businessId = business.Id,
             businessName = business.Name,
             status = business.VoiceAIPlanStatus,
+            tier = business.VoiceAITier,
+            tierLabel = !string.IsNullOrEmpty(business.VoiceAITier)
+                && BillingConfig.VoiceAITierLabels.TryGetValue(business.VoiceAITier, out var lbl) ? lbl : null,
+            minutesIncluded = tierMinutes,
+            cycleMinutesUsed = business.VoiceAICycleMinutesUsed,
+            cycleMinutesRemaining = VoiceAIGuard.GetVoiceAICycleMinutesRemaining(business),
+            concurrentLines = tierLines,
+            priorityQueueing = business.VoiceAITier == "pro",
+            trialMinutesIncluded = BillingConfig.VoiceAITrialMinutes,
+            trialMinutesUsed = business.VoiceAITrialMinutesUsed,
+            trialMinutesRemaining = VoiceAIGuard.GetVoiceAITrialMinutesRemaining(business),
+            subscriptionEndsAt = business.VoiceAISubscriptionEndsAt,
             error = allowed ? (string?)null : "Voice AI is not enabled for this business."
+        });
+    }
+
+    /// <summary>
+    /// Voice AI service → main API: report inbound minutes consumed by a business. Increments the
+    /// trial counter (while status=trial) or the paid-cycle counter (while status=active). Returns the
+    /// updated counters so the caller can re-check whether the merchant still has remaining minutes
+    /// without a separate round-trip. The Voice AI service should call this after each call ends with
+    /// the minutes (rounded up to whole minutes is fine; we store ints).
+    /// </summary>
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    [HttpPost("voice-ai-minutes/{accountNumber}")]
+    public async Task<IActionResult> ReportVoiceAIMinutes(
+        [FromRoute] string accountNumber,
+        [FromHeader(Name = "X-VoiceAI-Key")] string? apiKey,
+        [FromBody] VoiceAIMinutesReport body)
+    {
+        var secret = _config["VoiceAI:InternalApiKey"];
+        if (string.IsNullOrEmpty(secret) || secret.Length < 16)
+            return StatusCode(503);
+        if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            System.Text.Encoding.UTF8.GetBytes(apiKey ?? ""),
+            System.Text.Encoding.UTF8.GetBytes(secret)))
+            return Unauthorized();
+
+        if (body == null || body.Minutes <= 0)
+            return BadRequest(new { error = "Minutes must be a positive integer." });
+        // Cap a single report at 24 hours of audio to keep a buggy caller from running the counter
+        // to int.MaxValue in a single request. Anything longer is almost certainly a malformed call log.
+        if (body.Minutes > 1440)
+            return BadRequest(new { error = "A single report cannot exceed 1440 minutes." });
+
+        var business = await _db.Businesses.FirstOrDefaultAsync(b => b.AccountNumber == accountNumber && b.IsActive);
+        if (business == null) return NotFound(new { error = "Business not found." });
+
+        // Increment the matching counter. On trial we count against the 10-minute taste; on a paid
+        // tier we count against the per-cycle cap. Active businesses without a tier (legacy override)
+        // still get their cycle counter ticked so the admin overview shows real usage.
+        if (business.VoiceAIPlanStatus == "trial")
+            business.VoiceAITrialMinutesUsed += body.Minutes;
+        else
+            business.VoiceAICycleMinutesUsed += body.Minutes;
+
+        // If trial minutes were just consumed past the cap, flip status to suspended right away so the
+        // next call check from the Voice AI service short-circuits without waiting for the daily sweep.
+        if (business.VoiceAIPlanStatus == "trial"
+            && business.VoiceAITrialMinutesUsed >= BillingConfig.VoiceAITrialMinutes
+            && !business.VoiceAIInternalOverride)
+        {
+            business.VoiceAIPlanStatus = "suspended";
+            business.VoiceAIEnabled = false;
+            _db.BillingEvents.Add(new Models.BillingEvent
+            {
+                BusinessId = business.Id,
+                EventType = "voiceai.trial.minutes_exhausted",
+                Provider = "system",
+                Plan = "voice_ai",
+                Status = "suspended"
+            });
+        }
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            status = business.VoiceAIPlanStatus,
+            tier = business.VoiceAITier,
+            cycleMinutesUsed = business.VoiceAICycleMinutesUsed,
+            cycleMinutesRemaining = VoiceAIGuard.GetVoiceAICycleMinutesRemaining(business),
+            trialMinutesUsed = business.VoiceAITrialMinutesUsed,
+            trialMinutesRemaining = VoiceAIGuard.GetVoiceAITrialMinutesRemaining(business),
         });
     }
 
@@ -887,18 +982,39 @@ public class PlanStatusDto
     public bool IsAutoRenew { get; set; }
     public string? PaymentMethod { get; set; }
     public string SubscriptionStatus { get; set; } = "none";
-    // Voice AI add-on
+    // OjunaiVoice (standalone, two-tier)
     public bool VoiceAIFeatureVisible { get; set; }
     public bool VoiceAIEnabled { get; set; }
     public string VoiceAIPlanStatus { get; set; } = "inactive";
-    public int? VoiceAITrialDaysLeft { get; set; }
-    public DateTime? VoiceAITrialEndsAt { get; set; }
+    /// <summary>"starter" or "pro", null on trial or before tier picked.</summary>
+    public string? VoiceAITier { get; set; }
+    /// <summary>Inbound minutes the tier includes per cycle (300 for starter, 1000 for pro). Null on trial.</summary>
+    public int? VoiceAITierMinutesIncluded { get; set; }
+    /// <summary>Inbound minutes consumed in the current paid cycle.</summary>
+    public int VoiceAICycleMinutesUsed { get; set; }
+    /// <summary>Inbound minutes still available in the current paid cycle. Null on trial.</summary>
+    public int? VoiceAICycleMinutesRemaining { get; set; }
+    /// <summary>Inbound minutes still available on the trial (0 once consumed). Null when not on trial.</summary>
+    public int? VoiceAITrialMinutesRemaining { get; set; }
+    public int VoiceAITrialMinutesUsed { get; set; }
     public DateTime? VoiceAISubscriptionEndsAt { get; set; }
 }
 
 public class StartTrialRequest
 {
     public string Plan { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Sent by the Voice AI service to /business/voice-ai-minutes/{accountNumber} after each call
+/// ends. The Voice AI service is the source of truth for "how many minutes did this merchant
+/// just use" — we just persist and gate. CallSid is logged for audit reconciliation between
+/// the two systems.
+/// </summary>
+public class VoiceAIMinutesReport
+{
+    public int Minutes { get; set; }
+    public string? CallSid { get; set; }
 }
 
 public class CloseAccountRequest

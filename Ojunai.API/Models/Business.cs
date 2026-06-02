@@ -67,7 +67,7 @@ public class Business
     public string? BackgroundImageFileName { get; set; }
     /// <summary>0.0 (image fully visible) → 1.0 (overlay fully opaque, image hidden). Default 0.85 keeps text legible.</summary>
     public decimal BackgroundImageOpacity { get; set; } = 0.85m;
-    // ── Voice AI add-on ──────────────────────────────
+    // ── OjunaiVoice (standalone product, two-tier) ──────────
     public bool VoiceAIEnabled { get; set; } = false;
     public string VoiceAIPlanStatus { get; set; } = "inactive";
     public bool VoiceAIInternalOverride { get; set; } = false;
@@ -76,6 +76,12 @@ public class Business
     public string? VoiceAISubscriptionId { get; set; }
     public DateTime? VoiceAISubscriptionEndsAt { get; set; }
     public Guid? VoiceAIBusinessId { get; set; }
+    /// <summary>"starter" or "pro". Null while the merchant is on trial or before they've picked a tier.</summary>
+    public string? VoiceAITier { get; set; }
+    /// <summary>Inbound minutes consumed during the free trial. When this reaches VoiceAITrialMinutes, the trial ends.</summary>
+    public int VoiceAITrialMinutesUsed { get; set; } = 0;
+    /// <summary>Inbound minutes consumed in the current paid billing cycle. Resets on renewal.</summary>
+    public int VoiceAICycleMinutesUsed { get; set; } = 0;
 
     public bool IsActive { get; set; } = true;
     public string AccountNumber { get; set; } = string.Empty;

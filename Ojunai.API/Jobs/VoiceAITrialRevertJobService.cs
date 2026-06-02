@@ -1,5 +1,6 @@
 using Ojunai.API.Data;
 using Ojunai.API.Models;
+using Ojunai.API.Common;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ojunai.API.Jobs;
@@ -19,12 +20,15 @@ public class VoiceAITrialRevertJobService
     {
         var now = DateTime.UtcNow;
 
-        // Expire Voice AI trials
+        // Trial reverter — backstop for any business whose trial minutes hit the cap but didn't get
+        // flipped during the live POST /voice-ai-minutes call (e.g., the Voice AI service crashed
+        // between persisting minutes and our handler running). The minutes endpoint is the primary
+        // gate; this job catches stragglers.
+        var trialCap = BillingConfig.VoiceAITrialMinutes;
         var expiredTrials = await _db.Businesses
             .Where(b => b.IsActive
                 && b.VoiceAIPlanStatus == "trial"
-                && b.VoiceAITrialEndsAt.HasValue
-                && b.VoiceAITrialEndsAt.Value < now
+                && b.VoiceAITrialMinutesUsed >= trialCap
                 && !b.VoiceAIInternalOverride)
             .ToListAsync();
 
@@ -36,7 +40,7 @@ public class VoiceAITrialRevertJobService
             _db.BillingEvents.Add(new BillingEvent
             {
                 BusinessId = biz.Id,
-                EventType = "voiceai.trial.expired",
+                EventType = "voiceai.trial.minutes_exhausted",
                 Provider = "system",
                 Plan = "voice_ai",
                 Status = "suspended"
