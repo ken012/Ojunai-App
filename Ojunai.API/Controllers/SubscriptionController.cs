@@ -70,7 +70,8 @@ public class SubscriptionController : OjunaiBaseController
                 a.BilledAmount,
                 a.BilledCurrency,
                 a.NextBillingAtUtc,
-                a.AddedAtUtc
+                a.AddedAtUtc,
+                a.IsAutoRenew,
             })
             .FirstOrDefaultAsync(ct);
 
@@ -81,6 +82,7 @@ public class SubscriptionController : OjunaiBaseController
             activeRow.BilledCurrency,
             activeRow.NextBillingAtUtc,
             activeRow.AddedAtUtc,
+            activeRow.IsAutoRenew,
         };
 
         return Ok(new
@@ -125,8 +127,10 @@ public class SubscriptionController : OjunaiBaseController
 
         if (provider == BillingConfig.BillingProvider.Paystack)
         {
-            var url = await _paystack.InitializeWhatsAppPackChargeAsync(BusinessId, packCode, email);
-            return Ok(ApiResponse<object>.Ok(new { paymentUrl = url, provider = "paystack" },
+            var url = await _paystack.InitializeWhatsAppPackChargeAsync(
+                BusinessId, packCode, email, autoRenew: request.AutoRenew);
+            return Ok(ApiResponse<object>.Ok(
+                new { paymentUrl = url, provider = "paystack", autoRenew = request.AutoRenew },
                 "Redirecting to payment..."));
         }
 
@@ -599,6 +603,12 @@ public class InitializeSubscriptionRequest
 public class ActivateWhatsAppPackRequest
 {
     public string? Code { get; set; }
+
+    /// <summary>
+    /// Opt the pack into auto-renew via Paystack subscription. Currently honored only for
+    /// NGN/Paystack purchases — Flutterwave currencies fall back to one-time charges.
+    /// </summary>
+    public bool AutoRenew { get; set; } = false;
 }
 
 public class ChangePlanRequest

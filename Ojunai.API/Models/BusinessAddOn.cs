@@ -31,4 +31,19 @@ public class BusinessAddOn
     public DateTime? CancelledAtUtc { get; set; }
     public DateTime? NextBillingAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// True if the merchant opted into auto-renew at purchase (card-only payments). The
+    /// recurring charge events from Paystack/Flutterwave bump <see cref="NextBillingAtUtc"/>.
+    /// Defaults false — mobile money / bank transfer / USSD purchases stay one-time, and
+    /// the daily expiry job marks them as cancelled when their billing period rolls over.
+    /// </summary>
+    public bool IsAutoRenew { get; set; } = false;
+
+    /// <summary>
+    /// External provider's subscription identifier — Paystack's subscription_code or
+    /// Flutterwave's plan-bound payment ID. Set on the first charge; lookup key when a
+    /// recurring charge webhook fires later. Null for one-time purchases.
+    /// </summary>
+    public string? ProviderSubscriptionId { get; set; }
 }

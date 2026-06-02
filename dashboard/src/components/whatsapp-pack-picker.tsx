@@ -38,6 +38,7 @@ type ActivePack = {
   billedCurrency: string;
   nextBillingAtUtc: string | null;
   addedAtUtc: string;
+  isAutoRenew: boolean;
 } | null;
 
 type WhatsAppPacksResponse = {
@@ -85,6 +86,9 @@ export function WhatsAppPackPicker() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [purchasing, setPurchasing] = useState<string | null>(null);
+  // Two-step purchase: clicking Buy opens a confirm dialog so the user can choose
+  // one-time vs auto-renew before being sent to the payment gateway.
+  const [confirming, setConfirming] = useState<{ code: string; autoRenew: boolean } | null>(null);
 
   const { data, isLoading } = useQuery<WhatsAppPacksResponse>({
     queryKey: ["whatsapp-packs"],
@@ -98,12 +102,13 @@ export function WhatsAppPackPicker() {
     staleTime: 30_000,
   });
 
-  async function handlePurchase(code: string) {
+  async function handlePurchase(code: string, autoRenew: boolean) {
     setPurchasing(code);
+    setConfirming(null);
     try {
       const { data: resp } = await api.post<{ data: PurchaseInitResult }>(
         "/subscription/whatsapp-packs/purchase",
-        { code },
+        { code, autoRenew },
       );
       const result = resp.data!;
 
@@ -196,9 +201,21 @@ export function WhatsAppPackPicker() {
           </p>
         </div>
         {activeCode && (
-          <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
-            Current: {data.catalog.packs[activeCode]?.label}
-          </span>
+          <div className="text-right">
+            <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
+              Current: {data.catalog.packs[activeCode]?.label}
+            </span>
+            {data.activePack?.nextBillingAtUtc && (
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                {data.activePack.isAutoRenew ? "Auto-renews on " : "Expires on "}
+                {new Date(data.activePack.nextBillingAtUtc).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </p>
+            )}
+          </div>
         )}
       </div>
 
@@ -249,7 +266,7 @@ export function WhatsAppPackPicker() {
                   size="sm"
                   variant="outline"
                   disabled={purchasing === code}
-                  onClick={() => handlePurchase(code)}
+                  onClick={() => setConfirming({ code, autoRenew: false })}
                   className="w-full mt-2 text-[11px] h-7"
                 >
                   {purchasing === code ? "Starting…" : activeCode ? "Switch" : "Buy"}
@@ -259,6 +276,67 @@ export function WhatsAppPackPicker() {
           );
         })}
       </div>
+
+      {/* Confirm dialog — opens before checkout so the user can pick one-time vs auto-renew. */}
+      {confirming && (() => {
+        const pack = data.catalog.packs[confirming.code];
+        if (!pack) return null;
+        const price = pack.monthly[currency] ?? pack.monthly.USD;
+        const isNgn = currency === "NGN";
+        return (
+          <div
+            className="fixed inset-0 z-[9998] bg-slate-900/40 flex items-center justify-center p-4"
+            onClick={() => setConfirming(null)}
+          >
+            <div
+              className="relative z-[9999] w-full max-w-md rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 mb-1">
+                Confirm WhatsApp pack purchase
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                {pack.label} — {formatPrice(price, currency)}/mo
+                {pack.actions === -1 ? " · Unlimited actions" : ` · ${pack.actions.toLocaleString()} actions/mo`}
+              </p>
+
+              <label className="flex items-start gap-2.5 p-3 rounded-lg border border-slate-200 dark:border-slate-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={confirming.autoRenew}
+                  disabled={!isNgn}
+                  onChange={(e) =>
+                    setConfirming({ ...confirming, autoRenew: e.target.checked })
+                  }
+                  className="mt-0.5"
+                />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    Renew automatically each month
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    {isNgn
+                      ? "Charges your card each cycle. Cancel anytime from this page."
+                      : "Auto-renew is currently available for NGN payments only. Your purchase will be one-time."}
+                  </p>
+                </div>
+              </label>
+
+              <div className="flex justify-end gap-2 mt-5">
+                <Button variant="outline" size="sm" onClick={() => setConfirming(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => handlePurchase(confirming.code, confirming.autoRenew && isNgn)}
+                >
+                  Continue to checkout
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

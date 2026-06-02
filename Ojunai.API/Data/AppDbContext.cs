@@ -381,9 +381,13 @@ public class AppDbContext : DbContext
             e.Property(x => x.AddOnCode).HasMaxLength(60).IsRequired();
             e.Property(x => x.Status).HasMaxLength(20).IsRequired();
             e.Property(x => x.BilledCurrency).HasMaxLength(10);
+            e.Property(x => x.ProviderSubscriptionId).HasMaxLength(200);
 
             // "Find active add-ons for this business" is the hot path for gating.
             e.HasIndex(x => new { x.BusinessId, x.Status });
+            // Recurring webhooks look up by ProviderSubscriptionId to identify which
+            // pack/business a renewal charge applies to. Sparse — non-recurring rows are null.
+            e.HasIndex(x => x.ProviderSubscriptionId).HasFilter("\"ProviderSubscriptionId\" IS NOT NULL");
             // Per-business uniqueness for non-stackable add-ons is enforced in code (the
             // catalog defines stackable=false), not at the DB level — Quantity is part of
             // the row and active rows can legitimately repeat for stackable codes.

@@ -262,15 +262,17 @@ public class PaystackService
     }
 
     /// <summary>
-    /// Initialize a one-time charge for a WhatsApp pack purchase. Unlike tier subscriptions,
-    /// packs are NOT auto-renewing — the merchant re-purchases each cycle. This matches Sent's
-    /// per-conversation cost model (volume varies; we shouldn't auto-renew based on usage we
-    /// can't predict).
+    /// Initialize a Paystack checkout for a WhatsApp pack. The merchant can opt into auto-renew
+    /// (card payments only) — when enabled, the transaction carries a Paystack plan code so
+    /// subsequent charges from Paystack auto-renew the pack. Without auto-renew it's a pure
+    /// one-time charge and the daily PackExpiryJobService cancels the pack at NextBillingAtUtc.
     ///
     /// The webhook recognizes pack purchases by metadata.mode == "whatsapp_pack" + packCode,
     /// validates the amount matches the canonical price, then upserts a BusinessAddOn row.
+    /// metadata.autoRenew tells the webhook whether to mark the row as auto-renewing.
     /// </summary>
-    public async Task<string> InitializeWhatsAppPackChargeAsync(Guid businessId, string packCode, string email)
+    public async Task<string> InitializeWhatsAppPackChargeAsync(
+        Guid businessId, string packCode, string email, bool autoRenew = false)
     {
         var business = await _db.Businesses.FindAsync(businessId)
             ?? throw new KeyNotFoundException("Business not found.");
@@ -289,25 +291,57 @@ public class PaystackService
             ? BillingConfig.BillingCycle.Annual
             : BillingConfig.BillingCycle.Monthly;
         var amount = BillingConfig.GetWhatsAppPackPriceOrThrow(packCode, cycle, billingCurrency);
+        var interval = cycle == BillingConfig.BillingCycle.Annual ? "annually" : "monthly";
 
-        var body = new
+        // Build the transaction body. If auto-renew is on, include `plan` so Paystack creates
+        // a recurring subscription on the first successful charge. Without `plan`, it's a
+        // one-time transaction even on a card payment method.
+        object body;
+        if (autoRenew)
         {
-            email,
-            amount = (int)(amount * 100), // kobo for NGN
-            callback_url = $"{_config["App:DashboardUrl"] ?? "https://app.ojunai.com"}/settings?pack=true",
-            metadata = new
+            var paystackPlanCode = await GetOrCreatePlanAsync(
+                $"whatsapp-pack-{packCode}-{cycle.ToString().ToLowerInvariant()}",
+                amount,
+                interval);
+
+            body = new
             {
-                businessId = businessId.ToString(),
-                mode = "whatsapp_pack",
-                packCode,
-                cycle = cycle.ToString().ToLowerInvariant(),
-            }
-        };
+                email,
+                amount = (int)(amount * 100),
+                plan = paystackPlanCode,
+                callback_url = $"{_config["App:DashboardUrl"] ?? "https://app.ojunai.com"}/settings?pack=true",
+                metadata = new
+                {
+                    businessId = businessId.ToString(),
+                    mode = "whatsapp_pack",
+                    packCode,
+                    cycle = cycle.ToString().ToLowerInvariant(),
+                    autoRenew = true,
+                }
+            };
+        }
+        else
+        {
+            body = new
+            {
+                email,
+                amount = (int)(amount * 100),
+                callback_url = $"{_config["App:DashboardUrl"] ?? "https://app.ojunai.com"}/settings?pack=true",
+                metadata = new
+                {
+                    businessId = businessId.ToString(),
+                    mode = "whatsapp_pack",
+                    packCode,
+                    cycle = cycle.ToString().ToLowerInvariant(),
+                    autoRenew = false,
+                }
+            };
+        }
 
         var response = await PostAsync("/transaction/initialize", body);
         _logger.LogInformation(
-            "Initialized Paystack pack purchase: business={Business} pack={Pack} amount={Amount} {Currency}",
-            business.Name, packCode, amount, billingCurrency);
+            "Initialized Paystack pack purchase: business={Business} pack={Pack} amount={Amount} {Currency} autoRenew={AutoRenew}",
+            business.Name, packCode, amount, billingCurrency, autoRenew);
         return response.GetProperty("data").GetProperty("authorization_url").GetString()!;
     }
 
@@ -584,12 +618,20 @@ public class PaystackService
             return;
         }
 
-        // WhatsApp pack payment (one-time charge, no auto-renew)
+        // WhatsApp pack first-charge — metadata.mode is set on /transaction/initialize so it's
+        // ours, validate amount and upsert the BusinessAddOn.
         if (string.Equals(metaMode, "whatsapp_pack", StringComparison.OrdinalIgnoreCase))
         {
             await HandleWhatsAppPackChargeAsync(business, meta, data);
             return;
         }
+
+        // WhatsApp pack recurring charge — auto-renew transactions fire charge.success WITHOUT
+        // our metadata (Paystack auto-charges from the subscription). The disambiguator is
+        // subscription_code → BusinessAddOn.ProviderSubscriptionId. Returns true if matched +
+        // handled; if false, fall through to the existing tier-renewal logic below.
+        if (await TryHandleWhatsAppPackRenewalAsync(business, data))
+            return;
 
         // Plan name resolution:
         //  1. Prefer metadata.plan (first-charge initialization)
@@ -726,6 +768,7 @@ public class PaystackService
     {
         var packCode = meta.TryGetProperty("packCode", out var pcEl) ? pcEl.GetString() : null;
         var cycleStr = meta.TryGetProperty("cycle", out var cyEl) ? cyEl.GetString() : "monthly";
+        var autoRenew = meta.TryGetProperty("autoRenew", out var arEl) && arEl.GetBoolean();
 
         if (string.IsNullOrEmpty(packCode) || !BillingConfig.WhatsAppPackCodes.Contains(packCode.ToLowerInvariant()))
         {
@@ -759,7 +802,16 @@ public class PaystackService
             return;
         }
 
-        await UpsertWhatsAppPackAddOnAsync(business.Id, packCode.ToLowerInvariant(), expectedAmount.Value, currency, cycle);
+        // Paystack populates subscription_code on the first charge of a subscription-mode
+        // transaction. Capture it so future renewal charges (which arrive WITHOUT our metadata)
+        // can be matched back to this business + pack.
+        string? subscriptionCode = null;
+        if (autoRenew && data.TryGetProperty("subscription_code", out var sscEl))
+            subscriptionCode = sscEl.GetString();
+
+        await UpsertWhatsAppPackAddOnAsync(
+            business.Id, packCode.ToLowerInvariant(), expectedAmount.Value, currency, cycle,
+            autoRenew, subscriptionCode);
 
         _db.BillingEvents.Add(new BillingEvent
         {
@@ -775,8 +827,55 @@ public class PaystackService
 
         await _db.SaveChangesAsync();
         _logger.LogInformation(
-            "WhatsApp pack activated via Paystack: business={Business} pack={Pack} amount={Amount} {Currency}",
-            business.Name, packCode, expectedAmount.Value, currency);
+            "WhatsApp pack activated via Paystack: business={Business} pack={Pack} amount={Amount} {Currency} autoRenew={AutoRenew}",
+            business.Name, packCode, expectedAmount.Value, currency, autoRenew);
+    }
+
+    /// <summary>
+    /// Handles a recurring Paystack charge for an already-active WhatsApp pack subscription.
+    /// Match key is subscription_code → BusinessAddOn.ProviderSubscriptionId. Bumps
+    /// NextBillingAtUtc and logs a BillingEvent. Returns true if a renewal was handled,
+    /// false if the subscription_code doesn't match any pack we know about (caller continues
+    /// with the existing tier-renewal logic).
+    /// </summary>
+    private async Task<bool> TryHandleWhatsAppPackRenewalAsync(Business business, JsonElement data)
+    {
+        if (!data.TryGetProperty("subscription_code", out var scEl)) return false;
+        var subscriptionCode = scEl.GetString();
+        if (string.IsNullOrEmpty(subscriptionCode)) return false;
+
+        var addon = await _db.BusinessAddOns.FirstOrDefaultAsync(a =>
+            a.BusinessId == business.Id
+            && a.ProviderSubscriptionId == subscriptionCode
+            && a.Status == "active"
+            && a.AddOnCode.StartsWith("whatsapp_pack."));
+        if (addon == null) return false;
+
+        var now = DateTime.UtcNow;
+        var cycle = addon.NextBillingAtUtc.HasValue && (addon.NextBillingAtUtc.Value - addon.AddedAtUtc).TotalDays > 60
+            ? BillingConfig.BillingCycle.Annual
+            : BillingConfig.BillingCycle.Monthly;
+        addon.NextBillingAtUtc = cycle == BillingConfig.BillingCycle.Annual ? now.AddYears(1) : now.AddMonths(1);
+        addon.UpdatedAtUtc = now;
+
+        decimal? chargedNaira = data.TryGetProperty("amount", out var amtEl) ? amtEl.GetInt64() / 100m : null;
+        _db.BillingEvents.Add(new BillingEvent
+        {
+            BusinessId = business.Id,
+            EventType = "whatsapp_pack.renewed",
+            Provider = "paystack",
+            Plan = addon.AddOnCode,
+            Amount = chargedNaira,
+            Currency = addon.BilledCurrency,
+            PaymentMethod = "card",
+            Status = "success"
+        });
+
+        await _db.SaveChangesAsync();
+        _logger.LogInformation(
+            "WhatsApp pack renewed via Paystack: business={Business} addon={AddOn} nextBilling={Next}",
+            business.Name, addon.AddOnCode, addon.NextBillingAtUtc);
+        return true;
     }
 
     /// <summary>
@@ -785,7 +884,8 @@ public class PaystackService
     /// same DB pattern.)
     /// </summary>
     private async Task UpsertWhatsAppPackAddOnAsync(
-        Guid businessId, string packCode, decimal amount, string currency, BillingConfig.BillingCycle cycle)
+        Guid businessId, string packCode, decimal amount, string currency, BillingConfig.BillingCycle cycle,
+        bool autoRenew = false, string? providerSubscriptionId = null)
     {
         var now = DateTime.UtcNow;
         var existing = await _db.BusinessAddOns
@@ -812,6 +912,8 @@ public class PaystackService
             AddedAtUtc = now,
             NextBillingAtUtc = nextBilling,
             UpdatedAtUtc = now,
+            IsAutoRenew = autoRenew,
+            ProviderSubscriptionId = providerSubscriptionId,
         });
     }
 

@@ -161,6 +161,7 @@ builder.Services.AddScoped<ImportJobService>();
 builder.Services.AddScoped<PaymentReconciliationJobService>();
 builder.Services.AddScoped<AdminSnapshotJobService>();
 builder.Services.AddScoped<MessageLogRetentionJobService>();
+builder.Services.AddScoped<PackExpiryJobService>();
 builder.Services.AddScoped<AdminAlertJobService>();
 
 // ── Hangfire ──────────────────────────────────────────────────────────────────
@@ -440,6 +441,13 @@ RecurringJob.AddOrUpdate<MessageLogRetentionJobService>(
     "messagelogs-retention",
     svc => svc.RunDailyAsync(),
     "0 2 * * *");
+
+// Expire non-renewing WhatsApp packs at 03:00 UTC. Auto-renewing packs are skipped — their
+// NextBillingAtUtc is bumped by the recurring webhook handler on each charge.
+RecurringJob.AddOrUpdate<PackExpiryJobService>(
+    "whatsapp-pack-expiry",
+    svc => svc.RunDailyAsync(),
+    "0 3 * * *");
 
 // Metric-spike alerting every 15 min. No-op when no delivery channels are configured.
 RecurringJob.AddOrUpdate<AdminAlertJobService>(
