@@ -10,7 +10,7 @@ public static class BillingConfig
     public enum BillingProvider { Paystack, Flutterwave }
     public enum BillingCycle { Monthly, Annual }
 
-    public static readonly string[] SupportedCurrencies = { "NGN", "GHS", "USD", "GBP", "KES", "ZAR" };
+    public static readonly string[] SupportedCurrencies = { "NGN", "GHS", "USD", "GBP", "KES", "ZAR", "UGX" };
 
     public static readonly Dictionary<string, CurrencyMeta> CurrencyMetadata = new()
     {
@@ -20,6 +20,7 @@ public static class BillingConfig
         ["GBP"] = new("£", "British Pound", "GBP"),
         ["KES"] = new("KSh", "Kenyan Shilling", "KES"),
         ["ZAR"] = new("R", "South African Rand", "ZAR"),
+        ["UGX"] = new("USh", "Ugandan Shilling", "UGX"),
     };
 
     public record CurrencyMeta(string Symbol, string Name, string Code);
@@ -47,55 +48,55 @@ public static class BillingConfig
         {
             [BillingCycle.Monthly] = new()
             {
-                ["NGN"] = 0, ["GHS"] = 0, ["USD"] = 0, ["GBP"] = 0, ["KES"] = 0, ["ZAR"] = 0
+                ["NGN"] = 0, ["GHS"] = 0, ["USD"] = 0, ["GBP"] = 0, ["KES"] = 0, ["ZAR"] = 0, ["UGX"] = 0
             },
             [BillingCycle.Annual] = new()
             {
-                ["NGN"] = 0, ["GHS"] = 0, ["USD"] = 0, ["GBP"] = 0, ["KES"] = 0, ["ZAR"] = 0
+                ["NGN"] = 0, ["GHS"] = 0, ["USD"] = 0, ["GBP"] = 0, ["KES"] = 0, ["ZAR"] = 0, ["UGX"] = 0
             }
         },
         ["lite"] = new()
         {
             [BillingCycle.Monthly] = new()
             {
-                ["NGN"] = 12500, ["GHS"] = 125, ["USD"] = 11.99m, ["GBP"] = 9.99m, ["KES"] = 1099, ["ZAR"] = 199
+                ["NGN"] = 12500, ["GHS"] = 125, ["USD"] = 11.99m, ["GBP"] = 9.99m, ["KES"] = 1099, ["ZAR"] = 199, ["UGX"] = 27500
             },
             [BillingCycle.Annual] = new()
             {
-                ["NGN"] = 125000, ["GHS"] = 1250, ["USD"] = 119.90m, ["GBP"] = 99.90m, ["KES"] = 10990, ["ZAR"] = 1990
+                ["NGN"] = 125000, ["GHS"] = 1250, ["USD"] = 119.90m, ["GBP"] = 99.90m, ["KES"] = 10990, ["ZAR"] = 1990, ["UGX"] = 275000
             }
         },
         ["operator"] = new()
         {
             [BillingCycle.Monthly] = new()
             {
-                ["NGN"] = 29999, ["GHS"] = 299, ["USD"] = 28.99m, ["GBP"] = 22.99m, ["KES"] = 2599, ["ZAR"] = 499
+                ["NGN"] = 29999, ["GHS"] = 299, ["USD"] = 28.99m, ["GBP"] = 22.99m, ["KES"] = 2599, ["ZAR"] = 499, ["UGX"] = 66500
             },
             [BillingCycle.Annual] = new()
             {
-                ["NGN"] = 299990, ["GHS"] = 2990, ["USD"] = 289.90m, ["GBP"] = 229.90m, ["KES"] = 25990, ["ZAR"] = 4990
+                ["NGN"] = 299990, ["GHS"] = 2990, ["USD"] = 289.90m, ["GBP"] = 229.90m, ["KES"] = 25990, ["ZAR"] = 4990, ["UGX"] = 665000
             }
         },
         ["pro"] = new()
         {
             [BillingCycle.Monthly] = new()
             {
-                ["NGN"] = 72500, ["GHS"] = 729, ["USD"] = 69.99m, ["GBP"] = 55.99m, ["KES"] = 6299, ["ZAR"] = 1199
+                ["NGN"] = 72500, ["GHS"] = 729, ["USD"] = 69.99m, ["GBP"] = 55.99m, ["KES"] = 6299, ["ZAR"] = 1199, ["UGX"] = 159000
             },
             [BillingCycle.Annual] = new()
             {
-                ["NGN"] = 725000, ["GHS"] = 7290, ["USD"] = 699.90m, ["GBP"] = 559.90m, ["KES"] = 62990, ["ZAR"] = 11990
+                ["NGN"] = 725000, ["GHS"] = 7290, ["USD"] = 699.90m, ["GBP"] = 559.90m, ["KES"] = 62990, ["ZAR"] = 11990, ["UGX"] = 1590000
             }
         },
         ["scale"] = new()
         {
             [BillingCycle.Monthly] = new()
             {
-                ["NGN"] = 155000, ["GHS"] = 1549, ["USD"] = 149.99m, ["GBP"] = 119.99m, ["KES"] = 13499, ["ZAR"] = 2549
+                ["NGN"] = 155000, ["GHS"] = 1549, ["USD"] = 149.99m, ["GBP"] = 119.99m, ["KES"] = 13499, ["ZAR"] = 2549, ["UGX"] = 340000
             },
             [BillingCycle.Annual] = new()
             {
-                ["NGN"] = 1550000, ["GHS"] = 15490, ["USD"] = 1499.90m, ["GBP"] = 1199.90m, ["KES"] = 134990, ["ZAR"] = 25490
+                ["NGN"] = 1550000, ["GHS"] = 15490, ["USD"] = 1499.90m, ["GBP"] = 1199.90m, ["KES"] = 134990, ["ZAR"] = 25490, ["UGX"] = 3400000
             }
         }
     };
@@ -201,11 +202,11 @@ public static class BillingConfig
     {
         [BillingCycle.Monthly] = new()
         {
-            ["NGN"] = 5000, ["GHS"] = 45, ["USD"] = 5, ["GBP"] = 4, ["KES"] = 700, ["ZAR"] = 70
+            ["NGN"] = 5000, ["GHS"] = 45, ["USD"] = 5, ["GBP"] = 4, ["KES"] = 700, ["ZAR"] = 70, ["UGX"] = 11000
         },
         [BillingCycle.Annual] = new()
         {
-            ["NGN"] = 48000, ["GHS"] = 432, ["USD"] = 48, ["GBP"] = 38, ["KES"] = 6720, ["ZAR"] = 672
+            ["NGN"] = 48000, ["GHS"] = 432, ["USD"] = 48, ["GBP"] = 38, ["KES"] = 6720, ["ZAR"] = 672, ["UGX"] = 110000
         }
     };
 
@@ -264,55 +265,55 @@ public static class BillingConfig
         {
             [BillingCycle.Monthly] = new()
             {
-                ["NGN"] = 9500, ["GHS"] = 95, ["USD"] = 9, ["GBP"] = 7, ["KES"] = 799, ["ZAR"] = 149
+                ["NGN"] = 9500, ["GHS"] = 95, ["USD"] = 9, ["GBP"] = 7, ["KES"] = 799, ["ZAR"] = 149, ["UGX"] = 20500
             },
             [BillingCycle.Annual] = new()
             {
-                ["NGN"] = 95000, ["GHS"] = 950, ["USD"] = 90, ["GBP"] = 70, ["KES"] = 7990, ["ZAR"] = 1490
+                ["NGN"] = 95000, ["GHS"] = 950, ["USD"] = 90, ["GBP"] = 70, ["KES"] = 7990, ["ZAR"] = 1490, ["UGX"] = 205000
             }
         },
         ["grow"] = new()
         {
             [BillingCycle.Monthly] = new()
             {
-                ["NGN"] = 19500, ["GHS"] = 199, ["USD"] = 19, ["GBP"] = 15, ["KES"] = 1699, ["ZAR"] = 329
+                ["NGN"] = 19500, ["GHS"] = 199, ["USD"] = 19, ["GBP"] = 15, ["KES"] = 1699, ["ZAR"] = 329, ["UGX"] = 43000
             },
             [BillingCycle.Annual] = new()
             {
-                ["NGN"] = 195000, ["GHS"] = 1990, ["USD"] = 190, ["GBP"] = 150, ["KES"] = 16990, ["ZAR"] = 3290
+                ["NGN"] = 195000, ["GHS"] = 1990, ["USD"] = 190, ["GBP"] = 150, ["KES"] = 16990, ["ZAR"] = 3290, ["UGX"] = 430000
             }
         },
         ["pro"] = new()
         {
             [BillingCycle.Monthly] = new()
             {
-                ["NGN"] = 39999, ["GHS"] = 399, ["USD"] = 39, ["GBP"] = 31, ["KES"] = 3499, ["ZAR"] = 649
+                ["NGN"] = 39999, ["GHS"] = 399, ["USD"] = 39, ["GBP"] = 31, ["KES"] = 3499, ["ZAR"] = 649, ["UGX"] = 89000
             },
             [BillingCycle.Annual] = new()
             {
-                ["NGN"] = 399990, ["GHS"] = 3990, ["USD"] = 390, ["GBP"] = 310, ["KES"] = 34990, ["ZAR"] = 6490
+                ["NGN"] = 399990, ["GHS"] = 3990, ["USD"] = 390, ["GBP"] = 310, ["KES"] = 34990, ["ZAR"] = 6490, ["UGX"] = 890000
             }
         },
         ["scale"] = new()
         {
             [BillingCycle.Monthly] = new()
             {
-                ["NGN"] = 82000, ["GHS"] = 829, ["USD"] = 79, ["GBP"] = 63, ["KES"] = 7199, ["ZAR"] = 1349
+                ["NGN"] = 82000, ["GHS"] = 829, ["USD"] = 79, ["GBP"] = 63, ["KES"] = 7199, ["ZAR"] = 1349, ["UGX"] = 180000
             },
             [BillingCycle.Annual] = new()
             {
-                ["NGN"] = 820000, ["GHS"] = 8290, ["USD"] = 790, ["GBP"] = 630, ["KES"] = 71990, ["ZAR"] = 13490
+                ["NGN"] = 820000, ["GHS"] = 8290, ["USD"] = 790, ["GBP"] = 630, ["KES"] = 71990, ["ZAR"] = 13490, ["UGX"] = 1800000
             }
         },
         ["unlimited"] = new()
         {
             [BillingCycle.Monthly] = new()
             {
-                ["NGN"] = 155000, ["GHS"] = 1549, ["USD"] = 149, ["GBP"] = 119, ["KES"] = 13499, ["ZAR"] = 2549
+                ["NGN"] = 155000, ["GHS"] = 1549, ["USD"] = 149, ["GBP"] = 119, ["KES"] = 13499, ["ZAR"] = 2549, ["UGX"] = 340000
             },
             [BillingCycle.Annual] = new()
             {
-                ["NGN"] = 1550000, ["GHS"] = 15490, ["USD"] = 1490, ["GBP"] = 1190, ["KES"] = 134990, ["ZAR"] = 25490
+                ["NGN"] = 1550000, ["GHS"] = 15490, ["USD"] = 1490, ["GBP"] = 1190, ["KES"] = 134990, ["ZAR"] = 25490, ["UGX"] = 3400000
             }
         }
     };
