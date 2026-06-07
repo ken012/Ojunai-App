@@ -9,15 +9,18 @@ public class ClaudeParsingService : IClaudeParsingService
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _config;
+    private readonly ClaudeConcurrencyLimiter _concurrency;
     private readonly ILogger<ClaudeParsingService> _logger;
 
     public ClaudeParsingService(
         IHttpClientFactory httpClientFactory,
         IConfiguration config,
+        ClaudeConcurrencyLimiter concurrency,
         ILogger<ClaudeParsingService> logger)
     {
         _httpClientFactory = httpClientFactory;
         _config = config;
+        _concurrency = concurrency;
         _logger = logger;
     }
 
@@ -115,10 +118,22 @@ public class ClaudeParsingService : IClaudeParsingService
             messages
         };
 
+        // Cap concurrent in-flight Claude calls process-wide. HttpClient buffers the full response
+        // before PostAsync returns, so holding the gate around just the POST bounds simultaneous
+        // requests to Anthropic — excess callers queue instead of fanning out into 429s + retries.
         var client = _httpClientFactory.CreateClient("Claude");
-        var response = await client.PostAsync(
-            "https://api.anthropic.com/v1/messages",
-            new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json"));
+        HttpResponseMessage response;
+        await _concurrency.WaitAsync();
+        try
+        {
+            response = await client.PostAsync(
+                "https://api.anthropic.com/v1/messages",
+                new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json"));
+        }
+        finally
+        {
+            _concurrency.Release();
+        }
 
         if (!response.IsSuccessStatusCode)
         {
