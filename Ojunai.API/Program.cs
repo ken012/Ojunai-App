@@ -79,6 +79,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+// Show logging scopes (RequestId / BusinessId / UserId from RequestContextMiddleware) on every
+// console log line. Set in code rather than appsettings because appsettings*.json is gitignored
+// (server-managed), so a config-only change wouldn't ship. Configures the existing default console
+// formatter — no extra provider, so no double logging.
+builder.Services.Configure<Microsoft.Extensions.Logging.Console.SimpleConsoleFormatterOptions>(
+    opts => opts.IncludeScopes = true);
+
 // ── HTTP Clients ──────────────────────────────────────────────────────────────
 builder.Services.AddHttpClient("Claude", client =>
 {
@@ -343,6 +350,9 @@ app.Use(async (context, next) =>
 app.UseRouting();
 
 app.UseAuthentication();
+// After auth so the scope can include BusinessId/UserId; before ActiveUserMiddleware so its
+// logs are correlated too.
+app.UseMiddleware<RequestContextMiddleware>();
 app.UseMiddleware<ActiveUserMiddleware>();
 app.UseAuthorization();
 
