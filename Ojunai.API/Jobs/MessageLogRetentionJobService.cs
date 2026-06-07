@@ -46,5 +46,17 @@ public sealed class MessageLogRetentionJobService
         _logger.LogInformation(
             "MessageLogRetentionJob: deleted {Deleted} rows older than {Cutoff:yyyy-MM-dd} (retention {Days} days)",
             deleted, cutoff, retentionDays);
+
+        // Inbound dedup claims only need to outlive a provider's re-delivery window (minutes to a
+        // few hours) — 30 days is a generous safety margin. Purge older ones so the table stays
+        // small regardless of the MessageLog retention setting above.
+        var claimCutoff = DateTime.UtcNow.AddDays(-30);
+        var claimsDeleted = await _db.InboundMessageClaims
+            .Where(c => c.ClaimedAtUtc < claimCutoff)
+            .ExecuteDeleteAsync();
+
+        _logger.LogInformation(
+            "MessageLogRetentionJob: deleted {Deleted} inbound dedup claims older than {Cutoff:yyyy-MM-dd}",
+            claimsDeleted, claimCutoff);
     }
 }

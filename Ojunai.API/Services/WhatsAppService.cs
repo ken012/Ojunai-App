@@ -7,6 +7,7 @@ using Ojunai.API.DTOs.Ledger;
 using Ojunai.API.DTOs.Parsing;
 using Ojunai.API.DTOs.Sales;
 using Ojunai.API.Models;
+using Ojunai.API.Models.Messaging;
 using Ojunai.API.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Twilio;
@@ -258,6 +259,7 @@ public class WhatsAppService : IWhatsAppService
     private readonly IServiceProvider _serviceProvider;
     private readonly IConfiguration _config;
     private readonly IUsageService _usage;
+    private readonly IInboundDedupService _dedup;
     private readonly ILogger<WhatsAppService> _logger;
 
     public WhatsAppService(
@@ -273,6 +275,7 @@ public class WhatsAppService : IWhatsAppService
         IServiceProvider serviceProvider,
         IConfiguration config,
         IUsageService usage,
+        IInboundDedupService dedup,
         ILogger<WhatsAppService> logger)
     {
         _db = db;
@@ -287,6 +290,7 @@ public class WhatsAppService : IWhatsAppService
         _serviceProvider = serviceProvider;
         _config = config;
         _usage = usage;
+        _dedup = dedup;
         _logger = logger;
     }
 
@@ -296,12 +300,13 @@ public class WhatsAppService : IWhatsAppService
     /// </summary>
     public async Task HandleInboundAsync(string from, string messageId, string text)
     {
-        // Twilio sometimes retries webhooks (e.g., our response took too long). Skip if we've already processed this message.
-        if (await _db.MessageLogs.AnyAsync(m => m.WhatsAppMessageId == messageId))
-        {
-            _logger.LogInformation("Duplicate message {MessageId}, skipping.", messageId);
+        // Twilio sometimes retries webhooks (e.g., our response took too long), and Hangfire retries
+        // a failed job. Atomically claim this message id before doing any work — only the first
+        // caller wins, so a re-delivery or retry is skipped here, BEFORE the paid Claude call.
+        // (Replaces a read-then-act AnyAsync check that two concurrent re-deliveries could both pass,
+        // which let the same sale be recorded — and Claude charged — twice.)
+        if (!await _dedup.TryClaimAsync(Channel.Whatsapp, messageId))
             return;
-        }
 
         // Twilio sends the sender as "whatsapp:+2348012345678". Strip the prefix and normalize to E.164.
         var phone = NormalizePhone(from.Replace("whatsapp:", "").Trim());
