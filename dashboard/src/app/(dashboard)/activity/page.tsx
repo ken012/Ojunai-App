@@ -143,7 +143,15 @@ export default function ActivityPage() {
   const [typeFilter, setTypeFilter] = useStickyState<string>("activity-type-filter", "all");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [startDate, setStartDate] = useState("");
+  // Default the feed to the last 90 days so the landing view sends a bounded date window to the
+  // API instead of pulling the business's entire history into memory (the backend pushes this
+  // window into SQL). Older entries stay reachable: change the start date, or "Clear filters"
+  // (which empties the dates) to load all time on demand.
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 90);
+    return d.toISOString().slice(0, 10);
+  });
   const [endDate, setEndDate] = useState("");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<ActivityFeedDto | null>(null);
