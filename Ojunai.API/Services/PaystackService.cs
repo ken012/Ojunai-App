@@ -371,6 +371,7 @@ public class PaystackService
         else if (data.TryGetProperty("reference", out var refEl))
             eventId = refEl.GetString();
 
+        var dedupTracked = false;
         if (!string.IsNullOrEmpty(eventId))
         {
             var fullEventId = $"{eventType}:{eventId}";
@@ -381,47 +382,71 @@ public class PaystackService
                 _logger.LogInformation("Paystack webhook duplicate ignored: {Event} {Id}", eventType, eventId);
                 return;
             }
-            // Record the event BEFORE processing so if the handler crashes and Paystack retries,
-            // we still recognize the duplicate. The unique index on PaystackEventLog.EventId guarantees this.
+            // Track the idempotency row but DON'T commit it yet. It is saved together with the
+            // activation inside the dispatched handler's SaveChanges, so the event is marked "seen"
+            // if and only if the activation also commits. (Previously this committed in its own
+            // transaction BEFORE dispatch — a crash/restart in between left a payment seen-but-not-
+            // activated, which reconciliation didn't catch.) The unique index on EventId still wins
+            // the race against a concurrent delivery; we catch that below.
             _db.PaystackEventLogs.Add(new Models.PaystackEventLog
             {
                 EventId = fullEventId,
                 EventType = eventType ?? "unknown"
             });
-            await _db.SaveChangesAsync();
+            dedupTracked = true;
         }
 
         _logger.LogInformation("Paystack webhook: {Event}", eventType);
 
-        // Dispatch to the specific handler. Unknown event types are silently ignored (Paystack may add new events).
-        switch (eventType)
+        try
         {
-            case "subscription.create":
-                // A new subscription was created (first successful charge OR user subscribed).
-                await HandleSubscriptionCreated(data);
-                break;
-            case "charge.success":
-                // A one-time or recurring charge succeeded. Verifies amount matches the plan price.
-                await HandleChargeSuccess(data);
-                break;
-            case "subscription.not_renew":
-            case "subscription.disable":
-                // User cancelled (via our dashboard or Paystack directly). Access continues until SubscriptionEndsAt.
-                await HandleSubscriptionCancelled(data);
-                break;
-            case "invoice.payment_failed":
-                // A recurring charge failed. Paystack retries automatically. We just log for visibility.
-                await HandlePaymentFailed(data);
-                break;
-            case "charge.dispute.create":
-            case "charge.dispute.remind":
-                await HandleDisputeAsync(data);
-                break;
-            case "refund.processed":
-                await HandleRefundAsync(data);
-                break;
+            // Dispatch to the specific handler. Unknown event types are silently ignored (Paystack may add new events).
+            // Each handler ends in a single SaveChanges that now also commits the idempotency row above.
+            switch (eventType)
+            {
+                case "subscription.create":
+                    // A new subscription was created (first successful charge OR user subscribed).
+                    await HandleSubscriptionCreated(data);
+                    break;
+                case "charge.success":
+                    // A one-time or recurring charge succeeded. Verifies amount matches the plan price.
+                    await HandleChargeSuccess(data);
+                    break;
+                case "subscription.not_renew":
+                case "subscription.disable":
+                    // User cancelled (via our dashboard or Paystack directly). Access continues until SubscriptionEndsAt.
+                    await HandleSubscriptionCancelled(data);
+                    break;
+                case "invoice.payment_failed":
+                    // A recurring charge failed. Paystack retries automatically. We just log for visibility.
+                    await HandlePaymentFailed(data);
+                    break;
+                case "charge.dispute.create":
+                case "charge.dispute.remind":
+                    await HandleDisputeAsync(data);
+                    break;
+                case "refund.processed":
+                    await HandleRefundAsync(data);
+                    break;
+            }
+        }
+        catch (DbUpdateException ex) when (dedupTracked && IsDuplicateEventRace(ex))
+        {
+            // A concurrent delivery of the SAME event committed first; the unique index on
+            // PaystackEventLog.EventId tripped and rolled OUR SaveChanges back atomically (no
+            // partial activation). Treat as a duplicate — return 200, don't 500 into a retry storm.
+            _logger.LogInformation("Paystack webhook concurrent duplicate ignored: {Event} {Id}", eventType, eventId);
         }
     }
+
+    /// <summary>
+    /// True when a SaveChanges failed specifically because the idempotency row (PaystackEventLog)
+    /// hit its unique index — i.e. a concurrent delivery of the same event won. Other unique
+    /// violations (e.g. the one-active-pack partial index) are NOT swallowed.
+    /// </summary>
+    private static bool IsDuplicateEventRace(DbUpdateException ex) =>
+        ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation }
+        && ex.Entries.Any(e => e.Entity is Models.PaystackEventLog);
 
     public async Task CancelSubscriptionAsync(Guid businessId)
     {
