@@ -32,6 +32,7 @@ public class AlertGeneratorJobService
     public async Task RunAsync()
     {
         var businesses = await _db.Businesses
+            .AsNoTracking()
             .Where(b => b.IsActive)
             .ToListAsync();
 
@@ -72,41 +73,37 @@ public class AlertGeneratorJobService
         {
             var thirtyDaysAgo = nowUtc.AddDays(-30);
 
-            // Aggregate receivable balance per contact (Receivable - ReceivablePayment).
-            // Then take only those with positive balance whose OLDEST receivable entry is past the threshold.
-            var entries = await _db.LedgerEntries
-                .Include(e => e.Contact)
+            // Aggregate receivable balance per contact IN SQL (GROUP BY ContactId) so we fetch one
+            // row per contact instead of pulling every receivable/payment entry for the business into
+            // memory. Net outstanding = SUM(receivable) - SUM(payment), oldest = MIN(receivable date).
+            // Filter to "overdue + still owing" in memory on the small per-contact result (avoids a
+            // HAVING-clause translation dependency).
+            var byContact = (await _db.LedgerEntries
                 .Where(e => e.BusinessId == b.Id
                     && (e.EntryType == LedgerEntryType.Receivable || e.EntryType == LedgerEntryType.ReceivablePayment))
-                .ToListAsync();
-
-            var byContact = entries
-                .GroupBy(e => e.ContactId)
+                .GroupBy(e => new { e.ContactId, e.Contact.Name })
                 .Select(g => new
                 {
-                    ContactId = g.Key,
-                    Contact = g.First().Contact,
-                    Outstanding = g.Where(e => e.EntryType == LedgerEntryType.Receivable).Sum(e => e.Amount)
-                                - g.Where(e => e.EntryType == LedgerEntryType.ReceivablePayment).Sum(e => e.Amount),
-                    OldestReceivableUtc = g.Where(e => e.EntryType == LedgerEntryType.Receivable)
-                        .OrderBy(e => e.CreatedAtUtc)
-                        .Select(e => e.CreatedAtUtc)
-                        .FirstOrDefault()
+                    g.Key.ContactId,
+                    ContactName = g.Key.Name,
+                    Outstanding = g.Sum(e => e.EntryType == LedgerEntryType.Receivable ? e.Amount : -e.Amount),
+                    OldestReceivableUtc = g.Min(e => e.EntryType == LedgerEntryType.Receivable ? (DateTime?)e.CreatedAtUtc : null)
                 })
+                .ToListAsync())
                 .Where(x => x.Outstanding > 0
-                    && x.OldestReceivableUtc != default
+                    && x.OldestReceivableUtc != null
                     && x.OldestReceivableUtc <= thirtyDaysAgo)
                 .ToList();
 
             var cs = BillingConfig.Symbol(b.Currency);
             foreach (var row in byContact)
             {
-                var daysOld = (int)Math.Floor((nowUtc - row.OldestReceivableUtc).TotalDays);
+                var daysOld = (int)Math.Floor((nowUtc - row.OldestReceivableUtc!.Value).TotalDays);
                 await _alerts.CreateAsync(
                     b.Id, userId: null,
                     type: AlertType.AgedReceivable,
                     severity: AlertSeverity.Warning,
-                    title: $"{row.Contact?.Name ?? "Customer"} has owed for {daysOld} days",
+                    title: $"{row.ContactName ?? "Customer"} has owed for {daysOld} days",
                     body: $"Outstanding balance: {cs}{row.Outstanding:N0}. Send a friendly reminder?",
                     linkUrl: $"/contacts?id={row.ContactId}",
                     dedupeKey: $"aged-receivable:{row.ContactId}:{nowUtc:yyyyMMdd}");
