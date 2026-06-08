@@ -98,7 +98,20 @@ var otlpEndpoint = config["OTEL_EXPORTER_OTLP_ENDPOINT"];
 if (!string.IsNullOrWhiteSpace(otlpEndpoint))
 {
     builder.Services.AddOpenTelemetry()
-        .ConfigureResource(r => r.AddService(serviceName: config["OTEL_SERVICE_NAME"] ?? "ojunai-api"))
+        // Set service.namespace + deployment.environment explicitly in code. The OTEL_RESOURCE_ATTRIBUTES
+        // env var isn't reliably merged here (the env resource detector doesn't run with this
+        // ConfigureResource path), so spans would otherwise carry only service.name. Values are
+        // config-overridable but default to match the Grafana setup wizard so its query matches.
+        .ConfigureResource(r => r
+            .AddService(
+                serviceName: config["OTEL_SERVICE_NAME"] ?? "ojunai-api",
+                serviceNamespace: config["OTEL_SERVICE_NAMESPACE"] ?? "my-application-group")
+            .AddAttributes(new[]
+            {
+                new KeyValuePair<string, object>(
+                    "deployment.environment",
+                    config["OTEL_DEPLOYMENT_ENVIRONMENT"] ?? "production"),
+            }))
         .WithTracing(t => t
             .AddAspNetCoreInstrumentation()
             .AddHttpClientInstrumentation()
