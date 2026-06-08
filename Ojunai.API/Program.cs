@@ -11,6 +11,9 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -85,6 +88,29 @@ builder.Services.AddAuthorization();
 // formatter — no extra provider, so no double logging.
 builder.Services.Configure<Microsoft.Extensions.Logging.Console.SimpleConsoleFormatterOptions>(
     opts => opts.IncludeScopes = true);
+
+// ── OpenTelemetry (metrics + traces) → OTLP ─────────────────────────────────────
+// Gated on an OTLP endpoint being configured (standard OTEL_EXPORTER_OTLP_ENDPOINT env var, set on
+// the server). When absent — e.g. local dev — OTel isn't registered at all: zero overhead and no
+// failed export attempts. The OTLP exporter reads endpoint/headers/protocol from the standard
+// OTEL_EXPORTER_OTLP_* env vars (Grafana Cloud values go there; see deploy notes).
+var otlpEndpoint = config["OTEL_EXPORTER_OTLP_ENDPOINT"];
+if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+{
+    builder.Services.AddOpenTelemetry()
+        .ConfigureResource(r => r.AddService(serviceName: config["OTEL_SERVICE_NAME"] ?? "ojunai-api"))
+        .WithTracing(t => t
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddOtlpExporter())
+        .WithMetrics(m => m
+            .AddAspNetCoreInstrumentation()   // request rate + latency percentiles
+            .AddHttpClientInstrumentation()   // outbound calls (Claude, Paystack, …) latency
+            .AddRuntimeInstrumentation()      // GC, threadpool
+            .AddMeter("Npgsql")               // DB connection-pool usage (built into Npgsql 8)
+            .AddMeter(ClaudeMetrics.MeterName) // Claude token spend
+            .AddOtlpExporter());
+}
 
 // ── HTTP Clients ──────────────────────────────────────────────────────────────
 builder.Services.AddHttpClient("Claude", client =>
