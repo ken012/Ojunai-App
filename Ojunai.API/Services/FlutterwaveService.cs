@@ -18,17 +18,20 @@ public class FlutterwaveService
 {
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
+    private readonly IHttpClientFactory _httpFactory;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<FlutterwaveService> _logger;
 
     public FlutterwaveService(
         AppDbContext db,
         IConfiguration config,
+        IHttpClientFactory httpFactory,
         IServiceProvider serviceProvider,
         ILogger<FlutterwaveService> logger)
     {
         _db = db;
         _config = config;
+        _httpFactory = httpFactory;
         _serviceProvider = serviceProvider;
         _logger = logger;
     }
@@ -90,7 +93,7 @@ public class FlutterwaveService
         if (string.IsNullOrEmpty(secretKey))
             return "Flutterwave SecretKey not configured.";
 
-        using var httpClient = new HttpClient();
+        var httpClient = _httpFactory.CreateClient("Flutterwave");
         httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {secretKey}");
 
         HttpResponseMessage response;
@@ -306,7 +309,7 @@ public class FlutterwaveService
                 var secretKey = _config["Flutterwave:SecretKey"];
                 if (!string.IsNullOrEmpty(secretKey))
                 {
-                    using var client = new HttpClient();
+                    var client = _httpFactory.CreateClient("Flutterwave");
                     client.DefaultRequestHeaders.Add("Authorization", $"Bearer {secretKey}");
                     await client.PutAsync(
                         $"https://api.flutterwave.com/v3/subscriptions/{business.FlutterwaveSubscriptionId}/cancel",
@@ -360,7 +363,7 @@ public class FlutterwaveService
 
         try
         {
-            using var client = new HttpClient();
+            var client = _httpFactory.CreateClient("Flutterwave");
             client.DefaultRequestHeaders.Add("Authorization", $"Bearer {secretKey}");
 
             var listResponse = await client.GetAsync("https://api.flutterwave.com/v3/payment-plans");
@@ -416,7 +419,7 @@ public class FlutterwaveService
 
         try
         {
-            using var client = new HttpClient();
+            var client = _httpFactory.CreateClient("Flutterwave");
             client.DefaultRequestHeaders.Add("Authorization", $"Bearer {secretKey}");
 
             var response = await client.GetAsync($"https://api.flutterwave.com/v3/subscriptions?email={Uri.EscapeDataString(email)}");

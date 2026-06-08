@@ -96,6 +96,21 @@ builder.Services.AddHttpClient("Paystack", client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
+// Flutterwave used `new HttpClient()` per call (socket-exhaustion risk at scale). Route through
+// the factory's pooled handler instead. Auth is still set per-call in FlutterwaveService (keeps
+// its missing-key guard), so this client just supplies pooling + a bounded timeout.
+builder.Services.AddHttpClient("Flutterwave", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+// Shared client for outbound chat-channel calls (Telegram/Messenger). Bounds the timeout well
+// below the 100s default so a slow provider can't pin a worker thread for that long.
+builder.Services.AddHttpClient("Channel", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
 
 // ── Application Services ──────────────────────────────────────────────────────
 builder.Services.AddHttpClient("VoiceAI", client =>
