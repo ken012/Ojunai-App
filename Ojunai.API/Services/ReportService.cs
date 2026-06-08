@@ -29,14 +29,7 @@ public partial class ReportService : IReportService
             .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= todayUtc && e.CreatedAtUtc < tomorrowUtc)
             .SumAsync(e => e.Amount);
 
-        var ledger = await _db.LedgerEntries
-            .Where(e => e.BusinessId == businessId)
-            .ToListAsync();
-
-        var outstandingReceivables = ledger.Where(e => e.EntryType == LedgerEntryType.Receivable).Sum(e => e.Amount)
-                                   - ledger.Where(e => e.EntryType == LedgerEntryType.ReceivablePayment).Sum(e => e.Amount);
-        var outstandingPayables = ledger.Where(e => e.EntryType == LedgerEntryType.Payable).Sum(e => e.Amount)
-                                - ledger.Where(e => e.EntryType == LedgerEntryType.PayablePayment).Sum(e => e.Amount);
+        var (outstandingReceivables, outstandingPayables) = await GetOutstandingLedgerAsync(businessId);
 
         var lowStockCount = await _db.Products
             .CountAsync(p => p.BusinessId == businessId && p.IsActive && p.CurrentStock <= p.LowStockThreshold);
@@ -119,14 +112,7 @@ public partial class ReportService : IReportService
             .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= start && e.CreatedAtUtc < end)
             .SumAsync(e => e.Amount);
 
-        var ledger = await _db.LedgerEntries
-            .Where(e => e.BusinessId == businessId)
-            .ToListAsync();
-
-        var receivables = ledger.Where(e => e.EntryType == LedgerEntryType.Receivable).Sum(e => e.Amount)
-                        - ledger.Where(e => e.EntryType == LedgerEntryType.ReceivablePayment).Sum(e => e.Amount);
-        var payables = ledger.Where(e => e.EntryType == LedgerEntryType.Payable).Sum(e => e.Amount)
-                    - ledger.Where(e => e.EntryType == LedgerEntryType.PayablePayment).Sum(e => e.Amount);
+        var (receivables, payables) = await GetOutstandingLedgerAsync(businessId);
 
         var lowStockItems = await _db.Products
             .Where(p => p.BusinessId == businessId && p.IsActive && p.CurrentStock <= p.LowStockThreshold)
@@ -264,14 +250,7 @@ public partial class ReportService : IReportService
             .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= monthStart)
             .SumAsync(e => e.Amount);
 
-        var ledger = await _db.LedgerEntries
-            .Where(e => e.BusinessId == businessId)
-            .ToListAsync();
-
-        var receivables = ledger.Where(e => e.EntryType == LedgerEntryType.Receivable).Sum(e => e.Amount)
-                        - ledger.Where(e => e.EntryType == LedgerEntryType.ReceivablePayment).Sum(e => e.Amount);
-        var payables = ledger.Where(e => e.EntryType == LedgerEntryType.Payable).Sum(e => e.Amount)
-                    - ledger.Where(e => e.EntryType == LedgerEntryType.PayablePayment).Sum(e => e.Amount);
+        var (receivables, payables) = await GetOutstandingLedgerAsync(businessId);
 
         var cashIn = totalSales - totalExpenses;
 
@@ -670,6 +649,27 @@ public partial class ReportService : IReportService
             PageSize = pageSize,
             TotalPages = totalPages
         };
+    }
+
+    /// <summary>
+    /// Outstanding receivables/payables for a business, aggregated in SQL (GROUP BY EntryType) so we
+    /// fetch one row per entry type instead of materializing the whole ledger into memory. Returns the
+    /// raw nets; callers clamp with Math.Max(0, …) exactly as before. Backed by the (BusinessId,
+    /// EntryType) index. Produces identical totals to the previous load-all-then-sum-in-C# code.
+    /// </summary>
+    private async Task<(decimal Receivables, decimal Payables)> GetOutstandingLedgerAsync(Guid businessId)
+    {
+        var sums = await _db.LedgerEntries
+            .AsNoTracking()
+            .Where(e => e.BusinessId == businessId)
+            .GroupBy(e => e.EntryType)
+            .Select(g => new { Type = g.Key, Total = g.Sum(e => e.Amount) })
+            .ToListAsync();
+
+        decimal S(LedgerEntryType t) => sums.FirstOrDefault(x => x.Type == t)?.Total ?? 0m;
+        var receivables = S(LedgerEntryType.Receivable) - S(LedgerEntryType.ReceivablePayment);
+        var payables = S(LedgerEntryType.Payable) - S(LedgerEntryType.PayablePayment);
+        return (receivables, payables);
     }
 
     private async Task<List<TrendPointDto>> BuildSalesTrendAsync(Guid businessId, DateTime from, DateTime to)
