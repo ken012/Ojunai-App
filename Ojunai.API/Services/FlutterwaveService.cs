@@ -837,19 +837,23 @@ public class FlutterwaveService
             return $"Amount mismatch. Expected {BillingConfig.FormatPrice(expected.Value, currency)}, received {BillingConfig.FormatPrice(paid ?? 0, currency)}.";
         }
 
-        // Cancel existing + insert new
+        // Cancel current active pack(s) and activate the new one ATOMICALLY, ordered so the partial
+        // unique index (one active whatsapp_pack per business) isn't tripped by the in-flight old
+        // row: cancel is an immediate UPDATE before the insert, inside one transaction. A rare
+        // concurrent double-activation trips the index → rolls back (no partial state, no double
+        // pack) and surfaces for retry. Mirrors PaystackService.UpsertWhatsAppPackAddOnAsync.
         var now = DateTime.UtcNow;
-        var existing = await _db.BusinessAddOns
+        await using var tx = await _db.Database.BeginTransactionAsync();
+
+        await _db.BusinessAddOns
             .Where(a => a.BusinessId == businessId
                 && a.Status == "active"
                 && a.AddOnCode.StartsWith("whatsapp_pack."))
-            .ToListAsync();
-        foreach (var old in existing)
-        {
-            old.Status = "cancelled";
-            old.CancelledAtUtc = now;
-            old.UpdatedAtUtc = now;
-        }
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(a => a.Status, "cancelled")
+                .SetProperty(a => a.CancelledAtUtc, now)
+                .SetProperty(a => a.UpdatedAtUtc, now));
+
         var nextBilling = cycle == BillingConfig.BillingCycle.Annual ? now.AddYears(1) : now.AddMonths(1);
         _db.BusinessAddOns.Add(new BusinessAddOn
         {
@@ -877,6 +881,7 @@ public class FlutterwaveService
         });
 
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
         _logger.LogInformation(
             "WhatsApp pack activated via Flutterwave: business={Business} pack={Pack} amount={Amount} {Currency}",
             business.Name, packCode, expected.Value, currency);
