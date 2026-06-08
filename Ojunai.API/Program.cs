@@ -105,7 +105,7 @@ if (!string.IsNullOrWhiteSpace(otlpEndpoint))
         .ConfigureResource(r => r
             .AddService(
                 serviceName: config["OTEL_SERVICE_NAME"] ?? "ojunai-api",
-                serviceNamespace: config["OTEL_SERVICE_NAMESPACE"] ?? "my-application-group")
+                serviceNamespace: config["OTEL_SERVICE_NAMESPACE"] ?? "ojunai")
             .AddAttributes(new[]
             {
                 new KeyValuePair<string, object>(
