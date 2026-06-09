@@ -203,7 +203,7 @@ public sealed class MessengerAdapter : IChannelAdapter
         if (messagingType is null)
             return new SendResult(false, null, failureReason);
 
-        var http = _httpFactory.CreateClient();
+        var http = _httpFactory.CreateClient("Channel");
         var url = $"https://graph.facebook.com/v19.0/me/messages?access_token={pageToken}";
 
         var request = new MessengerSendMessageRequest

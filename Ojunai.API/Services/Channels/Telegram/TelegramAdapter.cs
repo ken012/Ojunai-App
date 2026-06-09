@@ -148,7 +148,7 @@ public sealed class TelegramAdapter : IChannelAdapter
             return new SendResult(false, null, "Telegram:BotToken not configured");
         }
 
-        var http = _httpFactory.CreateClient();
+        var http = _httpFactory.CreateClient("Channel");
         var url = $"https://api.telegram.org/bot{token}/sendMessage";
 
         // Build the payload. Inline keyboards turn QuickReplies into tap buttons; otherwise
@@ -203,7 +203,7 @@ public sealed class TelegramAdapter : IChannelAdapter
         var token = _config["Telegram:BotToken"];
         if (string.IsNullOrEmpty(token)) return;
 
-        var http = _httpFactory.CreateClient();
+        var http = _httpFactory.CreateClient("Channel");
         var url = $"https://api.telegram.org/bot{token}/editMessageReplyMarkup";
 
         // Empty inline_keyboard array is how Telegram tells you to remove the keyboard
@@ -241,7 +241,7 @@ public sealed class TelegramAdapter : IChannelAdapter
         if (string.IsNullOrEmpty(token))
             return new SendResult(false, null, "Telegram:BotToken not configured");
 
-        var http = _httpFactory.CreateClient();
+        var http = _httpFactory.CreateClient("Channel");
         var url = $"https://api.telegram.org/bot{token}/sendDocument";
 
         using var content = new MultipartFormDataContent();
