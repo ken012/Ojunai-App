@@ -1,6 +1,7 @@
 using Ojunai.API.Data;
 using Ojunai.API.Models;
 using Ojunai.API.Services.Interfaces;
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ojunai.API.Jobs;
@@ -18,6 +19,8 @@ public class PaymentReconciliationJobService
         _logger = logger;
     }
 
+    // Money reconciliation must never run concurrently with itself — serialize on overrun.
+    [DisableConcurrentExecution(timeoutInSeconds: 600)]
     public async Task ReconcileAsync()
     {
         var now = DateTime.UtcNow;

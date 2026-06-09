@@ -58,5 +58,17 @@ public sealed class MessageLogRetentionJobService
         _logger.LogInformation(
             "MessageLogRetentionJob: deleted {Deleted} inbound dedup claims older than {Cutoff:yyyy-MM-dd}",
             claimsDeleted, claimCutoff);
+
+        // Purge expired short-lived tokens. These are useless once past ExpiresAtUtc (lifetimes are
+        // minutes), but the tables grow with every signup/login/channel-link attempt. Keep a 1-day
+        // buffer for post-mortem debugging, then sweep. Independent of the MessageLog retention setting.
+        var tokenCutoff = DateTime.UtcNow.AddDays(-1);
+        var codes = await _db.PhoneVerificationCodes.Where(c => c.ExpiresAtUtc < tokenCutoff).ExecuteDeleteAsync();
+        var links = await _db.ChannelLinkTokens.Where(t => t.ExpiresAtUtc < tokenCutoff).ExecuteDeleteAsync();
+        var pending = await _db.PendingTelegramActions.Where(p => p.ExpiresAtUtc < tokenCutoff).ExecuteDeleteAsync();
+
+        _logger.LogInformation(
+            "MessageLogRetentionJob: purged expired tokens — phone:{Codes} channel-link:{Links} pending-telegram:{Pending}",
+            codes, links, pending);
     }
 }

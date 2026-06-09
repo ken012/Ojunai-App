@@ -2,6 +2,7 @@ using Ojunai.API.Common;
 using Ojunai.API.Data;
 using Ojunai.API.Models;
 using Ojunai.API.Services.Interfaces;
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ojunai.API.Services;
@@ -29,6 +30,9 @@ public class AlertGeneratorJobService
         _logger = logger;
     }
 
+    // Serialize runs so an overrunning hourly sweep (aged-receivable scan + alert fan-out) can't
+    // overlap itself and double the DB load.
+    [DisableConcurrentExecution(timeoutInSeconds: 600)]
     public async Task RunAsync()
     {
         var businesses = await _db.Businesses

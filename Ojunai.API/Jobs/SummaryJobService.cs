@@ -4,6 +4,7 @@ using Ojunai.API.Models;
 using Ojunai.API.Models.Messaging;
 using Ojunai.API.Services.Channels;
 using Ojunai.API.Services.Interfaces;
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ojunai.API.Jobs;
@@ -30,12 +31,16 @@ public class SummaryJobService
         _logger = logger;
     }
 
+    // Serialize runs: if an hourly tick overruns past the next one, the second invocation waits for
+    // the lock instead of fanning out a duplicate concurrent sweep (extra DB load + double sends).
+    [DisableConcurrentExecution(timeoutInSeconds: 600)]
     public async Task RunDailySummaryAsync()
     {
         await ComputeDailySummariesAsync();
         await SendDailySummariesAsync();
     }
 
+    [DisableConcurrentExecution(timeoutInSeconds: 600)]
     public async Task RunWeeklySummaryAsync() => await SendWeeklySummariesAsync();
 
     public async Task ComputeDailySummariesAsync()
