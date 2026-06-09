@@ -42,20 +42,39 @@ public class FlutterwaveService
         var eventType = payload.TryGetProperty("event", out var evt) ? evt.GetString() : null;
         _logger.LogInformation("Flutterwave webhook: {Event}", eventType);
 
-        switch (eventType)
+        try
         {
-            case "charge.completed":
-                await HandleChargeCompleted(payload);
-                break;
-            case "subscription.cancelled":
-                await HandleSubscriptionCancelled(payload);
-                break;
-            case "transfer.reversed":
-            case "charge.refund":
-                await HandleRefundAsync(payload);
-                break;
+            switch (eventType)
+            {
+                case "charge.completed":
+                    await HandleChargeCompleted(payload);
+                    break;
+                case "subscription.cancelled":
+                    await HandleSubscriptionCancelled(payload);
+                    break;
+                case "transfer.reversed":
+                case "charge.refund":
+                    await HandleRefundAsync(payload);
+                    break;
+            }
+        }
+        catch (DbUpdateException ex) when (IsDuplicateEventRace(ex))
+        {
+            // A concurrent delivery of the SAME event won the race on PaystackEventLog.EventId and
+            // our SaveChanges rolled back atomically (no partial activation). Treat as a duplicate —
+            // return 200 instead of 500-ing into a Flutterwave retry storm.
+            _logger.LogInformation("Flutterwave webhook concurrent duplicate ignored: {Event}", eventType);
         }
     }
+
+    /// <summary>
+    /// True when a SaveChanges failed specifically because the idempotency row (PaystackEventLog)
+    /// hit its unique index — i.e. a concurrent delivery of the same event won. Other unique
+    /// violations are NOT swallowed.
+    /// </summary>
+    private static bool IsDuplicateEventRace(DbUpdateException ex) =>
+        ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation }
+        && ex.Entries.Any(e => e.Entity is PaystackEventLog);
 
     /// <summary>Verify the Flutterwave webhook hash matches our secret.</summary>
     public bool VerifyWebhook(string hash)
@@ -574,8 +593,9 @@ public class FlutterwaveService
             {
                 var exists = await _db.PaystackEventLogs.AnyAsync(e => e.EventId == txRef);
                 if (exists) { _logger.LogInformation("Duplicate Flutterwave Voice AI event {TxRef}", txRef); return; }
+                // Track but don't commit — rides with the activation SaveChanges below so the event
+                // is marked seen iff the activation also commits (avoids paid-but-not-activated).
                 _db.PaystackEventLogs.Add(new PaystackEventLog { EventId = txRef, EventType = "flutterwave.voiceai.charge" });
-                await _db.SaveChangesAsync();
             }
 
             var vaBiz = await _db.Businesses.FindAsync(businessId);
@@ -640,8 +660,9 @@ public class FlutterwaveService
         {
             var exists = await _db.PaystackEventLogs.AnyAsync(e => e.EventId == txRef);
             if (exists) { _logger.LogInformation("Duplicate Flutterwave event {TxRef}, skipping", txRef); return; }
+            // Track but don't commit — rides with the activation/rejection SaveChanges below so the
+            // event is marked seen iff that also commits (avoids paid-but-not-activated).
             _db.PaystackEventLogs.Add(new PaystackEventLog { EventId = txRef, EventType = "flutterwave.charge.completed" });
-            await _db.SaveChangesAsync();
         }
 
         var business = await _db.Businesses.FindAsync(businessId);

@@ -129,6 +129,11 @@ builder.Services.AddScoped<IReceiptService, ReceiptService>();
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 builder.Services.AddScoped<ISuppressionService, SuppressionService>();
 builder.Services.AddScoped<IUsageService, UsageService>();
+builder.Services.AddScoped<IInboundDedupService, InboundDedupService>();
+// Process-global cap on concurrent paid Claude calls. Default 10; raise/lower via
+// Claude:MaxConcurrency to match the Anthropic account's concurrency limit.
+builder.Services.AddSingleton(new ClaudeConcurrencyLimiter(
+    config.GetValue<int>("Claude:MaxConcurrency", 10)));
 builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
 builder.Services.AddScoped<IClaudeParsingService, ClaudeParsingService>();
 builder.Services.AddScoped<IEntityResolverService, EntityResolverService>();
@@ -173,7 +178,12 @@ builder.Services.AddHangfire(hf => hf
     .UsePostgreSqlStorage(c =>
         c.UseNpgsqlConnection(config.GetConnectionString("DefaultConnection"))));
 
-builder.Services.AddHangfireServer();
+// Explicit worker count so total job concurrency (and thus DB connections + concurrent Claude
+// calls) is a tunable knob rather than the implicit ProcessorCount×5. Defaults to Hangfire's own
+// default so behavior is unchanged unless Hangfire:WorkerCount is set; size it against the Postgres
+// connection pool when scaling up.
+builder.Services.AddHangfireServer(options =>
+    options.WorkerCount = config.GetValue<int>("Hangfire:WorkerCount", Environment.ProcessorCount * 5));
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 var corsOrigins = (config["Cors:AllowedOrigins"] ?? "http://localhost:3000,http://localhost:3001")

@@ -61,6 +61,9 @@ public static class Program
             client.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
             client.Timeout = TimeSpan.FromSeconds(30);
         });
+        // Matches the API's registration so ClaudeParsingService resolves here too. The corpus
+        // runner is single-threaded, so the exact cap is immaterial.
+        services.AddSingleton(new ClaudeConcurrencyLimiter(config.GetValue<int>("Claude:MaxConcurrency", 10)));
         services.AddTransient<IClaudeParsingService, ClaudeParsingService>();
 
         var provider = services.BuildServiceProvider();

@@ -17,6 +17,7 @@ public class AppDbContext : DbContext
     public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();
     public DbSet<InventoryTransaction> InventoryTransactions => Set<InventoryTransaction>();
     public DbSet<MessageLog> MessageLogs => Set<MessageLog>();
+    public DbSet<InboundMessageClaim> InboundMessageClaims => Set<InboundMessageClaim>();
     public DbSet<DailySummary> DailySummaries => Set<DailySummary>();
     public DbSet<StockHold> StockHolds => Set<StockHold>();
     public DbSet<OnboardingState> OnboardingStates => Set<OnboardingState>();
@@ -215,6 +216,16 @@ public class AppDbContext : DbContext
             e.Property(x => x.Channel).HasMaxLength(50).HasDefaultValue("WhatsApp");
             e.Property(x => x.WhatsAppMessageId).HasMaxLength(100);
             e.Property(x => x.ConfidenceScore).HasPrecision(5, 4);
+        });
+
+        mb.Entity<InboundMessageClaim>(e =>
+        {
+            // Composite PK = the atomic dedup key. A duplicate inbound (provider re-delivery or
+            // Hangfire retry) hits a 23505 unique-violation on insert, which the dedup service
+            // catches and treats as "already handled".
+            e.HasKey(x => new { x.Channel, x.ProviderMessageId });
+            e.Property(x => x.ProviderMessageId).HasMaxLength(200);
+            e.HasIndex(x => x.ClaimedAtUtc); // supports the retention sweep
         });
 
         mb.Entity<StockHold>(e =>

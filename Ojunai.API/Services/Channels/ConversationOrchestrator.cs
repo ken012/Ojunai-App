@@ -28,6 +28,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
     private readonly Telegram.ITelegramSignupHandler _telegramSignup;
     private readonly Messenger.IMessengerIntentHandler _messengerIntent;
     private readonly Messenger.IMessengerSignupHandler _messengerSignup;
+    private readonly IInboundDedupService _dedup;
     private readonly ILogger<ConversationOrchestrator> _logger;
 
     public ConversationOrchestrator(
@@ -39,6 +40,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         Telegram.ITelegramSignupHandler telegramSignup,
         Messenger.IMessengerIntentHandler messengerIntent,
         Messenger.IMessengerSignupHandler messengerSignup,
+        IInboundDedupService dedup,
         ILogger<ConversationOrchestrator> logger)
     {
         _db = db;
@@ -49,6 +51,7 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         _telegramSignup = telegramSignup;
         _messengerIntent = messengerIntent;
         _messengerSignup = messengerSignup;
+        _dedup = dedup;
         _logger = logger;
     }
 
@@ -58,6 +61,18 @@ public sealed class ConversationOrchestrator : IConversationOrchestrator
         //    channel. This runs for every channel uniformly. UserId/BusinessId stay null until
         //    onboarding (or backfill, for existing WhatsApp users) wires them up.
         await TouchIdentityAsync(message, ct);
+
+        // 1b. Atomic exactly-once claim for Telegram/Messenger BEFORE any intent work (i.e. before
+        //     the paid Claude call). Provider re-deliveries and Hangfire retries lose the claim and
+        //     return here, so a sale can't be recorded — or Claude charged — twice.
+        //     Whatsapp is deliberately EXCLUDED: it claims downstream in WhatsAppService.HandleInboundAsync
+        //     (where both the legacy and V1 paths converge); claiming here too would double-claim and
+        //     drop every real WhatsApp message.
+        if (message.Channel != Channel.Whatsapp
+            && !await _dedup.TryClaimAsync(message.Channel, message.ProviderMessageId, ct))
+        {
+            return;
+        }
 
         // 2. Channel-specific dispatch. Phase 1 only Whatsapp is implemented; new channels arrive
         //    in Phase 2/3. Telegram and Messenger fall through to the not-implemented branch
