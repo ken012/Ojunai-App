@@ -174,6 +174,9 @@ public class ClaudeParsingService : IClaudeParsingService
             _logger.LogInformation(
                 "Claude {Model} tokens — input:{In} cache_read:{Read} cache_write:{Write} output:{Out}",
                 model, input, cacheRead, cacheWrite, output);
+
+            // Emit as OTel metrics for spend dashboards/alerts (no-op until OTel export is configured).
+            ClaudeMetrics.Record(model, input, output, cacheRead, cacheWrite);
         }
         catch
         {

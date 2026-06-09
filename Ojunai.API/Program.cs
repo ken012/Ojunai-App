@@ -11,6 +11,9 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -78,6 +81,49 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+
+// Show logging scopes (RequestId / BusinessId / UserId from RequestContextMiddleware) on every
+// console log line. Set in code rather than appsettings because appsettings*.json is gitignored
+// (server-managed), so a config-only change wouldn't ship. Configures the existing default console
+// formatter — no extra provider, so no double logging.
+builder.Services.Configure<Microsoft.Extensions.Logging.Console.SimpleConsoleFormatterOptions>(
+    opts => opts.IncludeScopes = true);
+
+// ── OpenTelemetry (metrics + traces) → OTLP ─────────────────────────────────────
+// Gated on an OTLP endpoint being configured (standard OTEL_EXPORTER_OTLP_ENDPOINT env var, set on
+// the server). When absent — e.g. local dev — OTel isn't registered at all: zero overhead and no
+// failed export attempts. The OTLP exporter reads endpoint/headers/protocol from the standard
+// OTEL_EXPORTER_OTLP_* env vars (Grafana Cloud values go there; see deploy notes).
+var otlpEndpoint = config["OTEL_EXPORTER_OTLP_ENDPOINT"];
+if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+{
+    builder.Services.AddOpenTelemetry()
+        // Set service.namespace + deployment.environment explicitly in code. The OTEL_RESOURCE_ATTRIBUTES
+        // env var isn't reliably merged here (the env resource detector doesn't run with this
+        // ConfigureResource path), so spans would otherwise carry only service.name. Values are
+        // config-overridable but default to match the Grafana setup wizard so its query matches.
+        .ConfigureResource(r => r
+            .AddService(
+                serviceName: config["OTEL_SERVICE_NAME"] ?? "ojunai-api",
+                serviceNamespace: config["OTEL_SERVICE_NAMESPACE"] ?? "ojunai")
+            .AddAttributes(new[]
+            {
+                new KeyValuePair<string, object>(
+                    "deployment.environment",
+                    config["OTEL_DEPLOYMENT_ENVIRONMENT"] ?? "production"),
+            }))
+        .WithTracing(t => t
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddOtlpExporter())
+        .WithMetrics(m => m
+            .AddAspNetCoreInstrumentation()   // request rate + latency percentiles
+            .AddHttpClientInstrumentation()   // outbound calls (Claude, Paystack, …) latency
+            .AddRuntimeInstrumentation()      // GC, threadpool
+            .AddMeter("Npgsql")               // DB connection-pool usage (built into Npgsql 8)
+            .AddMeter(ClaudeMetrics.MeterName) // Claude token spend
+            .AddOtlpExporter());
+}
 
 // ── HTTP Clients ──────────────────────────────────────────────────────────────
 builder.Services.AddHttpClient("Claude", client =>
@@ -353,6 +399,9 @@ app.Use(async (context, next) =>
 app.UseRouting();
 
 app.UseAuthentication();
+// After auth so the scope can include BusinessId/UserId; before ActiveUserMiddleware so its
+// logs are correlated too.
+app.UseMiddleware<RequestContextMiddleware>();
 app.UseMiddleware<ActiveUserMiddleware>();
 app.UseAuthorization();
 
