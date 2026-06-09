@@ -40,6 +40,19 @@ public class SummaryJobService
 
     public async Task ComputeDailySummariesAsync()
     {
+        // Run the heavy per-business compute ONCE per UTC day instead of on every hourly tick.
+        // This job used to recompute every active business 24×/day — each recompute loads the
+        // business's full ledger — but the DailySummary rows it writes are not read intraday by
+        // anything, and the row's end-of-day value is whatever the last run before UTC midnight
+        // produced. The 23:00 run was already that last writer (no run captures 23:00–24:00 sales),
+        // so gating to hour 23 yields a byte-identical end-of-day row while dropping 23/24 runs.
+        // The summary SEND stays hourly (below) so it still fires at each timezone's 8 PM local.
+        if (DateTime.UtcNow.Hour != 23)
+        {
+            _logger.LogInformation("Daily summary computation skipped (only runs at 23:00 UTC; now {Hour}:00).", DateTime.UtcNow.Hour);
+            return;
+        }
+
         _logger.LogInformation("Starting daily summary computation.");
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 

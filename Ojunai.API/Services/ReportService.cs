@@ -442,17 +442,32 @@ public partial class ReportService : IReportService
         var cs = BillingConfig.Symbol(business?.Currency);
         var activities = new List<ActivityFeedDto>();
 
+        // Date window pushed into each SQL query so a date-filtered feed view doesn't drag the
+        // business's entire history into memory. These mirror the exact in-memory bounds applied
+        // below (which remain the authoritative arbiter), so the SQL prefilter is only ever a
+        // SUPERSET — it never drops a row the in-memory filter would keep.
+        var lo = startDate;                 // inclusive lower bound (or null = no lower bound)
+        var hi = endDate?.AddDays(1);       // exclusive upper bound (matches endDate.AddDays(1) below)
+
         // Helper: generate a short human-readable reference ID from a GUID
         static string MakeRef(Guid id, string prefix) => $"{prefix}-{id.ToString("N")[..8].ToUpper()}";
 
         // Sales — IgnoreQueryFilters so voided sales appear too (with their own entry type)
         if (type == null || type == "sale" || type == "sale_voided")
         {
-            var salesRaw = await _db.Sales
+            var salesQ = _db.Sales
                 .IgnoreQueryFilters()
+                .AsNoTracking()
                 .Include(s => s.Items).ThenInclude(i => i.Product)
                 .Include(s => s.Contact)
-                .Where(s => s.BusinessId == businessId)
+                .Where(s => s.BusinessId == businessId);
+            // A sale yields the sale row (keyed on CreatedAtUtc) plus, if voided/returned, a separate
+            // event row keyed on DeletedAtUtc — so prefilter over EITHER timestamp (superset).
+            if (lo.HasValue)
+                salesQ = salesQ.Where(s => s.CreatedAtUtc >= lo.Value || (s.DeletedAtUtc != null && s.DeletedAtUtc >= lo.Value));
+            if (hi.HasValue)
+                salesQ = salesQ.Where(s => s.CreatedAtUtc < hi.Value || (s.DeletedAtUtc != null && s.DeletedAtUtc < hi.Value));
+            var salesRaw = await salesQ
                 .OrderByDescending(s => s.CreatedAtUtc)
                 .ToListAsync();
 
@@ -508,9 +523,13 @@ public partial class ReportService : IReportService
         // Expenses
         if (type == null || type == "expense")
         {
-            var expenses = await _db.Expenses
+            var expensesQ = _db.Expenses
                 .IgnoreQueryFilters()
-                .Where(e => e.BusinessId == businessId)
+                .AsNoTracking()
+                .Where(e => e.BusinessId == businessId);
+            if (lo.HasValue) expensesQ = expensesQ.Where(e => e.CreatedAtUtc >= lo.Value);
+            if (hi.HasValue) expensesQ = expensesQ.Where(e => e.CreatedAtUtc < hi.Value);
+            var expenses = await expensesQ
                 .OrderByDescending(e => e.CreatedAtUtc)
                 .ToListAsync();
 
@@ -531,9 +550,13 @@ public partial class ReportService : IReportService
         // Inventory transactions
         if (type == null || type == "inventory")
         {
-            var inventory = await _db.InventoryTransactions
+            var inventoryQ = _db.InventoryTransactions
+                .AsNoTracking()
                 .Include(t => t.Product)
-                .Where(t => t.BusinessId == businessId)
+                .Where(t => t.BusinessId == businessId);
+            if (lo.HasValue) inventoryQ = inventoryQ.Where(t => t.CreatedAtUtc >= lo.Value);
+            if (hi.HasValue) inventoryQ = inventoryQ.Where(t => t.CreatedAtUtc < hi.Value);
+            var inventory = await inventoryQ
                 .OrderByDescending(t => t.CreatedAtUtc)
                 .ToListAsync();
 
@@ -560,9 +583,13 @@ public partial class ReportService : IReportService
         // Ledger entries
         if (type == null || type == "payment" || type == "adjustment")
         {
-            var ledgerRaw = await _db.LedgerEntries
+            var ledgerQ = _db.LedgerEntries
+                .AsNoTracking()
                 .Include(e => e.Contact)
-                .Where(e => e.BusinessId == businessId)
+                .Where(e => e.BusinessId == businessId);
+            if (lo.HasValue) ledgerQ = ledgerQ.Where(e => e.CreatedAtUtc >= lo.Value);
+            if (hi.HasValue) ledgerQ = ledgerQ.Where(e => e.CreatedAtUtc < hi.Value);
+            var ledgerRaw = await ledgerQ
                 .OrderByDescending(e => e.CreatedAtUtc)
                 .ToListAsync();
 
