@@ -402,6 +402,17 @@ public class AppDbContext : DbContext
             // Per-business uniqueness for non-stackable add-ons is enforced in code (the
             // catalog defines stackable=false), not at the DB level — Quantity is part of
             // the row and active rows can legitimately repeat for stackable codes.
+            //
+            // EXCEPTION: WhatsApp packs are non-stackable and money-bearing, so enforce
+            // "at most one active whatsapp_pack per business" at the DB level. A concurrent
+            // double-activation would otherwise leave two active packs (merchant gets double
+            // the paid allowance). Partial unique index — matches the cancel-then-insert
+            // invariant the activation code follows. Activation cancels the old pack BEFORE
+            // inserting the new one (see UpsertWhatsAppPackAddOnAsync / HandleWhatsAppPackVerifiedAsync).
+            e.HasIndex(x => x.BusinessId)
+                .HasDatabaseName("IX_BusinessAddOns_OneActiveWhatsAppPack")
+                .HasFilter("\"Status\" = 'active' AND \"AddOnCode\" LIKE 'whatsapp_pack.%'")
+                .IsUnique();
         });
 
         mb.Entity<ActionUsage>(e =>

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Ojunai.API.Data;
@@ -11,9 +12,11 @@ using Ojunai.API.Data;
 namespace Ojunai.API.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260608051342_AddOneActiveWhatsAppPackIndex")]
+    partial class AddOneActiveWhatsAppPackIndex
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -992,25 +995,6 @@ namespace Ojunai.API.Migrations
                     b.HasIndex("BusinessId", "CreatedAtUtc");
 
                     b.ToTable("ImportJobs");
-                });
-
-            modelBuilder.Entity("Ojunai.API.Models.InboundMessageClaim", b =>
-                {
-                    b.Property<int>("Channel")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ProviderMessageId")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<DateTime>("ClaimedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Channel", "ProviderMessageId");
-
-                    b.HasIndex("ClaimedAtUtc");
-
-                    b.ToTable("InboundMessageClaims");
                 });
 
             modelBuilder.Entity("Ojunai.API.Models.InventoryTransaction", b =>

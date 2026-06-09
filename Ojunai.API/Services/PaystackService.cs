@@ -1001,18 +1001,24 @@ public class PaystackService
         Guid businessId, string packCode, decimal amount, string currency, BillingConfig.BillingCycle cycle,
         bool autoRenew = false, string? providerSubscriptionId = null)
     {
+        // Cancel the current active pack(s) and activate the new one ATOMICALLY, ordered so the
+        // partial unique index (one active whatsapp_pack per business) is never tripped by the
+        // in-flight old row: the cancel is an immediate UPDATE that runs BEFORE the insert, inside
+        // one transaction. The normal (sequential) path always succeeds. A rare concurrent
+        // double-activation trips the index → the transaction rolls back (no partial state, no
+        // double-active pack, and the caller's "activated" BillingEvent is never written) and the
+        // error surfaces for the provider to retry, which then cancels the winner and inserts cleanly.
         var now = DateTime.UtcNow;
-        var existing = await _db.BusinessAddOns
+        await using var tx = await _db.Database.BeginTransactionAsync();
+
+        await _db.BusinessAddOns
             .Where(a => a.BusinessId == businessId
                 && a.Status == "active"
                 && a.AddOnCode.StartsWith("whatsapp_pack."))
-            .ToListAsync();
-        foreach (var old in existing)
-        {
-            old.Status = "cancelled";
-            old.CancelledAtUtc = now;
-            old.UpdatedAtUtc = now;
-        }
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(a => a.Status, "cancelled")
+                .SetProperty(a => a.CancelledAtUtc, now)
+                .SetProperty(a => a.UpdatedAtUtc, now));
 
         var nextBilling = cycle == BillingConfig.BillingCycle.Annual ? now.AddYears(1) : now.AddMonths(1);
         _db.BusinessAddOns.Add(new BusinessAddOn
@@ -1029,6 +1035,8 @@ public class PaystackService
             IsAutoRenew = autoRenew,
             ProviderSubscriptionId = providerSubscriptionId,
         });
+        await _db.SaveChangesAsync();
+        await tx.CommitAsync();
     }
 
     private async Task HandleSubscriptionCancelled(JsonElement data)
