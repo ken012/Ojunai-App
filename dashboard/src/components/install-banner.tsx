@@ -83,8 +83,15 @@ export function InstallBanner() {
       <div
         role="region"
         aria-label="Install Ojunai"
-        className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white px-4 py-3 shadow-lg dark:border-slate-800 dark:bg-slate-900"
-        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+        className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white py-3 shadow-lg dark:border-slate-800 dark:bg-slate-900"
+        style={{
+          paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))",
+          // In landscape the camera/notch can sit on the left or right edge
+          // of this banner — push content inward so the install button and
+          // copy never disappear under it.
+          paddingLeft: "max(1rem, env(safe-area-inset-left))",
+          paddingRight: "max(1rem, env(safe-area-inset-right))",
+        }}
       >
         <div className="mx-auto flex max-w-xl items-center gap-3">
           <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-violet-500 text-white">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Bell, Check, X, AlertCircle, AlertTriangle, Info, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -94,18 +95,22 @@ export function NotificationBell() {
   /**
    * Anchors the popup to the bell's current viewport position. Called on open
    * and on resize/scroll while open so the panel tracks if the page reflows.
-   * Right-aligned to the bell; clamped to keep the panel inside the viewport
-   * so it never bleeds off-screen on narrow phones.
    *
-   * Wrapped in useCallback with empty deps because it only reads refs + window
-   * (both stable) and calls setPopupPos (also stable). Lets the resize/scroll
-   * useEffect list it as a dep without re-subscribing on every render.
+   *  - On MOBILE the bell sits at top-right of the screen, so right-aligning
+   *    the popup to the bell (popup extends leftward) keeps it on-screen.
+   *  - On DESKTOP the bell lives inside the LEFT sidebar; right-aligning would
+   *    keep the popup entirely inside the sidebar. Anchor 8px to the right of
+   *    the bell instead so the popup spills into the dashboard area where the
+   *    user can actually see it overlay content.
+   *
+   * Clamped either way so it never bleeds off-screen.
    */
   const recomputePosition = useCallback(() => {
     if (!buttonRef.current) return;
     const rect = buttonRef.current.getBoundingClientRect();
     const popupWidth = popupWidthFor(window.innerWidth);
-    let left = rect.right - popupWidth;
+    const isMobile = window.innerWidth < 640;
+    let left = isMobile ? rect.right - popupWidth : rect.right + 8;
     if (left < 8) left = 8;
     const maxLeft = window.innerWidth - popupWidth - 8;
     if (left > maxLeft) left = maxLeft;
@@ -188,12 +193,14 @@ export function NotificationBell() {
         )}
       </button>
 
-      {open && popupPos && (
+      {open && popupPos && typeof document !== "undefined" && createPortal(
         <div
           ref={popupRef}
-          /* `position: fixed` so the dropdown escapes the sidebar's overflow:auto
-             clip and stays anchored to the bell button. Width clamps to the
-             viewport so the panel fits on narrow phones. */
+          /* `position: fixed` plus a portal to document.body so the popup
+             escapes the sidebar's `transform`-induced containing block.
+             Without the portal, position:fixed gets re-anchored to the
+             sidebar (which has Tailwind's `transform` class for the mobile
+             slide animation) and the popup ends up trapped inside it. */
           style={{ position: "fixed", top: popupPos.top, left: popupPos.left, width: typeof window !== "undefined" ? popupWidthFor(window.innerWidth) : 320 }}
           className="max-h-[480px] flex flex-col rounded-lg shadow-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 z-50"
         >
@@ -260,7 +267,8 @@ export function NotificationBell() {
               );
             })}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

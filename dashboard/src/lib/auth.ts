@@ -185,8 +185,29 @@ function clearAuth() {
   localStorage.removeItem("oj_auth_time");
 }
 
+/**
+ * Drop the service worker's HTML + static caches on logout. The HTML cache
+ * holds shell pages (no user data baked in) but evicting it ensures the next
+ * user on the device gets a fresh load instead of a possibly-stale Ojunai
+ * route. Wrapped in try/catch so cache failures never block sign-out.
+ */
+async function clearSwCaches() {
+  if (typeof window === "undefined" || !("caches" in window)) return;
+  try {
+    const names = await caches.keys();
+    await Promise.all(
+      names
+        .filter((n) => n.startsWith("ojunai-") || n === "start-url")
+        .map((n) => caches.delete(n))
+    );
+  } catch {
+    // best-effort — never let cache cleanup block logout
+  }
+}
+
 export async function logout() {
   try { await api.post("/auth/logout"); } catch {}
   clearAuth();
+  await clearSwCaches();
   window.location.href = "/login";
 }
