@@ -1,5 +1,3 @@
-import type { SupportedCurrency, BillingCycle } from "./pricing";
-
 export type VoiceAITier = "starter" | "pro";
 
 export const VOICE_AI_TIER_CODES: VoiceAITier[] = ["starter", "pro"];
@@ -23,20 +21,9 @@ export const VOICE_AI_TRIAL_MINUTES = 10;
 
 export const VOICE_AI_ANNUAL_DISCOUNT = 17;
 
-export const VOICE_AI_TIER_PRICING: Record<VoiceAITier, Record<BillingCycle, Record<SupportedCurrency, number>>> = {
-  starter: {
-    monthly: { NGN: 39999, GHS: 399, USD: 39, GBP: 31, KES: 3499, ZAR: 649, UGX: 89000 },
-    annual: { NGN: 399990, GHS: 3990, USD: 390, GBP: 310, KES: 34990, ZAR: 6490, UGX: 890000 },
-  },
-  pro: {
-    monthly: { NGN: 82000, GHS: 829, USD: 79, GBP: 63, KES: 7199, ZAR: 1349, UGX: 180000 },
-    annual: { NGN: 820000, GHS: 8290, USD: 790, GBP: 630, KES: 71990, ZAR: 13490, UGX: 1800000 },
-  },
-};
-
-export function getVoiceAITierPrice(tier: VoiceAITier, cycle: BillingCycle, currency: SupportedCurrency): number {
-  return VOICE_AI_TIER_PRICING[tier]?.[cycle]?.[currency] ?? 0;
-}
+// Voice tier PRICES are no longer hardcoded here — they come live from the backend
+// (GET /subscription/voice-ai-pricing) via useVoicePricing() in @/lib/use-pricing. This file
+// keeps only the frontend-only marketing metadata (labels, minutes, features, taglines).
 
 export const VOICE_AI_TIER_FEATURES: Record<VoiceAITier, string[]> = {
   starter: [

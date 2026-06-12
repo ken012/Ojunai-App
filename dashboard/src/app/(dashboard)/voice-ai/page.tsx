@@ -21,9 +21,6 @@ import {
   VOICE_AI_ANNUAL_DISCOUNT,
   VOICE_AI_TIER_CODES,
   VOICE_AI_TIER_LABELS,
-  VOICE_AI_TIER_MINUTES,
-  VOICE_AI_TIER_CONCURRENT_LINES,
-  VOICE_AI_TIER_PRICING,
   VOICE_AI_TIER_FEATURES,
   VOICE_AI_TIER_TAGLINES,
   VOICE_AI_TRIAL_MINUTES,
@@ -31,6 +28,7 @@ import {
 } from "@/lib/voice-ai-pricing";
 import { CURRENCY_META, SUPPORTED_CURRENCIES } from "@/lib/pricing";
 import type { SupportedCurrency, BillingCycle } from "@/lib/pricing";
+import { useVoicePricing } from "@/lib/use-pricing";
 
 type VoiceAISettings = {
   id: string;
@@ -229,6 +227,9 @@ function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurre
   const contactSubject = encodeURIComponent("OjunaiVoice — Enable for my business");
   const contactBody = encodeURIComponent("Hi Ojunai Team,\n\nI'm interested in enabling OjunaiVoice for my business.\n\nPlease get in touch to set it up.\n\nThank you.");
 
+  // Live Voice prices from the backend (single source of truth) — no hardcoded numbers.
+  const { getVoiceTierPrice } = useVoicePricing();
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="text-center">
@@ -271,7 +272,7 @@ function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurre
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {VOICE_AI_TIER_CODES.map((tier) => {
-          const price = VOICE_AI_TIER_PRICING[tier][cycle][currency] ?? 0;
+          const price = getVoiceTierPrice(tier, cycle, currency);
           const monthlyEquiv = cycle === "annual" ? Math.round(price / 12) : price;
           const sym = CURRENCY_META[currency]?.symbol ?? currency;
           const isPro = tier === "pro";

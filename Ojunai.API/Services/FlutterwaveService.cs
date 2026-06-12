@@ -403,7 +403,10 @@ public class FlutterwaveService
 
             var createPayload = JsonSerializer.Serialize(new
             {
-                amount = (int)amount,
+                // Send the exact price (major units, 2dp). Do NOT cast to int — that truncated the
+                // cents on decimal currencies (USD/GBP), creating recurring plans that under-charged
+                // by up to ~0.99 each cycle (e.g. $11.99 → $11). Whole-number currencies are unaffected.
+                amount = Math.Round(amount, 2),
                 name = planName,
                 interval,
                 currency = currency.ToUpper()
@@ -671,12 +674,30 @@ public class FlutterwaveService
         var business = await _db.Businesses.FindAsync(businessId);
         if (business == null) { _logger.LogWarning("No business for Flutterwave payment {TxRef}", txRef); return; }
 
+        // A mid-cycle delta upgrade pays only (target − current) and keeps the cycle end date. The
+        // "-delta-" marker is set server-side in the txRef at init, so the client can't forge it.
+        var isDeltaUpgrade = txRef?.Contains("-delta-", StringComparison.Ordinal) == true;
+        var priorPlan = business.SubscribedPlan; // plan we're upgrading FROM (captured before we overwrite it below)
+
         // Verify amount matches expected price
         var chargeAmount = data.TryGetProperty("amount", out var chgAmtEl) ? chgAmtEl.GetDecimal() : (decimal?)null;
         if (!Enum.TryParse<BillingConfig.BillingCycle>(billingCycle ?? "monthly", true, out var verifyBc))
             verifyBc = BillingConfig.BillingCycle.Monthly;
-        var expectedCharge = BillingConfig.GetPrice(plan ?? "starter", verifyBc, currency ?? business.Currency);
-        if (expectedCharge.HasValue && chargeAmount.HasValue && Math.Abs(chargeAmount.Value - expectedCharge.Value) > 1)
+        var verifyCurrency = currency ?? business.Currency;
+        var fullPrice = BillingConfig.GetPrice(plan ?? "starter", verifyBc, verifyCurrency);
+        // For a delta upgrade, recompute the expected difference server-side and validate against THAT,
+        // so a tampered request can't under-pay by faking the delta marker.
+        decimal? expectedCharge = fullPrice;
+        if (isDeltaUpgrade && fullPrice.HasValue)
+        {
+            var priorPrice = !string.IsNullOrEmpty(priorPlan)
+                ? BillingConfig.GetPrice(priorPlan!, verifyBc, verifyCurrency) ?? 0
+                : 0;
+            expectedCharge = Math.Max(0, fullPrice.Value - priorPrice);
+        }
+        // Tightened tolerance (was 1.0 — wide enough to silently allow ~$0.99 undercharges). Prices are
+        // fixed 2-dp values Flutterwave echoes exactly, so 0.5 is a guard, not a real gap.
+        if (expectedCharge.HasValue && chargeAmount.HasValue && Math.Abs(chargeAmount.Value - expectedCharge.Value) > 0.5m)
         {
             _logger.LogWarning("Flutterwave webhook amount mismatch: paid {Paid}, expected {Expected} for {Plan}/{Currency}",
                 chargeAmount.Value, expectedCharge.Value, plan, currency);
@@ -726,19 +747,29 @@ public class FlutterwaveService
         var allowedMethods = new[] { "card", "mobilemoney", "banktransfer", "ussd", "accounttransfer" };
         business.PaymentMethod = allowedMethods.Contains(paymentType) ? paymentType : "card";
         var hasPaymentPlan = data.TryGetProperty("plan", out var planIdEl) && planIdEl.ValueKind == JsonValueKind.Number;
-        business.IsAutoRenew = isCard && hasPaymentPlan;
         business.SubscriptionStatus = "active";
         business.PendingPlanChange = null;
         business.TrialEndsAt = null;
 
-        // Set subscription end date based on cycle (stack on existing if still active)
         var isAnnual = billingCycle?.Equals("annual", StringComparison.OrdinalIgnoreCase) == true;
-        var chargeBaseDate = (business.SubscriptionEndsAt.HasValue && business.SubscriptionEndsAt > DateTime.UtcNow)
-            ? business.SubscriptionEndsAt.Value
-            : DateTime.UtcNow;
-        business.SubscriptionEndsAt = isAnnual
-            ? chargeBaseDate.AddYears(1)
-            : chargeBaseDate.AddMonths(1);
+        if (isDeltaUpgrade)
+        {
+            // Mid-cycle upgrade: only the difference was paid and the existing cycle end date stands.
+            // No recurring plan backs a one-time delta, so auto-renew is off — the user re-subscribes at
+            // expiry (the expiry banner prompts them). Mirrors the Paystack delta fallback path.
+            business.IsAutoRenew = false;
+        }
+        else
+        {
+            business.IsAutoRenew = isCard && hasPaymentPlan;
+            // Set subscription end date based on cycle (stack on existing if still active)
+            var chargeBaseDate = (business.SubscriptionEndsAt.HasValue && business.SubscriptionEndsAt > DateTime.UtcNow)
+                ? business.SubscriptionEndsAt.Value
+                : DateTime.UtcNow;
+            business.SubscriptionEndsAt = isAnnual
+                ? chargeBaseDate.AddYears(1)
+                : chargeBaseDate.AddMonths(1);
+        }
 
         // For card payments with a payment plan, Flutterwave auto-creates a subscription.
         // Fetch it so we can cancel later if needed.

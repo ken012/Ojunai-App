@@ -319,16 +319,43 @@ public class SubscriptionController : OjunaiBaseController
         // GetPriceOrThrow surfaces unsupported plan/cycle/currency loudly. The IsValidCombination
         // check above should have caught this, but the throw is a defensive safety net so we never
         // accidentally initialize a Flutterwave transaction at amount=0.
-        var amount = BillingConfig.GetPriceOrThrow(plan, billingCycle, currency);
+        var fullAmount = BillingConfig.GetPriceOrThrow(plan, billingCycle, currency);
 
-        var txRef = $"ojunai-{BusinessId:N}-{plan}-{cycle}-{DateTime.UtcNow.Ticks}";
+        // Mid-cycle delta upgrade — mirrors PaystackService.InitializeSubscriptionAsync. Eligible when
+        // monthly, currently on an ACTIVE paid plan with a future end date, the new plan costs more, and
+        // ≥10 days remain. Charge ONLY the price difference and keep the existing cycle end. The "-delta-"
+        // marker in txRef tells the webhook to validate the delta (not full price) and not extend the period.
+        // One-time charge (no recurring plan), so auto-renew is off this cycle — the expiry banner prompts a
+        // re-subscribe, same as the Paystack delta fallback. Annual always goes full price.
+        var chargeAmount = fullAmount;
+        var isDeltaUpgrade = false;
+        if (billingCycle == BillingConfig.BillingCycle.Monthly
+            && string.Equals(business.SubscriptionStatus, "active", StringComparison.OrdinalIgnoreCase)
+            && business.SubscriptionEndsAt.HasValue && business.SubscriptionEndsAt.Value > DateTime.UtcNow
+            && !string.IsNullOrEmpty(business.SubscribedPlan))
+        {
+            var currentPrice = BillingConfig.GetPrice(business.SubscribedPlan!, billingCycle, currency) ?? 0;
+            var daysRemaining = (business.SubscriptionEndsAt.Value - DateTime.UtcNow).TotalDays;
+            if (fullAmount > currentPrice && daysRemaining >= 10)
+            {
+                isDeltaUpgrade = true;
+                chargeAmount = fullAmount - currentPrice;
+            }
+        }
+
+        var txRef = isDeltaUpgrade
+            ? $"ojunai-{BusinessId:N}-{plan}-{cycle}-delta-{DateTime.UtcNow.Ticks}"
+            : $"ojunai-{BusinessId:N}-{plan}-{cycle}-{DateTime.UtcNow.Ticks}";
         var publicKey = _config["Flutterwave:PublicKey"];
         if (string.IsNullOrEmpty(publicKey))
             return StatusCode(500, ApiResponse<object>.Fail("Payment gateway not configured. Please contact support."));
         var callbackUrl = _config["Flutterwave:CallbackUrl"] ?? "https://app.ojunai.com/settings";
 
-        // Create a payment plan for auto-renewing card subscriptions
-        var paymentPlanId = await _flutterwave.GetOrCreatePaymentPlanAsync(plan, billingCycle, currency, amount);
+        // Recurring payment plan only for full-price subscriptions. A delta upgrade is one-time — attaching
+        // a plan would set up recurring billing at the (wrong) delta amount.
+        int? paymentPlanId = isDeltaUpgrade
+            ? null
+            : await _flutterwave.GetOrCreatePaymentPlanAsync(plan, billingCycle, currency, fullAmount);
 
         return Ok(ApiResponse<object>.Ok(new
         {
@@ -336,7 +363,7 @@ public class SubscriptionController : OjunaiBaseController
             inlineCheckout = true,
             publicKey,
             txRef,
-            amount,
+            amount = chargeAmount,
             currency,
             email,
             plan,
@@ -345,6 +372,7 @@ public class SubscriptionController : OjunaiBaseController
             businessId = BusinessId.ToString(),
             businessName = business.Name,
             paymentPlanId,
+            isUpgradeDelta = isDeltaUpgrade,
         }, "Ready for checkout."));
     }
 
