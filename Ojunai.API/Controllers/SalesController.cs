@@ -91,6 +91,10 @@ public class SalesController : OjunaiBaseController
         var owner = business.Users.FirstOrDefault(u => u.Role == Models.UserRole.Owner && u.IsActive);
         if (owner == null) return;
 
+        // No alert channel selected → business alerts are off (the dashboard bell, emitted
+        // separately via EmitPostSaleAlertsAsync, is unaffected and keeps its own toggles).
+        if (AlertChannels.IsNone(owner.AlertChannel)) return;
+
         var alerts = new List<string>();
 
         if (business.AlertLowStock)

@@ -121,17 +121,20 @@ public class AuthController : OjunaiBaseController
     [HttpPut("alert-channel")]
     public async Task<ActionResult<ApiResponse<object>>> UpdateAlertChannel([FromBody] UpdateAlertChannelRequest request)
     {
-        var allowed = new[] { "whatsapp", "telegram", "messenger" };
-        var normalized = (request.Channel ?? "whatsapp").Trim().ToLowerInvariant();
+        // "none" turns business alerts off; whatsapp/telegram/messenger select a destination.
+        var normalized = (request.Channel ?? AlertChannels.None).Trim().ToLowerInvariant();
 
-        if (!allowed.Contains(normalized))
+        if (!AlertChannels.All.Contains(normalized))
             throw new InvalidOperationException($"Unsupported alert channel '{request.Channel}'.");
 
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == UserId && u.IsActive)
             ?? throw new KeyNotFoundException("User not found.");
         user.AlertChannel = normalized;
         await _db.SaveChangesAsync();
-        return Ok(ApiResponse<object>.Ok(null!, $"Alert delivery channel set to {normalized}."));
+        var msg = normalized == AlertChannels.None
+            ? "Business alerts turned off — pick a channel to start receiving them."
+            : $"Alert delivery channel set to {normalized}.";
+        return Ok(ApiResponse<object>.Ok(null!, msg));
     }
 
     /// <summary>
@@ -499,7 +502,7 @@ public class UpdateDobRequest
 
 public class UpdateAlertChannelRequest
 {
-    /// <summary>"whatsapp" | "telegram". Other values throw 400.</summary>
+    /// <summary>"none" | "whatsapp" | "telegram" | "messenger". Other values throw 400.</summary>
     public string? Channel { get; set; }
 }
 

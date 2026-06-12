@@ -43,6 +43,10 @@ public class BusinessService : IBusinessService
         if (request.AlertLargeSale.HasValue) business.AlertLargeSale = request.AlertLargeSale.Value;
         if (request.ConfirmLargeSales.HasValue) business.ConfirmLargeSales = request.ConfirmLargeSales.Value;
         if (request.ConfirmLargeSaleThreshold.HasValue) business.ConfirmLargeSaleThreshold = request.ConfirmLargeSaleThreshold.Value;
+        if (request.ConfirmLargeSalesTelegram.HasValue) business.ConfirmLargeSalesTelegram = request.ConfirmLargeSalesTelegram.Value;
+        if (request.ConfirmLargeSaleThresholdTelegram.HasValue) business.ConfirmLargeSaleThresholdTelegram = request.ConfirmLargeSaleThresholdTelegram.Value;
+        if (request.ConfirmLargeSalesMessenger.HasValue) business.ConfirmLargeSalesMessenger = request.ConfirmLargeSalesMessenger.Value;
+        if (request.ConfirmLargeSaleThresholdMessenger.HasValue) business.ConfirmLargeSaleThresholdMessenger = request.ConfirmLargeSaleThresholdMessenger.Value;
         if (request.LargeSaleAlertWhatsApp.HasValue) business.LargeSaleAlertWhatsApp = request.LargeSaleAlertWhatsApp.Value;
         if (request.LargeSaleAlertTelegram.HasValue) business.LargeSaleAlertTelegram = request.LargeSaleAlertTelegram.Value;
         if (request.LargeSaleAlertMessenger.HasValue) business.LargeSaleAlertMessenger = request.LargeSaleAlertMessenger.Value;
@@ -103,6 +107,10 @@ public class BusinessService : IBusinessService
         AlertLargeSale = b.AlertLargeSale,
         ConfirmLargeSales = b.ConfirmLargeSales,
         ConfirmLargeSaleThreshold = b.ConfirmLargeSaleThreshold,
+        ConfirmLargeSalesTelegram = b.ConfirmLargeSalesTelegram,
+        ConfirmLargeSaleThresholdTelegram = b.ConfirmLargeSaleThresholdTelegram,
+        ConfirmLargeSalesMessenger = b.ConfirmLargeSalesMessenger,
+        ConfirmLargeSaleThresholdMessenger = b.ConfirmLargeSaleThresholdMessenger,
         LargeSaleAlertWhatsApp = b.LargeSaleAlertWhatsApp,
         LargeSaleAlertTelegram = b.LargeSaleAlertTelegram,
         LargeSaleAlertMessenger = b.LargeSaleAlertMessenger,

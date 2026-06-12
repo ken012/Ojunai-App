@@ -669,11 +669,20 @@ public class WhatsAppService : IWhatsAppService
         var business = await _db.Businesses.FindAsync(businessId);
         if (business == null) return;
 
+        // Business alerts (low-stock, large-sale) only go out when the owner has chosen an alert
+        // delivery channel. The dashboard bell (EmitPostSaleAlertsAsync below) is independent and
+        // still fires regardless — it has its own per-channel toggles.
+        var ownerChannel = await _db.Users
+            .Where(u => u.BusinessId == businessId && u.Role == UserRole.Owner && u.IsActive)
+            .Select(u => u.AlertChannel)
+            .FirstOrDefaultAsync();
+        var businessAlertsEnabled = !AlertChannels.IsNone(ownerChannel);
+
         var alerts = new List<string>();
 
         // 1. Low stock + stock-out alerts (if enabled) — deduped per (business, product) with a 60-min
         // cooldown so sequential sales of the same low-stock product don't spam the user.
-        if (business.AlertLowStock)
+        if (business.AlertLowStock && businessAlertsEnabled)
         {
             var lowStockProducts = await _db.Products
                 .Where(p => p.BusinessId == businessId && p.IsActive && p.CurrentStock <= p.LowStockThreshold)
@@ -707,7 +716,7 @@ public class WhatsAppService : IWhatsAppService
 
         // 2. Large sale alert (if enabled) — only fires once per sale to prevent the alert from
         // re-echoing on every subsequent stock-affecting message within the 2-minute window.
-        if (business.AlertLargeSale && business.LargeSaleThreshold > 0)
+        if (business.AlertLargeSale && business.LargeSaleThreshold > 0 && businessAlertsEnabled)
         {
             var recentSale = await _db.Sales
                 .Where(s => s.BusinessId == businessId)

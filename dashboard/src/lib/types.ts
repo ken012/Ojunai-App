@@ -65,6 +65,10 @@ export interface BusinessDto {
   backgroundImageOpacity?: number;
   confirmLargeSales?: boolean;
   confirmLargeSaleThreshold?: number;
+  confirmLargeSalesTelegram?: boolean;
+  confirmLargeSaleThresholdTelegram?: number;
+  confirmLargeSalesMessenger?: boolean;
+  confirmLargeSaleThresholdMessenger?: number;
   accountNumber?: string;
   voiceAIEnabled?: boolean;
   voiceAIPlanStatus?: string;

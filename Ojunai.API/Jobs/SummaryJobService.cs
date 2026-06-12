@@ -230,7 +230,10 @@ public class SummaryJobService
 
                 // Phase 6 — route to user's preferred channel (User.AlertChannel). Owner who has
                 // opted into Telegram gets the summary in Telegram; default is still WhatsApp.
-                await _dispatcher.SendToUserAsync(owner.Id, new ReplyComposition { Text = message });
+                // Business alert: only deliver when the owner has selected an alert channel.
+                // (Billing/account reminders bypass this gate and keep their WhatsApp safety net.)
+                if (!AlertChannels.IsNone(owner.AlertChannel))
+                    await _dispatcher.SendToUserAsync(owner.Id, new ReplyComposition { Text = message });
             }
             catch (Exception ex)
             {
@@ -296,7 +299,10 @@ public class SummaryJobService
                               "\n\nReply with any question about your business!";
 
                 // Phase 6 — channel-aware delivery via the dispatcher.
-                await _dispatcher.SendToUserAsync(owner.Id, new ReplyComposition { Text = message });
+                // Business alert: only deliver when the owner has selected an alert channel.
+                // (Billing/account reminders bypass this gate and keep their WhatsApp safety net.)
+                if (!AlertChannels.IsNone(owner.AlertChannel))
+                    await _dispatcher.SendToUserAsync(owner.Id, new ReplyComposition { Text = message });
             }
             catch (Exception ex)
             {

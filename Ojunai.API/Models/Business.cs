@@ -33,8 +33,15 @@ public class Business
     public bool AlertLowStock { get; set; } = true;
     public bool AlertDailySummary { get; set; } = true;
     public bool AlertLargeSale { get; set; } = true;
+    // Large-sale confirmation gate, per messaging channel. When enabled, the bot asks the owner
+    // to confirm before recording a sale at/above the threshold. ConfirmLargeSales(+Threshold) is
+    // the WhatsApp one (kept for back-compat); Telegram/Messenger have their own independent gates.
     public bool ConfirmLargeSales { get; set; } = false;
     public decimal ConfirmLargeSaleThreshold { get; set; } = 0;
+    public bool ConfirmLargeSalesTelegram { get; set; } = false;
+    public decimal ConfirmLargeSaleThresholdTelegram { get; set; } = 0;
+    public bool ConfirmLargeSalesMessenger { get; set; } = false;
+    public decimal ConfirmLargeSaleThresholdMessenger { get; set; } = 0;
 
     // ── Per-source large-sale alert toggles ────────────────────────────────
     // Owners can turn large-sale alerts on/off independently by source so a quiet sales

@@ -43,12 +43,14 @@ public class User
     public int OnboardingInventoryCount { get; set; } = 0;
 
     /// <summary>
-    /// Where outbound alerts and summaries (daily summary, low stock, large sale, trial reminder,
-    /// renewal warning, etc.) get delivered. <c>"whatsapp"</c> (default, backward-compat) or
-    /// <c>"telegram"</c>. Opt-in via Settings → Alert delivery. Doesn't affect OTPs (always
-    /// WhatsApp) or in-app dashboard bell alerts.
+    /// Where business alerts and summaries (daily/weekly summary, low stock, large sale) get
+    /// delivered: <c>"none"</c> (default — off until the owner picks a channel), <c>"whatsapp"</c>,
+    /// <c>"telegram"</c>, or <c>"messenger"</c>. Chosen in Settings → Alerts. Does NOT gate
+    /// billing/account reminders (trial ending, renewal warnings) — those keep a WhatsApp safety
+    /// net via the NotificationDispatcher. Doesn't affect OTPs (always WhatsApp) or the in-app
+    /// dashboard bell. See <see cref="Common.AlertChannels"/>.
     /// </summary>
-    public string AlertChannel { get; set; } = "whatsapp";
+    public string AlertChannel { get; set; } = Common.AlertChannels.None;
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 

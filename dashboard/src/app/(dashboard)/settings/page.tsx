@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getStoredUser } from "@/lib/auth";
 import { api, absoluteApiUrl } from "@/lib/api";
-import type { UserDto } from "@/lib/types";
+import type { UserDto, BusinessDto } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { useToast } from "@/components/toast";
 import { useBusiness, useUser, useDataSync } from "@/lib/data-sync";
@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { PasswordStrengthHint } from "@/components/password-strength-hint";
 import { validatePassword } from "@/lib/password-policy";
@@ -35,13 +36,11 @@ import {
   type SupportedCurrency,
   SUPPORTED_CURRENCIES,
   CURRENCY_META,
-  PRICING,
-  getPrice,
-  getMonthlyEquivalent,
   formatPrice,
   getDefaultCurrency,
   toBillingCurrency,
 } from "@/lib/pricing";
+import { usePricing } from "@/lib/use-pricing";
 import { QuotaMeter, useQuotaSnapshot } from "@/components/quota-meter";
 import { WhatsAppPackPicker } from "@/components/whatsapp-pack-picker";
 
@@ -98,6 +97,11 @@ function SettingsPage() {
   const syncBusiness = useBusiness();
   const syncUser = useUser();
   const { refresh: refreshSync } = useDataSync();
+  // WhatsApp UI is paid — only surface the WhatsApp Integration section when the business has an
+  // active WhatsApp pack (same signal Connected Channels uses). Loading/none ⇒ hidden.
+  const { data: quotaSnapshot } = useQuotaSnapshot();
+  const whatsAppPackName = quotaSnapshot?.whatsAppPackName ?? null;
+  const whatsAppActive = whatsAppPackName !== null && whatsAppPackName !== "none";
   const { toast } = useToast();
   const [user, setUser] = useState<ReturnType<typeof getStoredUser>>(null);
   const [business, setBusiness] = useState<ReturnType<typeof useBusiness>>(null);
@@ -105,6 +109,17 @@ function SettingsPage() {
   const [mounted, setMounted] = useState(false);
   const searchParams = useSearchParams();
   const [showSuccess, setShowSuccess] = useState(false);
+  // Telegram/Messenger integration sections + nav links appear only once that channel is linked.
+  const [channelConnected, setChannelConnected] = useState<{ telegram: boolean; messenger: boolean }>({ telegram: false, messenger: false });
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{ data: { telegram?: { connected?: boolean }; messenger?: { connected?: boolean } } }>("/channels/status")
+      .then(({ data }) => { if (!cancelled) setChannelConnected({ telegram: !!data.data.telegram?.connected, messenger: !!data.data.messenger?.connected }); })
+      .catch(() => { /* leave both disconnected */ });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (syncBusiness) setBusiness(syncBusiness);
@@ -171,7 +186,9 @@ function SettingsPage() {
             { href: "#alerts", label: "Alerts" },
             { href: "#account", label: "Account" },
             { href: "#voice-ai", label: "Voice AI" },
-            { href: "#whatsapp", label: "WhatsApp" },
+            ...(whatsAppActive ? [{ href: "#whatsapp", label: "WhatsApp" }] : []),
+            ...(channelConnected.telegram ? [{ href: "#telegram", label: "Telegram" }] : []),
+            ...(channelConnected.messenger ? [{ href: "#messenger", label: "Messenger" }] : []),
             { href: "#channels", label: "Connected Channels" },
             { href: "#team", label: "Team" },
             { href: "#categories", label: "Categories" },
@@ -315,144 +332,12 @@ function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
 
-          {/* ── WhatsApp channel ────────────────────────────────────────── */}
-          <div className="rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50/40 dark:bg-emerald-950/20 p-3">
-            <div className="flex items-center justify-between mb-1">
-              <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
-                <MessageSquare size={12} />
-                WhatsApp
-              </p>
-              <span className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-px rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900">
-                Owner only
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">
-              Sent as WhatsApp messages to the owner&apos;s registered number.
-            </p>
-            <div className="space-y-3">
-              {[
-                { key: "alertLowStock" as const, label: "Low Stock", desc: "When a product drops below its threshold after a sale" },
-                { key: "alertDailySummary" as const, label: "Daily Summary", desc: "Sales, expenses, and net sent at 8 PM daily" },
-              ].map(({ key, label, desc }) => (
-                <label key={key} className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
-                    checked={business?.[key] ?? true}
-                    onChange={async (e) => {
-                      try {
-                        const { data } = await api.put<{ data: typeof business }>("/business", { [key]: e.target.checked });
-                        const updated = data.data!;
-                        setBusiness(updated);
-                        if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
-                      } catch (err: unknown) {
-                        const ax = err as { response?: { data?: { errors?: string[] } } };
-                        toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
-                      }
-                    }}
-                  />
-                  <div>
-                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{label}</p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500">{desc}</p>
-                  </div>
-                </label>
-              ))}
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
-                  checked={business?.alertLargeSale ?? true}
-                  onChange={async (e) => {
-                    try {
-                      const { data } = await api.put<{ data: typeof business }>("/business", { alertLargeSale: e.target.checked });
-                      const updated = data.data!;
-                      setBusiness(updated);
-                      if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
-                    } catch (err: unknown) {
-                      const ax = err as { response?: { data?: { errors?: string[] } } };
-                      toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
-                    }
-                  }}
-                />
-                <div>
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Large Sale Alert</p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500">When a sale exceeds the threshold</p>
-                </div>
-              </label>
-              {business?.alertLargeSale && (
-                <div className="ml-7 space-y-3">
-                  <div>
-                    <Label className="text-xs">Alert Threshold</Label>
-                    <Input
-                      type="number"
-                      value={business?.largeSaleThreshold?.toString() ?? "100000"}
-                      placeholder="e.g. 100000"
-                      onChange={async (e) => {
-                        const val = Number(e.target.value);
-                        try {
-                          const { data } = await api.put<{ data: typeof business }>("/business", { largeSaleThreshold: val || 100000 });
-                          const updated = data.data!;
-                          setBusiness(updated);
-                          if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
-                        } catch (err: unknown) {
-                          const ax = err as { response?: { data?: { errors?: string[] } } };
-                          toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
-                        }
-                      }}
-                    />
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Alert when a sale exceeds {cs}{(business?.largeSaleThreshold ?? 100000).toLocaleString()}</p>
-                  </div>
-
-                  {/* Per-source toggles: which sales channels should trigger the alert?
-                      Defaults on the API are all true so existing behavior (alert on any channel)
-                      is preserved. Owners can untoggle individual channels to mute noisy ones. */}
-                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-                    <p className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">Trigger alerts from</p>
-                    <div className="space-y-1.5">
-                      {([
-                        { key: "largeSaleAlertWhatsApp", label: "WhatsApp" },
-                        { key: "largeSaleAlertTelegram", label: "Telegram" },
-                        { key: "largeSaleAlertMessenger", label: "Facebook Messenger" },
-                        { key: "largeSaleAlertDashboard", label: "Dashboard" },
-                      ] as const).map(({ key, label }) => {
-                        const current = (business as unknown as Record<string, boolean | undefined> | undefined)?.[key];
-                        return (
-                          <label key={key} className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
-                              checked={current ?? true}
-                              onChange={async (e) => {
-                                try {
-                                  const { data } = await api.put<{ data: typeof business }>("/business", { [key]: e.target.checked });
-                                  const updated = data.data!;
-                                  setBusiness(updated);
-                                  if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
-                                } catch (err: unknown) {
-                                  const ax = err as { response?: { data?: { errors?: string[] } } };
-                                  toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
-                                }
-                              }}
-                            />
-                            <span className="text-xs text-slate-700 dark:text-slate-300">{label}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ── Telegram channel (Phase 6) ────────────────────────────────
-              Same alert toggles as WhatsApp would have, but they fire on the
-              user's Telegram chat instead. AlertChannel preference on the user
-              row decides which messaging channel actually receives. */}
-          <AlertChannelCard channel="telegram" />
-
-          {/* ── Messenger channel — live as of Phase 3e ─────────────────── */}
-          <AlertChannelCard channel="messenger" />
+          {/* ── Alert delivery channels ───────────────────────────────────
+              WhatsApp / Telegram / Messenger as peer cards. Pick one to make it
+              the active alert channel; the alert-type toggles (low stock, daily
+              summary, large sale) live under whichever channel is active and move
+              with it. No channel selected = business alerts off (the default). */}
+          <AlertDeliverySection business={business} setBusiness={setBusiness} cs={cs} refreshSync={refreshSync} whatsAppActive={whatsAppActive} />
 
           {/* ── Dashboard channel ─────────────────────────────────────────
               In-app bell. Internally split into Business (toggleable, Owner/Admin
@@ -646,6 +531,7 @@ function SettingsPage() {
       <VoiceAISettingsCard />
       </SettingsSection>
 
+      {whatsAppActive && (
       <SettingsSection id="whatsapp" title="WhatsApp" icon={<MessageSquare size={14} />}>
       {/* WhatsApp */}
       <Card>
@@ -754,6 +640,15 @@ function SettingsPage() {
         </CardContent>
       </Card>
       </SettingsSection>
+      )}
+
+      {channelConnected.telegram && (
+        <ChannelIntegrationSection channel="telegram" business={business} setBusiness={setBusiness} cs={cs} refreshSync={refreshSync} />
+      )}
+
+      {channelConnected.messenger && (
+        <ChannelIntegrationSection channel="messenger" business={business} setBusiness={setBusiness} cs={cs} refreshSync={refreshSync} />
+      )}
 
       <SettingsSection id="channels" title="Connected Channels" icon={<LinkIcon size={14} />}>
         <ConnectedChannelsCard />
@@ -1115,7 +1010,7 @@ function TeamMembersCard() {
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label className="text-xs">Password</Label>
-                <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Min 8 chars" />
+                <PasswordInput value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Min 8 chars" />
               </div>
               <div>
                 <Label className="text-xs">Role</Label>
@@ -1187,8 +1082,7 @@ function TeamMembersCard() {
             </p>
             <div>
               <Label className="text-xs text-slate-500 dark:text-slate-400">Temporary password</Label>
-              <Input
-                type="password"
+              <PasswordInput
                 value={resetPassword}
                 onChange={(e) => { setResetPasswordValue(e.target.value); setResetError(null); }}
                 placeholder="Min 10 characters"
@@ -1255,113 +1149,391 @@ type BusinessShape = {
  * upload, but the server re-validates everything (BackgroundImageService has the
  * full security pipeline: magic-byte sniff, dimension preflight, decode-and-re-encode).
  */
-// ─── Alert delivery channel card (Phase 6) ───────────────────────────────────
+// ─── Alert delivery channels (Settings → Alerts) ─────────────────────────────
 /**
- * One card per messaging channel inside Settings → Alerts. Shows whether this channel is the
- * user's current alert recipient (badge), and a button to switch to it. Telegram and Messenger
- * are both live as of Phase 3e — outbound alerts route through whichever channel the user picks,
- * with WhatsApp as the fallback when the chosen channel isn't bound.
+ * WhatsApp / Telegram / Messenger as peer cards. The owner picks ONE as the active alert
+ * channel (User.AlertChannel); the alert-type toggles (low stock, daily summary, large sale)
+ * render under whichever channel is active and move with it. No channel selected (the default)
+ * = business alerts off — billing/account reminders keep their own WhatsApp safety net, and the
+ * in-app dashboard bell (configured separately) is unaffected.
  *
- * Routing logic lives in the API's NotificationDispatcher — this card just toggles the
- * User.AlertChannel preference. Same alert TYPE toggles (low stock, daily summary, etc.) are
- * set in the WhatsApp section above and apply globally — the channel toggle only changes
- * delivery, not content.
+ * Routing logic lives in the API's NotificationDispatcher; these cards just set the preference.
  */
-function AlertChannelCard({ channel }: { channel: "telegram" | "messenger" }) {
+function AlertDeliverySection({
+  business,
+  setBusiness,
+  cs,
+  refreshSync,
+  whatsAppActive,
+}: {
+  business: BusinessDto | null;
+  setBusiness: (b: BusinessDto) => void;
+  cs: string;
+  refreshSync: () => void;
+  whatsAppActive: boolean;
+}) {
   const { toast } = useToast();
-  const [user, setUser] = useState<ReturnType<typeof getStoredUser>>(getStoredUser());
-  const [saving, setSaving] = useState(false);
+  const [activeChannel, setActiveChannel] = useState<string>("none");
+  const [saving, setSaving] = useState<string | null>(null);
+  // Per-channel connection state — a channel can only be picked as the alert channel once it's
+  // connected/enabled (WhatsApp ⇒ active pack; Telegram/Messenger ⇒ linked in Connected Channels).
+  const [connected, setConnected] = useState<{ telegram: boolean; messenger: boolean }>({ telegram: false, messenger: false });
 
-  // Mount-time refresh from the server so the badge reflects truth, not stale cache.
+  // Pull the live preference + connection status on mount so the UI reflects the server.
   useEffect(() => {
     let cancelled = false;
-    async function refresh() {
-      try {
-        const { data } = await api.get<{ data: UserDto }>("/auth/me");
-        if (!cancelled) setUser(data.data);
-      } catch { /* keep cached value */ }
-    }
-    refresh();
+    api
+      .get<{ data: UserDto }>("/auth/me")
+      .then(({ data }) => { if (!cancelled) setActiveChannel(data.data.alertChannel || "none"); })
+      .catch(() => { /* keep default */ });
+    api
+      .get<{ data: { telegram?: { connected?: boolean }; messenger?: { connected?: boolean } } }>("/channels/status")
+      .then(({ data }) => { if (!cancelled) setConnected({ telegram: !!data.data.telegram?.connected, messenger: !!data.data.messenger?.connected }); })
+      .catch(() => { /* leave disconnected */ });
     return () => { cancelled = true; };
   }, []);
 
-  const isTelegram = channel === "telegram";
-  const isActive = user?.alertChannel === channel;
-
-  async function makeActive() {
-    setSaving(true);
+  async function selectChannel(channel: string, label: string) {
+    setSaving(channel);
     try {
       await api.put("/auth/alert-channel", { channel });
-      // Re-fetch user to pick up new AlertChannel
-      const { data } = await api.get<{ data: UserDto }>("/auth/me");
-      setUser(data.data);
-      toast.success(`Alerts will now go to ${channel === "telegram" ? "Telegram" : "Messenger"}`,
-        "Future summaries, low-stock notices, and other alerts will land there.");
+      setActiveChannel(channel);
+      if (channel === "none") {
+        toast.success("Business alerts turned off", "Pick a channel below to start receiving them again.");
+      } else {
+        toast.success(`Alerts will now go to ${label}`, "Low stock, daily summary, and large-sale alerts will land there.");
+      }
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { errors?: string[] } } };
       toast.error("Couldn't change alert channel", ax.response?.data?.errors?.[0] ?? "Please try again.");
     } finally {
-      setSaving(false);
+      setSaving(null);
     }
   }
 
-  const accent = isTelegram
-    ? "border-sky-200 dark:border-sky-900 bg-sky-50/40 dark:bg-sky-950/20 text-sky-700 dark:text-sky-300"
-    : "border-blue-200 dark:border-blue-900 bg-blue-50/40 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300";
-  const accentText = isTelegram ? "text-sky-700 dark:text-sky-300" : "text-blue-700 dark:text-blue-300";
+  const channels = [
+    {
+      id: "whatsapp",
+      label: "WhatsApp",
+      icon: <MessageSquare size={12} />,
+      activeCard: "border-emerald-200 dark:border-emerald-900 bg-emerald-50/40 dark:bg-emerald-950/20",
+      activeText: "text-emerald-700 dark:text-emerald-300",
+      desc: "Sent as WhatsApp messages to the owner's registered number.",
+    },
+    {
+      id: "telegram",
+      label: "Telegram",
+      icon: <Send size={12} />,
+      activeCard: "border-sky-200 dark:border-sky-900 bg-sky-50/40 dark:bg-sky-950/20",
+      activeText: "text-sky-700 dark:text-sky-300",
+      desc: "Sent to your linked Telegram chat. Connect Telegram first in Settings → Connected Channels.",
+    },
+    {
+      id: "messenger",
+      label: "Facebook Messenger",
+      icon: <MessageSquare size={12} />,
+      activeCard: "border-blue-200 dark:border-blue-900 bg-blue-50/40 dark:bg-blue-950/20",
+      activeText: "text-blue-700 dark:text-blue-300",
+      desc: "Sent through Facebook Messenger to your linked Page chat. Connect Messenger first in Settings → Connected Channels.",
+    },
+  ];
 
   return (
-    <div className={`rounded-lg border p-3 ${accent}`}>
-      <div className="flex items-center justify-between mb-1">
-        <p className={`text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 ${accentText}`}>
-          {isTelegram ? <Send size={12} /> : <MessageSquare size={12} />}
-          {isTelegram ? "Telegram" : "Facebook Messenger"}
-        </p>
-        {isActive ? (
-          <span className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-px rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900">
-            ✓ Active
-          </span>
-        ) : (
-          <span className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-px rounded-full bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
-            Inactive
-          </span>
-        )}
-      </div>
-      <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">
-        {isTelegram
-          ? "Sent as Telegram messages to your linked chat. Make sure Telegram is connected in Settings → Connected Channels first."
-          : "Sent through Facebook Messenger to your linked Page chat. Make sure Messenger is connected in Settings → Connected Channels first — otherwise alerts fall back to WhatsApp."}
-      </p>
-      {isActive ? (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={async () => {
-            setSaving(true);
-            try {
-              await api.put("/auth/alert-channel", { channel: "whatsapp" });
-              const { data } = await api.get<{ data: UserDto }>("/auth/me");
-              setUser(data.data);
-              toast.success("Switched back to WhatsApp",
-                "Future alerts will land on the owner's WhatsApp number.");
-            } catch (err: unknown) {
-              const ax = err as { response?: { data?: { errors?: string[] } } };
-              toast.error("Couldn't switch back", ax.response?.data?.errors?.[0] ?? "Please try again.");
-            } finally {
-              setSaving(false);
-            }
-          }}
-          disabled={saving}
-          className="flex-shrink-0"
-        >
-          {saving ? "Switching…" : "Switch back to WhatsApp"}
-        </Button>
-      ) : (
-        <Button size="sm" onClick={makeActive} disabled={saving} className="flex-shrink-0">
-          {saving ? "Switching…" : "Make this my alert channel"}
-        </Button>
+    <div className="space-y-3">
+      {activeChannel === "none" && (
+        <div className="rounded-lg border border-dashed border-amber-300 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 p-3">
+          <p className="text-xs text-amber-700 dark:text-amber-300">
+            No alert channel selected — business alerts (low stock, daily summary, large sale) are off.
+            Pick a channel below to turn them on. Billing and account reminders still reach you on WhatsApp.
+          </p>
+        </div>
+      )}
+
+      {channels.map((ch) => {
+        const isActive = activeChannel === ch.id;
+        const enabled = ch.id === "whatsapp" ? whatsAppActive : ch.id === "telegram" ? connected.telegram : connected.messenger;
+        const connectHint = ch.id === "whatsapp"
+          ? "Add a WhatsApp pack in Plan & Billing to use it for alerts."
+          : `Connect ${ch.label} in Settings → Connected Channels to use it for alerts.`;
+        const cardClass = isActive
+          ? ch.activeCard
+          : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40";
+        return (
+          <div key={ch.id} className={`rounded-lg border p-3 ${cardClass}`}>
+            <div className="flex items-center justify-between mb-1">
+              <p className={`text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 ${isActive ? ch.activeText : "text-slate-500 dark:text-slate-400"}`}>
+                {ch.icon}
+                {ch.label}
+              </p>
+              {isActive ? (
+                <span className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-px rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900">
+                  ✓ Active
+                </span>
+              ) : (
+                <span className="text-[10px] font-medium uppercase tracking-wide px-1.5 py-px rounded-full bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
+                  Inactive
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">{ch.desc}</p>
+
+            {isActive ? (
+              <>
+                <AlertTypeToggles business={business} setBusiness={setBusiness} cs={cs} refreshSync={refreshSync} />
+                <button
+                  type="button"
+                  onClick={() => selectChannel("none", ch.label)}
+                  disabled={saving !== null}
+                  className="mt-3 text-xs font-medium text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 disabled:opacity-50"
+                >
+                  {saving === "none" ? "Turning off…" : "Turn off alerts on this channel"}
+                </button>
+              </>
+            ) : enabled ? (
+              <Button size="sm" onClick={() => selectChannel(ch.id, ch.label)} disabled={saving !== null}>
+                {saving === ch.id ? "Switching…" : "Make this my alert channel"}
+              </Button>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                <Button size="sm" disabled className="self-start opacity-60">Make this my alert channel</Button>
+                <span className="text-[11px] text-slate-400 dark:text-slate-500">{connectHint}</span>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The global business-alert type toggles (low stock, daily summary, large sale + threshold +
+ * per-source). Stored on the Business and apply regardless of channel — rendered under whichever
+ * channel is currently active in AlertDeliverySection.
+ */
+function AlertTypeToggles({
+  business,
+  setBusiness,
+  cs,
+  refreshSync,
+}: {
+  business: BusinessDto | null;
+  setBusiness: (b: BusinessDto) => void;
+  cs: string;
+  refreshSync: () => void;
+}) {
+  const { toast } = useToast();
+
+  async function save(patch: Record<string, unknown>) {
+    try {
+      const { data } = await api.put<{ data: BusinessDto }>("/business", patch);
+      const updated = data.data!;
+      setBusiness(updated);
+      if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {[
+        { key: "alertLowStock" as const, label: "Low Stock", desc: "When a product drops below its threshold after a sale" },
+        { key: "alertDailySummary" as const, label: "Daily Summary", desc: "Sales, expenses, and net sent at 8 PM daily" },
+      ].map(({ key, label, desc }) => (
+        <label key={key} className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
+            checked={business?.[key] ?? true}
+            onChange={(e) => save({ [key]: e.target.checked })}
+          />
+          <div>
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{label}</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500">{desc}</p>
+          </div>
+        </label>
+      ))}
+
+      <label className="flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
+          checked={business?.alertLargeSale ?? true}
+          onChange={(e) => save({ alertLargeSale: e.target.checked })}
+        />
+        <div>
+          <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Large Sale Alert</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500">When a sale exceeds the threshold</p>
+        </div>
+      </label>
+
+      {business?.alertLargeSale && (
+        <div className="ml-7 space-y-3">
+          <div>
+            <Label className="text-xs">Alert Threshold</Label>
+            <Input
+              type="number"
+              value={business?.largeSaleThreshold?.toString() ?? "100000"}
+              placeholder="e.g. 100000"
+              onChange={(e) => save({ largeSaleThreshold: Number(e.target.value) || 100000 })}
+            />
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Alert when a sale exceeds {cs}{(business?.largeSaleThreshold ?? 100000).toLocaleString()}</p>
+          </div>
+
+          {/* Per-source toggles: which sales channels should trigger the alert? Defaults on the
+              API are all true so existing behavior (alert on any channel) is preserved. */}
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+            <p className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">Trigger alerts from</p>
+            <div className="space-y-1.5">
+              {([
+                { key: "largeSaleAlertWhatsApp", label: "WhatsApp" },
+                { key: "largeSaleAlertTelegram", label: "Telegram" },
+                { key: "largeSaleAlertMessenger", label: "Facebook Messenger" },
+                { key: "largeSaleAlertDashboard", label: "Dashboard" },
+              ] as const).map(({ key, label }) => {
+                const current = (business as unknown as Record<string, boolean | undefined> | null)?.[key];
+                return (
+                  <label key={key} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
+                      checked={current ?? true}
+                      onChange={(e) => save({ [key]: e.target.checked })}
+                    />
+                    <span className="text-xs text-slate-700 dark:text-slate-300">{label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       )}
     </div>
+  );
+}
+
+// ─── Telegram / Messenger integration section ─────────────────────────────────
+/**
+ * Mirror of the WhatsApp Integration section for Telegram/Messenger. Only rendered when the channel
+ * is connected. Each carries its OWN large-sale confirmation gate (independent of WhatsApp and of
+ * each other) — enforced in the bot pipeline via the channel-specific Business fields.
+ */
+function ChannelIntegrationSection({
+  channel,
+  business,
+  setBusiness,
+  cs,
+  refreshSync,
+}: {
+  channel: "telegram" | "messenger";
+  business: BusinessDto | null;
+  setBusiness: (b: BusinessDto) => void;
+  cs: string;
+  refreshSync: () => void;
+}) {
+  const { toast } = useToast();
+  const isTelegram = channel === "telegram";
+  const label = isTelegram ? "Telegram" : "Messenger";
+  const confirmKey = isTelegram ? "confirmLargeSalesTelegram" : "confirmLargeSalesMessenger";
+  const thresholdKey = isTelegram ? "confirmLargeSaleThresholdTelegram" : "confirmLargeSaleThresholdMessenger";
+  const accent = isTelegram ? "text-sky-600 dark:text-sky-400" : "text-blue-600 dark:text-blue-400";
+  const accentCard = isTelegram
+    ? "border-sky-200 dark:border-sky-900 bg-sky-50/40 dark:bg-sky-950/20"
+    : "border-blue-200 dark:border-blue-900 bg-blue-50/40 dark:bg-blue-950/20";
+  const accentText = isTelegram ? "text-sky-700 dark:text-sky-300" : "text-blue-700 dark:text-blue-300";
+
+  const confirmOn = !!(business as unknown as Record<string, boolean | undefined> | null)?.[confirmKey];
+  const thresholdVal = (business as unknown as Record<string, number | undefined> | null)?.[thresholdKey];
+
+  async function save(patch: Record<string, unknown>) {
+    try {
+      const { data } = await api.put<{ data: BusinessDto }>("/business", patch);
+      const updated = data.data!;
+      setBusiness(updated);
+      if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+    }
+  }
+
+  return (
+    <SettingsSection id={channel} title={label} icon={isTelegram ? <Send size={14} /> : <MessageSquare size={14} />}>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+            {isTelegram ? <Send size={15} className={accent} /> : <MessageSquare size={15} className={accent} />}
+            {label} Integration
+          </CardTitle>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">How you interact with the bot on {label}</p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {hasPermission(Permission.ManageSettings) && (
+            <div className={`rounded-lg border p-3 ${accentCard}`}>
+              <div className="flex items-center justify-between mb-1">
+                <p className={`text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 ${accentText}`}>
+                  <CheckCircle2 size={12} />
+                  Sale Confirmations
+                </p>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">
+                When enabled, the bot asks you to confirm before recording {label} sales above the threshold — independent of your other channels.
+              </p>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
+                  checked={confirmOn}
+                  onChange={(e) => save({ [confirmKey]: e.target.checked })}
+                />
+                <div>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Confirm large sales via {label}</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">Bot will ask &quot;Record it?&quot; before recording sales above the threshold below.</p>
+                </div>
+              </label>
+              {confirmOn && (
+                <div className="ml-7 mt-3">
+                  <Label className="text-xs">Confirmation Threshold</Label>
+                  <Input
+                    type="number"
+                    value={thresholdVal?.toString() ?? ""}
+                    placeholder="e.g. 500000"
+                    onChange={(e) => save({ [thresholdKey]: Number(e.target.value) || 0 })}
+                  />
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Sales above {cs}{(thresholdVal ?? 0).toLocaleString()} will require {label} confirmation.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <Separator className="my-2" />
+
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            Ojunai understands natural language. Here are some example commands you can send via {label}:
+          </p>
+          <div className="grid grid-cols-1 gap-2 mt-2">
+            {[
+              "sell 5 bags of rice to Ade for 15k each",
+              "spent 2k on transport",
+              "received 10 bottles of oil from supplier",
+              "Emeka paid me 8,500",
+              "how much did I make today?",
+              "which products are running low?",
+              "how much does Kola owe me?",
+            ].map((example) => (
+              <div key={example} className="bg-slate-50 dark:bg-slate-950 border rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 font-mono">
+                &ldquo;{example}&rdquo;
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
+            Messages are processed by AI and executed automatically when confidence is high.
+          </p>
+        </CardContent>
+      </Card>
+    </SettingsSection>
   );
 }
 
@@ -2241,6 +2413,8 @@ type PlanStatus = {
 function PlanCard({ business }: { business: BusinessShape | null }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  // Live prices from the backend (single source of truth) — never hardcoded in the dashboard.
+  const { getPrice, getMonthlyEquivalent, getAnnualDiscount } = usePricing();
   const { data: planStatus } = useQuery({
     queryKey: ["plan-status"],
     queryFn: async () => {
@@ -2298,7 +2472,7 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
     ? formatPrice(getMonthlyEquivalent(plan, selectedCurrency), selectedCurrency)
     : formatPrice(monthlyPrice, selectedCurrency);
   const annualTotal = formatPrice(getPrice(plan, "annual", selectedCurrency), selectedCurrency);
-  const discount = PRICING[plan]?.annualDiscount;
+  const discount = getAnnualDiscount(plan);
 
   function btnPrice(planKey: string) {
     if (billingCycle === "annual") {
@@ -2638,11 +2812,11 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
             >
               {subscribing === plan ? "Redirecting..." : `Subscribe to ${details.label} — ${btnPrice(plan)}`}
             </Button>
-            {plan !== "business" && (
+            {(
               <div className="space-y-2">
                 <p className="text-xs text-slate-400 dark:text-slate-500">Or choose a different plan:</p>
                 {PLAN_ORDER
-                  .filter((key) => key !== plan && key !== "business")
+                  .filter((key) => key !== plan)
                   .map((key) => {
                     const d = PLAN_DETAILS[key];
                     if (!d) return null;
@@ -2659,12 +2833,12 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
                     );
                   })}
                 <a
-                  href={`mailto:contact@ojunai.com?subject=${encodeURIComponent("Business Plan Enquiry")}&body=${encodeURIComponent(
-                    `Hi Ojunai Team,\n\nI'm interested in the Business plan.\n\nI'd like to learn more about:\n- Multi-branch support\n- Custom report exports\n- Bulk CSV import\n- API access\n- Unlimited staff accounts\n\nPlease get in touch to discuss my requirements.\n\nBusiness name: ${business?.name ?? "[Your business name]"}\n\nThank you.`
+                  href={`mailto:contact@ojunai.com?subject=${encodeURIComponent("Enterprise Plan Enquiry")}&body=${encodeURIComponent(
+                    `Hi Ojunai Team,\n\nI'm interested in the Enterprise plan.\n\nI'd like to learn more about:\n- Multi-branch support\n- Custom report exports\n- Bulk CSV import\n- API access\n- Unlimited staff accounts\n- Priority support & SLAs\n\nPlease get in touch to discuss my requirements.\n\nBusiness name: ${business?.name ?? "[Your business name]"}\n\nThank you.`
                   )}`}
                   className="flex items-center justify-center w-full h-9 text-sm font-medium rounded-lg border-2 border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:border-amber-500 transition-colors"
                 >
-                  Business — Contact Us
+                  Enterprise — Contact Us
                 </a>
               </div>
             )}
@@ -2679,11 +2853,11 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
         {isBillable && isSubscriber && (
           <div className="pt-3 space-y-3">
             {/* Upgrade buttons — plans above current */}
-            {PLAN_ORDER.filter((key) => PLAN_ORDER.indexOf(key) > PLAN_ORDER.indexOf(plan) && key !== "business").length > 0 && (
+            {PLAN_ORDER.filter((key) => PLAN_ORDER.indexOf(key) > PLAN_ORDER.indexOf(plan)).length > 0 && (
               <>
                 <p className="text-xs text-slate-500 dark:text-slate-400">Upgrade:</p>
                 {PLAN_ORDER
-                  .filter((key) => PLAN_ORDER.indexOf(key) > PLAN_ORDER.indexOf(plan) && key !== "business")
+                  .filter((key) => PLAN_ORDER.indexOf(key) > PLAN_ORDER.indexOf(plan))
                   .map((key) => {
                     const d = PLAN_DETAILS[key];
                     if (!d) return null;
@@ -2701,15 +2875,15 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
               </>
             )}
 
-            {/* Business — contact us */}
-            {PLAN_ORDER.indexOf(plan) < PLAN_ORDER.indexOf("business") && (
+            {/* Enterprise — contact us (the tier above Scale; shown once self-serve upgrades run out) */}
+            {plan === "scale" && (
               <a
-                href={`mailto:contact@ojunai.com?subject=${encodeURIComponent("Business Plan Enquiry")}&body=${encodeURIComponent(
-                  `Hi Ojunai Team,\n\nI'm currently on the ${details.label} plan and I'm interested in upgrading to the Business plan.\n\nI'd like to learn more about:\n- Multi-branch support\n- Custom report exports\n- Bulk CSV import\n- API access\n- Unlimited staff accounts\n\nPlease get in touch to discuss my requirements.\n\nBusiness name: ${business?.name ?? "[Your business name]"}\n\nThank you.`
+                href={`mailto:contact@ojunai.com?subject=${encodeURIComponent("Enterprise Plan Enquiry")}&body=${encodeURIComponent(
+                  `Hi Ojunai Team,\n\nI'm currently on the ${details.label} plan and I'm interested in upgrading to Enterprise.\n\nI'd like to learn more about:\n- Multi-branch support\n- Custom report exports\n- Bulk CSV import\n- API access\n- Unlimited staff accounts\n- Priority support & SLAs\n\nPlease get in touch to discuss my requirements.\n\nBusiness name: ${business?.name ?? "[Your business name]"}\n\nThank you.`
                 )}`}
                 className="flex items-center justify-center w-full h-11 text-base font-semibold rounded-lg border-2 border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:border-amber-500 transition-colors shadow-sm"
               >
-                Upgrade to Business — Contact Us
+                Upgrade to Enterprise — Contact Us
               </a>
             )}
 

@@ -107,6 +107,9 @@ public class InventoryController : OjunaiBaseController
         var owner = business.Users.FirstOrDefault(u => u.Role == UserRole.Owner && u.IsActive);
         if (owner == null) return;
 
+        // No alert channel selected → business alerts are off (dashboard bell is separate).
+        if (AlertChannels.IsNone(owner.AlertChannel)) return;
+
         var lowStock = await _db.Products
             .Where(p => p.BusinessId == BusinessId && p.IsActive && p.CurrentStock <= p.LowStockThreshold)
             .OrderBy(p => p.CurrentStock).Take(5).ToListAsync();

@@ -347,6 +347,44 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
             PaymentStatus = PaymentStatus.Paid,
         };
 
+        // Large-sale confirmation gate (Messenger). If enabled and the projected total is at/above the
+        // owner's threshold, stash the sale and ask them to confirm via Yes/No quick replies first.
+        var projectedTotal = resolvedItems.Sum(r => r.Quantity * r.UnitPrice);
+        var confirmBiz = await _db.Businesses.FindAsync(businessId);
+        if (confirmBiz is not null && confirmBiz.ConfirmLargeSalesMessenger
+            && confirmBiz.ConfirmLargeSaleThresholdMessenger > 0
+            && projectedTotal >= confirmBiz.ConfirmLargeSaleThresholdMessenger)
+        {
+            var pendingPayload = JsonSerializer.Serialize(new
+            {
+                items = resolvedItems.Select(r => new { productId = r.Product.Id, quantity = r.Quantity, unitPrice = r.UnitPrice, fromCatalog = r.FromCatalog }),
+                contactId,
+                customerName,
+            });
+            var confirmToken = await _pending.CreateAsync(businessId, userId, inbound.SenderIdentity, "confirm_large_sale", pendingPayload, ct);
+            await _messenger.SendAsync(inbound.SenderIdentity, new ReplyComposition
+            {
+                Text = $"⚠️ This sale is for {FormatAmount(projectedTotal, businessId)}, above your confirmation threshold ({FormatAmount(confirmBiz.ConfirmLargeSaleThresholdMessenger, businessId)}). Record it?",
+                QuickReplies = new List<QuickReply>
+                {
+                    new("Yes, record it", $"pa:yes:{confirmToken}"),
+                    new("No, cancel", $"pa:no:{confirmToken}"),
+                },
+            }, ct);
+            return;
+        }
+
+        await ExecuteSaleAndReplyAsync(businessId, userId, request, contactId, customerName, inbound, ct);
+    }
+
+    /// <summary>
+    /// Records a fully-resolved sale, fires post-sale alerts, and sends the Messenger confirmation.
+    /// Shared by the direct sale path and the large-sale confirm resume.
+    /// </summary>
+    private async Task ExecuteSaleAndReplyAsync(
+        Guid businessId, Guid userId, CreateSaleRequest request, Guid? contactId, string? customerName,
+        ConversationMessage inbound, CancellationToken ct)
+    {
         SaleDto sale;
         try
         {
@@ -368,7 +406,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         var receiptNumberLine = !string.IsNullOrEmpty(sale.ReceiptNumber) ? $" · #{sale.ReceiptNumber}" : "";
 
         var lineItems = string.Join("\n",
-            resolvedItems.Select(r => $"• {r.Quantity:0.##}× {r.Product.Name} — {FormatAmount(r.Quantity * r.UnitPrice, businessId)}"));
+            sale.Items.Select(i => $"• {i.Quantity:0.##}× {i.ProductName} — {FormatAmount(i.TotalPrice, businessId)}"));
 
         await _messenger.SendAsync(inbound.SenderIdentity, new ReplyComposition
         {
@@ -377,6 +415,44 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
                 lineItems +
                 $"\nTotal: {FormatAmount(sale.TotalAmount, businessId)}",
         }, ct);
+    }
+
+    /// <summary>
+    /// Resumes a large-sale confirmation after the owner taps "Yes": rebuilds the stashed sale request
+    /// from the pending payload and records it through the shared <see cref="ExecuteSaleAndReplyAsync"/>.
+    /// </summary>
+    private async Task ResumeConfirmLargeSaleAsync(PendingActionConsumeResult consumed, ConversationMessage inbound, CancellationToken ct)
+    {
+        var payload = JsonSerializer.Deserialize<JsonElement>(consumed.PayloadJson);
+
+        var items = new List<SaleItemRequest>();
+        foreach (var it in payload.GetProperty("items").EnumerateArray())
+        {
+            items.Add(new SaleItemRequest
+            {
+                ProductId = Guid.Parse(it.GetProperty("productId").GetString()!),
+                Quantity = it.GetProperty("quantity").GetDecimal(),
+                UnitPrice = it.GetProperty("unitPrice").GetDecimal(),
+                UnitPriceFromCatalog = it.TryGetProperty("fromCatalog", out var fc) && fc.ValueKind == JsonValueKind.True,
+            });
+        }
+
+        Guid? contactId = null;
+        if (payload.TryGetProperty("contactId", out var cid) && cid.ValueKind == JsonValueKind.String)
+            contactId = Guid.Parse(cid.GetString()!);
+
+        string? customerName = null;
+        if (payload.TryGetProperty("customerName", out var cn) && cn.ValueKind == JsonValueKind.String)
+            customerName = cn.GetString();
+
+        var request = new CreateSaleRequest
+        {
+            Items = items,
+            ContactId = contactId,
+            PaymentStatus = PaymentStatus.Paid,
+        };
+
+        await ExecuteSaleAndReplyAsync(consumed.BusinessId, consumed.UserId, request, contactId, customerName, inbound, ct);
     }
 
     private static List<SaleItemParse> ExtractSaleItems(ParsedMessage parsed)
@@ -695,6 +771,10 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         {
             case "add_product_and_sell":
                 await ResumeAddProductAndSellAsync(consumed, inbound, ct);
+                break;
+
+            case "confirm_large_sale":
+                await ResumeConfirmLargeSaleAsync(consumed, inbound, ct);
                 break;
 
             default:

@@ -18,8 +18,9 @@ public class UserDto
     public bool EmailVerified { get; set; }
     public string Role { get; set; } = string.Empty;
     public DateOnly? DateOfBirth { get; set; }
-    /// <summary>Phase 6 — "whatsapp" or "telegram". Drives where outbound alerts/summaries go.</summary>
-    public string AlertChannel { get; set; } = "whatsapp";
+    /// <summary>"none" (default — alerts off until a channel is picked), "whatsapp", "telegram",
+    /// or "messenger". Drives where business alerts/summaries go.</summary>
+    public string AlertChannel { get; set; } = Ojunai.API.Common.AlertChannels.None;
 }
 
 public class BusinessDto
@@ -56,6 +57,10 @@ public class BusinessDto
     public string? BackgroundImageUrl { get; set; }
     public decimal BackgroundImageOpacity { get; set; } = 0.85m;
     public decimal ConfirmLargeSaleThreshold { get; set; }
+    public bool ConfirmLargeSalesTelegram { get; set; }
+    public decimal ConfirmLargeSaleThresholdTelegram { get; set; }
+    public bool ConfirmLargeSalesMessenger { get; set; }
+    public decimal ConfirmLargeSaleThresholdMessenger { get; set; }
     public bool IsActive { get; set; }
     public string AccountNumber { get; set; } = string.Empty;
 

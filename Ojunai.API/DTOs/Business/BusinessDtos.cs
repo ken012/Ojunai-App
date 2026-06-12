@@ -16,6 +16,10 @@ public class UpdateBusinessRequest
     public bool? AlertLargeSale { get; set; }
     public bool? ConfirmLargeSales { get; set; }
     public decimal? ConfirmLargeSaleThreshold { get; set; }
+    public bool? ConfirmLargeSalesTelegram { get; set; }
+    public decimal? ConfirmLargeSaleThresholdTelegram { get; set; }
+    public bool? ConfirmLargeSalesMessenger { get; set; }
+    public decimal? ConfirmLargeSaleThresholdMessenger { get; set; }
 
     // ── Per-source large-sale alert toggles ──────────
     // Owners can mute large-sale alerts independently per source channel.
