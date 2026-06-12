@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { LogoMark } from "@/components/logo-mark";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { PasswordStrengthHint } from "@/components/password-strength-hint";
 import { validatePassword } from "@/lib/password-policy";
@@ -67,8 +67,7 @@ export default function ChangePasswordPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <Label>Current Password (temporary)</Label>
-              <Input
-                type="password"
+              <PasswordInput
                 value={form.currentPassword}
                 onChange={(e) => setForm({ ...form, currentPassword: e.target.value })}
                 placeholder="Enter the password you were given"
@@ -76,8 +75,7 @@ export default function ChangePasswordPage() {
             </div>
             <div>
               <Label>New Password</Label>
-              <Input
-                type="password"
+              <PasswordInput
                 value={form.newPassword}
                 onChange={(e) => setForm({ ...form, newPassword: e.target.value })}
                 placeholder="Min 10 characters"
@@ -86,8 +84,7 @@ export default function ChangePasswordPage() {
             </div>
             <div>
               <Label>Confirm New Password</Label>
-              <Input
-                type="password"
+              <PasswordInput
                 value={form.confirm}
                 onChange={(e) => setForm({ ...form, confirm: e.target.value })}
               />

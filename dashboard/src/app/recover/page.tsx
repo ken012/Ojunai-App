@@ -6,6 +6,7 @@ import Link from "next/link";
 import { LogoMark } from "@/components/logo-mark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { PasswordStrengthHint } from "@/components/password-strength-hint";
 import { validatePassword } from "@/lib/password-policy";
@@ -220,12 +221,12 @@ function PasswordResetView({ token, info, error, setError, onCancel, onSuccess }
       </p>
       <div>
         <Label>New password</Label>
-        <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Min 10 characters" autoFocus />
+        <PasswordInput value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Min 10 characters" autoFocus />
         <PasswordStrengthHint password={pw} />
       </div>
       <div>
         <Label>Confirm password</Label>
-        <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+        <PasswordInput value={confirm} onChange={(e) => setConfirm(e.target.value)} />
       </div>
       {error && <p className="text-sm text-red-500">{error}</p>}
       <Button type="submit" className="w-full" disabled={saving || !pw || !confirm}>

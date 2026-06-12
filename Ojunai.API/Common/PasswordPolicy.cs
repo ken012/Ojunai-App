@@ -42,8 +42,8 @@ public static class PasswordPolicy
         var hasSymbol = raw.Any(c => !char.IsLetterOrDigit(c));
         var classes = new[] { hasLower, hasUpper, hasDigit, hasSymbol }.Count(x => x);
 
-        if (classes < 3)
-            return (false, "Password must include at least 3 of: lowercase, uppercase, digits, symbols.");
+        if (classes < 4)
+            return (false, "Password must include uppercase, lowercase, digits, and symbols.");
 
         return (true, null);
     }
@@ -55,7 +55,7 @@ public static class PasswordPolicy
     public static IReadOnlyList<string> RequirementsHint() => new[]
     {
         $"At least {MinLength} characters",
-        "Mix of letters, numbers, and symbols (3 of 4)",
+        "Uppercase, lowercase, digits, and symbols",
         "Avoid common passwords like 'password123'",
     };
 }

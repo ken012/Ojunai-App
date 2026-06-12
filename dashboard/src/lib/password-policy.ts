@@ -25,7 +25,7 @@ export function validatePassword(pw: string): { ok: boolean; reason?: string } {
   if (pw.length < MIN_LENGTH) return { ok: false, reason: `Password must be at least ${MIN_LENGTH} characters.` };
   if (new Set(pw).size < 4) return { ok: false, reason: "Password is too repetitive — mix in different characters." };
   if (BLOCKLIST.has(pw.toLowerCase())) return { ok: false, reason: "That's a commonly used password — please choose something stronger." };
-  if (classCount(pw) < 3) return { ok: false, reason: "Password must include at least 3 of: lowercase, uppercase, digits, symbols." };
+  if (classCount(pw) < 4) return { ok: false, reason: "Password must include uppercase, lowercase, digits, and symbols." };
   return { ok: true };
 }
 
@@ -37,8 +37,8 @@ export interface PasswordCheck {
 export function passwordChecks(pw: string): PasswordCheck[] {
   return [
     { label: `At least ${MIN_LENGTH} characters`, met: pw.length >= MIN_LENGTH },
-    { label: "Mix of upper, lower, digits, symbols (3 of 4)", met: classCount(pw) >= 3 },
-    { label: "Not a common password", met: pw.length === 0 || !BLOCKLIST.has(pw.toLowerCase()) },
-    { label: "Enough unique characters", met: pw.length === 0 || new Set(pw).size >= 4 },
+    { label: "Mix of upper, lower, digits, symbols", met: classCount(pw) >= 4 },
+    { label: "Not a common password", met: pw.length > 0 && !BLOCKLIST.has(pw.toLowerCase()) },
+    { label: "Enough unique characters", met: new Set(pw).size >= 4 },
   ];
 }

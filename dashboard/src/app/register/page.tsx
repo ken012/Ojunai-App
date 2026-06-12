@@ -10,6 +10,7 @@ import { z } from "zod";
 import { requestPhoneVerification, verifyPhoneAndRegister } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { PasswordStrengthHint } from "@/components/password-strength-hint";
 import { validatePassword } from "@/lib/password-policy";
@@ -99,6 +100,11 @@ export default function RegisterPage() {
   async function handleSignupViaTelegram() {
     setError(null);
     setTelegramStarting(true);
+    // Open the tab SYNCHRONOUSLY inside the click handler, then redirect it once we have the link.
+    // A window.open() called after `await` loses the user-gesture and gets blocked by popup
+    // blockers (esp. Safari/mobile) — which is why the button appeared to do nothing.
+    const tab = window.open("about:blank", "_blank");
+    if (tab) tab.opener = null; // sever back-reference (noopener-equivalent) but keep our handle
     try {
       const { data } = await api.post<{ data: { deepLink: string; botUsername: string } }>(
         "/auth/signup-via-telegram/start",
@@ -106,13 +112,14 @@ export default function RegisterPage() {
       );
       const deepLink = data.data?.deepLink;
       if (!deepLink) {
+        tab?.close();
         setError("Couldn't start Telegram signup. Try the phone-OTP flow above.");
-        setTelegramStarting(false);
         return;
       }
-      // Open in a new tab so the user can come back here if Telegram isn't installed.
-      window.open(deepLink, "_blank", "noopener,noreferrer");
+      if (tab) tab.location.href = deepLink;
+      else window.location.href = deepLink; // blocked even synchronously → same-tab fallback
     } catch (err: unknown) {
+      tab?.close();
       const axiosErr = err as { response?: { data?: { errors?: string[] }; status?: number } };
       if (axiosErr.response?.status === 503) {
         setError("Telegram signup isn't enabled on this server yet. Use the phone-OTP flow above for now.");
@@ -127,6 +134,9 @@ export default function RegisterPage() {
   async function handleSignupViaMessenger() {
     setError(null);
     setMessengerStarting(true);
+    // Open synchronously in the click gesture (see Telegram handler) so the popup isn't blocked.
+    const tab = window.open("about:blank", "_blank");
+    if (tab) tab.opener = null;
     try {
       const { data } = await api.post<{ data: { deepLink: string; pageUsername: string } }>(
         "/auth/signup-via-messenger/start",
@@ -134,12 +144,14 @@ export default function RegisterPage() {
       );
       const deepLink = data.data?.deepLink;
       if (!deepLink) {
+        tab?.close();
         setError("Couldn't start Messenger signup. Try the phone-OTP flow above.");
-        setMessengerStarting(false);
         return;
       }
-      window.open(deepLink, "_blank", "noopener,noreferrer");
+      if (tab) tab.location.href = deepLink;
+      else window.location.href = deepLink;
     } catch (err: unknown) {
+      tab?.close();
       const axiosErr = err as { response?: { data?: { errors?: string[] }; status?: number } };
       if (axiosErr.response?.status === 503) {
         setError("Messenger signup isn't enabled on this server yet. Use the phone-OTP flow above for now.");
@@ -213,7 +225,7 @@ export default function RegisterPage() {
 
                 <div className="col-span-2 space-y-1">
                   <Label>Password</Label>
-                  <Input type="password" placeholder="Min 10 characters" {...register("password")} />
+                  <PasswordInput placeholder="Min 10 characters" {...register("password")} />
                   {errors.password && <p className="text-xs text-red-500">{errors.password.message}</p>}
                   <PasswordStrengthHint password={passwordValue ?? ""} />
                 </div>

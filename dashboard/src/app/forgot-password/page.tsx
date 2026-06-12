@@ -7,6 +7,7 @@ import { LogoMark } from "@/components/logo-mark";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { PasswordStrengthHint } from "@/components/password-strength-hint";
 import { validatePassword } from "@/lib/password-policy";
@@ -125,8 +126,7 @@ export default function ForgotPasswordPage() {
               </div>
               <div>
                 <Label>New Password</Label>
-                <Input
-                  type="password"
+                <PasswordInput
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Min 10 characters"
@@ -135,8 +135,7 @@ export default function ForgotPasswordPage() {
               </div>
               <div>
                 <Label>Confirm Password</Label>
-                <Input
-                  type="password"
+                <PasswordInput
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
                 />
