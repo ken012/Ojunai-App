@@ -243,8 +243,13 @@ public class AuthService : IAuthService
     public async Task<string> RequestPasswordResetAsync(string phoneNumber)
     {
         var normalizedPhone = WhatsAppService.NormalizePhone(phoneNumber);
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == normalizedPhone && u.IsActive)
-            ?? throw new KeyNotFoundException("No account found with this phone number.");
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == normalizedPhone && u.IsActive);
+
+        // Unknown number → silent no-op. Don't reveal whether the number is registered (account
+        // enumeration), and don't throw/log on the common typo-or-unknown case — the caller always
+        // gets the same generic "if registered, we sent a code" response from the controller.
+        if (user is null)
+            return string.Empty;
 
         if (user.Role != UserRole.Owner && user.Role != UserRole.Admin)
             throw new InvalidOperationException(

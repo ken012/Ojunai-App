@@ -2,6 +2,7 @@ using Hangfire;
 using Ojunai.API.Common;
 using Ojunai.API.Data;
 using Ojunai.API.DTOs.Auth;
+using Ojunai.API.Models;
 using Ojunai.API.Services;
 using Ojunai.API.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -24,6 +25,7 @@ public class AuthController : OjunaiBaseController
     private readonly IBackgroundJobClient _jobs;
     private readonly IConfiguration _config;
     private readonly ILogger<AuthController> _logger;
+    private readonly IAlertService _alerts;
 
     public AuthController(
         IAuthService auth,
@@ -35,6 +37,7 @@ public class AuthController : OjunaiBaseController
         IAccountRecoveryService recovery,
         IBackgroundJobClient jobs,
         IConfiguration config,
+        IAlertService alerts,
         ILogger<AuthController> logger)
     {
         _auth = auth;
@@ -47,6 +50,7 @@ public class AuthController : OjunaiBaseController
         _recovery = recovery;
         _jobs = jobs;
         _config = config;
+        _alerts = alerts;
         _logger = logger;
     }
 
@@ -110,6 +114,17 @@ public class AuthController : OjunaiBaseController
             ?? throw new KeyNotFoundException("User not found.");
         user.DateOfBirth = request.DateOfBirth;
         await _db.SaveChangesAsync();
+
+        // Surface a personal bell alert so the change is visible/auditable to the user. The body
+        // intentionally does NOT include the actual year (the bell persists — don't expose it).
+        // Dedupe on (user, year) so a double-save of the same year only alerts once; the key is
+        // internal and never displayed.
+        var year = request.DateOfBirth.Year;
+        await _alerts.CreateAsync(
+            user.BusinessId, user.Id, AlertType.ProfileUpdated, AlertSeverity.Info,
+            "Birth year updated", "Your birth year was updated.",
+            dedupeKey: $"dob-update-{user.Id}-{year}");
+
         return Ok(ApiResponse<object>.Ok(null!, "Date of birth updated."));
     }
 
@@ -231,7 +246,7 @@ public class AuthController : OjunaiBaseController
         // hashes, stores, AND sends the code over WhatsApp — controller no longer dispatches
         // the message itself. The role gate (Owner/Admin only) lives in the service too.
         await _auth.RequestPasswordResetAsync(request.PhoneNumber);
-        return Ok(ApiResponse<object>.Ok(null!, "Reset code sent to your WhatsApp."));
+        return Ok(ApiResponse<object>.Ok(null!, "If that number is registered, a reset code has been sent to its WhatsApp."));
     }
 
     [AllowAnonymous]
