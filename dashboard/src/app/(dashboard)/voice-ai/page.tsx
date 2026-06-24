@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/empty-state";
@@ -30,22 +31,47 @@ import { CURRENCY_META, SUPPORTED_CURRENCIES } from "@/lib/pricing";
 import type { SupportedCurrency, BillingCycle } from "@/lib/pricing";
 import { useVoicePricing } from "@/lib/use-pricing";
 
+type VoiceLang = "en" | "yo" | "ha" | "ig" | "fr" | "es" | "zh";
+
 type VoiceAISettings = {
   id: string;
   name: string;
-  defaultLanguage: "en" | "yo" | "ha" | "ig";
-  reservationHoldHours: number;
+  defaultLanguage: VoiceLang;
+  greetingTemplate: string | null;
+  botName: string | null;
+  region: string | null;
   voiceTransport: "record" | "streaming";
+  elevenLabsVoiceId: string | null;
+  elevenLabsVoiceIds: Record<string, string> | null;
+  voiceNumberExternal: string | null;
   fallbackHandoffPhone: string | null;
+  reservationHoldHours: number;
   address: string | null;
-  greetingTemplateEn: string | null;
-  greetingTemplateYo: string | null;
-  greetingTemplateHa: string | null;
-  greetingTemplateIg: string | null;
 };
 
-const LANG_LABELS: Record<string, string> = { en: "English", yo: "Yoruba", ha: "Hausa", ig: "Igbo" };
-const LANGUAGES = ["en", "yo", "ha", "ig"] as const;
+const LANG_LABELS: Record<VoiceLang, string> = {
+  en: "English", yo: "Yoruba", ha: "Hausa", ig: "Igbo",
+  fr: "French (Français)", es: "Spanish (Español)", zh: "Mandarin (中文)",
+};
+const LANGUAGES: VoiceLang[] = ["en", "yo", "ha", "ig", "fr", "es", "zh"];
+
+// Greeting placeholder by selected default language — illustrative; the merchant overwrites it.
+const GREETING_PLACEHOLDERS: Record<VoiceLang, string> = {
+  en: "e.g. Welcome to {businessName}. How may I help you today?",
+  yo: "àpẹẹrẹ: Ẹ káàbọ̀ sí {businessName}. Báwo ni mo ṣe lè ràn yín lọ́wọ́?",
+  ha: "misali: Barka da zuwa {businessName}. Yaya zan taimaka muku yau?",
+  ig: "ọmụmaatụ: Nnọọ na {businessName}. Kedu ka m ga-esi nyere gị aka?",
+  fr: "ex: Bienvenue chez {businessName}. Comment je peux t'aider ?",
+  es: "ej: Bienvenido a {businessName}. ¿En qué te puedo ayudar?",
+  zh: "例: 欢迎来到{businessName}。需要什么帮助？",
+};
+
+// Non-default languages that can carry their own ElevenLabs voice (advanced section).
+const PER_LANGUAGE_VOICE_LANGS: { code: VoiceLang; label: string }[] = [
+  { code: "fr", label: "French" },
+  { code: "es", label: "Spanish" },
+  { code: "zh", label: "Mandarin" },
+];
 
 // ── Action log: the hero feature of the Voice AI page ────────────────────────
 // Shows Voice-recorded sales/expenses/inventory/payments in reverse-chronological order.
@@ -474,18 +500,32 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
   const [form, setForm] = useState<VoiceAISettings>(initial);
   const [saving, setSaving] = useState(false);
   const [saveResult, setSaveResult] = useState<{ ok: boolean; msg: string } | null>(null);
-  const [greetingTab, setGreetingTab] = useState<string>(initial.defaultLanguage || "en");
+  const [confirmStreaming, setConfirmStreaming] = useState(false);
+  const [voicesOpen, setVoicesOpen] = useState(
+    !!(initial.elevenLabsVoiceIds && Object.keys(initial.elevenLabsVoiceIds).length)
+  );
 
   function set<K extends keyof VoiceAISettings>(key: K, value: VoiceAISettings[K]) {
     setForm(f => ({ ...f, [key]: value }));
     setSaveResult(null);
   }
 
+  // Per-language ElevenLabs voice IDs live in one JSON map; an edit replaces the whole object so
+  // getDiff() (which JSON-compares this field) sends the complete map, per the API contract.
+  function setVoiceId(lang: VoiceLang, id: string) {
+    const next: Record<string, string> = { ...(form.elevenLabsVoiceIds ?? {}) };
+    if (id.trim()) next[lang] = id.trim(); else delete next[lang];
+    set("elevenLabsVoiceIds", Object.keys(next).length ? next : null);
+  }
+
   function getDiff(): Partial<VoiceAISettings> {
     const diff: Record<string, unknown> = {};
     for (const key of Object.keys(form) as (keyof VoiceAISettings)[]) {
       if (key === "id") continue;
-      if (form[key] !== initial[key]) diff[key] = form[key];
+      const changed = key === "elevenLabsVoiceIds"
+        ? JSON.stringify(form[key] ?? null) !== JSON.stringify(initial[key] ?? null)
+        : form[key] !== initial[key];
+      if (changed) diff[key] = form[key];
     }
     return diff;
   }
@@ -509,110 +549,160 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
   }
 
   const hasChanges = Object.keys(getDiff()).length > 0;
+  const greetingPlaceholder = GREETING_PLACEHOLDERS[form.defaultLanguage] ?? GREETING_PLACEHOLDERS.en;
 
   return (
     <div className="space-y-4">
-      {/* Greeting Templates */}
+      {/* ── General ─────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">Greeting</CardTitle>
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">What callers hear when they pick up. Plain text, no SSML. Blank = generic greeting.</p>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-1 mb-3">
-            {LANGUAGES.map((lang) => (
-              <button key={lang} onClick={() => setGreetingTab(lang)}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${greetingTab === lang ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900" : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"}`}
-              >{LANG_LABELS[lang]}</button>
-            ))}
-          </div>
-          {greetingTab === "en" && <textarea className="w-full h-24 p-3 rounded-md border border-slate-200 dark:border-slate-800 text-sm resize-none" maxLength={500} placeholder="Hi, you've reached our store. How can I help you today?" value={form.greetingTemplateEn ?? ""} onChange={(e) => set("greetingTemplateEn", e.target.value || null)} />}
-          {greetingTab === "yo" && <textarea className="w-full h-24 p-3 rounded-md border border-slate-200 dark:border-slate-800 text-sm resize-none" maxLength={500} placeholder="Yoruba greeting template..." value={form.greetingTemplateYo ?? ""} onChange={(e) => set("greetingTemplateYo", e.target.value || null)} />}
-          {greetingTab === "ha" && <textarea className="w-full h-24 p-3 rounded-md border border-slate-200 dark:border-slate-800 text-sm resize-none" maxLength={500} placeholder="Hausa greeting template..." value={form.greetingTemplateHa ?? ""} onChange={(e) => set("greetingTemplateHa", e.target.value || null)} />}
-          {greetingTab === "ig" && <textarea className="w-full h-24 p-3 rounded-md border border-slate-200 dark:border-slate-800 text-sm resize-none" maxLength={500} placeholder="Igbo greeting template..." value={form.greetingTemplateIg ?? ""} onChange={(e) => set("greetingTemplateIg", e.target.value || null)} />}
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 text-right">{(greetingTab === "en" ? form.greetingTemplateEn : greetingTab === "yo" ? form.greetingTemplateYo : greetingTab === "ha" ? form.greetingTemplateHa : form.greetingTemplateIg)?.length ?? 0}/500</p>
-        </CardContent>
-      </Card>
-
-      {/* Behavior */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">Behavior</CardTitle>
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">General</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
             <Label className="text-xs text-slate-500 dark:text-slate-400">Business Name</Label>
             <Input value={form.name} onChange={(e) => set("name", e.target.value)} maxLength={200} placeholder="Your business name" />
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Business name read aloud by the AI when callers ask.</p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Read aloud by the bot when callers ask who they&apos;ve reached.</p>
           </div>
+
           <div>
             <Label className="text-xs text-slate-500 dark:text-slate-400">Default Language</Label>
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-2">Language the AI greets in if it can{"'"}t auto-detect the caller{"'"}s language.</p>
-            <div className="flex gap-2">
-              {LANGUAGES.map((lang) => (
-                <label key={lang} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-sm ${form.defaultLanguage === lang ? "border-cyan-300 bg-cyan-50 text-cyan-700" : "border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400"}`}>
-                  <input type="radio" name="defaultLang" value={lang} checked={form.defaultLanguage === lang} onChange={() => set("defaultLanguage", lang)} className="sr-only" />
-                  {LANG_LABELS[lang]}
-                </label>
-              ))}
-            </div>
+            <select
+              value={form.defaultLanguage}
+              onChange={(e) => set("defaultLanguage", e.target.value as VoiceLang)}
+              className="mt-1 h-9 w-full max-w-xs px-2 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm"
+            >
+              {LANGUAGES.map((l) => <option key={l} value={l}>{LANG_LABELS[l]}</option>)}
+            </select>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">The language your customers usually call in. The bot greets and replies in this language by default; it&apos;ll auto-switch if a caller speaks differently.</p>
           </div>
+
           <div>
-            <Label className="text-xs text-slate-500 dark:text-slate-400">Voice Transport</Label>
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-2">Record: TwiML turn-by-turn (reliable, recommended). Streaming: real-time via Twilio ConversationRelay (lower latency, experimental).</p>
-            <div className="flex gap-2">
-              {(["record", "streaming"] as const).map((t) => (
-                <label key={t} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-sm ${form.voiceTransport === t ? "border-cyan-300 bg-cyan-50 text-cyan-700" : "border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400"}`}>
-                  <input type="radio" name="transport" value={t} checked={form.voiceTransport === t} onChange={() => set("voiceTransport", t)} className="sr-only" />
-                  {t === "record" ? "Record (recommended)" : "Streaming (experimental)"}
-                </label>
-              ))}
+            <Label className="text-xs text-slate-500 dark:text-slate-400">Greeting</Label>
+            <textarea
+              className="w-full h-24 p-3 mt-1 rounded-md border border-slate-200 dark:border-slate-800 text-sm resize-none bg-white dark:bg-slate-900"
+              maxLength={500}
+              placeholder={greetingPlaceholder}
+              value={form.greetingTemplate ?? ""}
+              onChange={(e) => set("greetingTemplate", e.target.value || null)}
+            />
+            <div className="flex items-start justify-between gap-3 mt-1">
+              <p className="text-[10px] text-slate-400 dark:text-slate-500">What the bot says when a caller first connects. Leave blank for an auto-generated greeting in your default language.</p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 flex-shrink-0">{form.greetingTemplate?.length ?? 0}/500</p>
             </div>
           </div>
+
+          <div>
+            <Label className="text-xs text-slate-500 dark:text-slate-400">Bot Name <span className="text-slate-400">(optional)</span></Label>
+            <Input value={form.botName ?? ""} onChange={(e) => set("botName", e.target.value || null)} maxLength={50} placeholder="e.g. Tomi" className="max-w-xs" />
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Give your bot a persona name. Customers hear &quot;Hi, I&apos;m Tomi from {form.name || "your business"}&quot; instead of a generic &quot;assistant&quot;.</p>
+          </div>
+
+          <div>
+            <Label className="text-xs text-slate-500 dark:text-slate-400">Region <span className="text-slate-400">(optional)</span></Label>
+            <Input value={form.region ?? ""} onChange={(e) => set("region", e.target.value || null)} maxLength={50} placeholder="e.g. Lagos" className="max-w-xs" />
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">A cultural hint so the bot sounds local (e.g. Lagos, Paris, Quebec).</p>
+          </div>
+
           <div>
             <Label className="text-xs text-slate-500 dark:text-slate-400">Timezone</Label>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-1.5">{businessTimezone}</span>
               <a href="/settings" className="text-xs text-cyan-600 hover:underline">Change in Settings</a>
             </div>
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Synced from your business settings. Used by Voice AI to interpret caller pickup times correctly.</p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Synced from your business settings. Used by Voice AI to interpret caller times correctly.</p>
           </div>
         </CardContent>
       </Card>
 
-      {/* Reservations */}
+      {/* ── Voice ───────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">Reservations</CardTitle>
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">Voice</CardTitle>
         </CardHeader>
-        <CardContent>
-          <Label className="text-xs text-slate-500 dark:text-slate-400">Reservation Hold Duration (hours)</Label>
-          <Input type="number" min={1} max={168} value={form.reservationHoldHours} onChange={(e) => set("reservationHoldHours", Math.max(1, Math.min(168, Number(e.target.value) || 1)))} className="w-32" />
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Hours to hold a reservation before auto-expiring. 4 hours = same-day pickup; 24 = next-day.</p>
+        <CardContent className="space-y-4">
+          <div>
+            <Label className="text-xs text-slate-500 dark:text-slate-400">Voice Transport</Label>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-2">Streaming (recommended) — sub-second responses, mid-call language switching, custom voices. Record — legacy mode, kept for compatibility.</p>
+            <div className="flex gap-2">
+              {(["streaming", "record"] as const).map((t) => (
+                <label key={t} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer text-sm ${form.voiceTransport === t ? "border-cyan-300 bg-cyan-50 text-cyan-700" : "border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400"}`}>
+                  <input
+                    type="radio"
+                    name="transport"
+                    value={t}
+                    checked={form.voiceTransport === t}
+                    onChange={() => {
+                      if (t === "streaming" && form.voiceTransport !== "streaming") setConfirmStreaming(true);
+                      else set("voiceTransport", t);
+                    }}
+                    className="sr-only"
+                  />
+                  {t === "streaming" ? "Streaming (recommended)" : "Record (legacy)"}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs text-slate-500 dark:text-slate-400">Voice <span className="text-slate-400">(optional)</span></Label>
+            <Input value={form.elevenLabsVoiceId ?? ""} onChange={(e) => set("elevenLabsVoiceId", e.target.value || null)} placeholder="ElevenLabs voice ID" className="max-w-md font-mono text-xs" />
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">The voice your customers hear. Browse <a href="https://elevenlabs.io/voice-library" target="_blank" rel="noreferrer" className="text-cyan-600 hover:underline">elevenlabs.io/voice-library</a> and paste a voice ID.</p>
+          </div>
+
+          <div>
+            <button type="button" onClick={() => setVoicesOpen(o => !o)} className="text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100">
+              {voicesOpen ? "▾" : "▸"} Native voices per language <span className="text-slate-400 font-normal">(advanced)</span>
+            </button>
+            {voicesOpen && (
+              <div className="mt-2 space-y-2 pl-3 border-l-2 border-slate-100 dark:border-slate-800">
+                <p className="text-[10px] text-slate-400 dark:text-slate-500">If you serve customers in multiple languages, pick a native-speaker voice for each. Otherwise the bot uses your default voice with its underlying accent.</p>
+                {PER_LANGUAGE_VOICE_LANGS.map(({ code, label }) => (
+                  <div key={code} className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500 dark:text-slate-400 w-20 flex-shrink-0">{label}</span>
+                    <Input
+                      value={form.elevenLabsVoiceIds?.[code] ?? ""}
+                      onChange={(e) => setVoiceId(code, e.target.value)}
+                      placeholder="voice ID"
+                      className="max-w-xs font-mono text-xs"
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
-      {/* Location */}
+      {/* ── Calls ───────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">Location</CardTitle>
+          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">Calls</CardTitle>
         </CardHeader>
-        <CardContent>
-          <Label className="text-xs text-slate-500 dark:text-slate-400">Business Address</Label>
-          <Input value={form.address ?? ""} onChange={(e) => set("address", e.target.value || null)} placeholder="e.g. 12 Lekki Road, Lagos" maxLength={500} />
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">The AI uses this to confirm pickup location with callers (e.g. {'"'}see you at 12 Lekki Road{'"'}).</p>
-        </CardContent>
-      </Card>
+        <CardContent className="space-y-4">
+          <div>
+            <Label className="text-xs text-slate-500 dark:text-slate-400">Voice Number <span className="text-slate-400">(optional)</span></Label>
+            <Input value={form.voiceNumberExternal ?? ""} onChange={(e) => set("voiceNumberExternal", e.target.value || null)} placeholder="+2348012345678" className="w-64" />
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Set only if your voice line uses a different number from WhatsApp.</p>
+          </div>
 
-      {/* Fallback */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">Fallback</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Label className="text-xs text-slate-500 dark:text-slate-400">Handoff Phone Number</Label>
-          <Input value={form.fallbackHandoffPhone ?? ""} onChange={(e) => set("fallbackHandoffPhone", e.target.value || null)} placeholder="+2348012345678" className="w-64" />
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">If the AI can{"'"}t help, calls forward to this number. Leave blank to play a closing message.</p>
+          <div>
+            <Label className="text-xs text-slate-500 dark:text-slate-400">Handoff Phone Number</Label>
+            <Input value={form.fallbackHandoffPhone ?? ""} onChange={(e) => set("fallbackHandoffPhone", e.target.value || null)} placeholder="+2348012345678" className="w-64" />
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">When a caller asks for a human, the bot transfers to this number. Leave blank to play a closing message.</p>
+          </div>
+
+          <div>
+            <Label className="text-xs text-slate-500 dark:text-slate-400">Reservation Hold Duration (hours)</Label>
+            <Input type="number" min={1} max={48} value={form.reservationHoldHours} onChange={(e) => set("reservationHoldHours", Math.max(1, Math.min(48, Number(e.target.value) || 1)))} className="w-32" />
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Hours to hold a reservation before auto-expiring. 4 = same-day pickup; 24 = next-day.</p>
+          </div>
+
+          <div>
+            <Label className="text-xs text-slate-500 dark:text-slate-400">Business Address</Label>
+            <Input value={form.address ?? ""} onChange={(e) => set("address", e.target.value || null)} placeholder="e.g. 12 Lekki Road, Lagos" maxLength={500} />
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">The bot uses this to confirm pickup location with callers.</p>
+          </div>
         </CardContent>
       </Card>
 
@@ -628,6 +718,22 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
           {saving ? "Saving..." : "Save Changes"}
         </Button>
       </div>
+
+      {/* Confirm before switching to the streaming engine — never auto-flip an existing merchant. */}
+      <Dialog open={confirmStreaming} onOpenChange={(o) => !o && setConfirmStreaming(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Switch to the streaming engine?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            This switches your call flow to the new streaming engine — sub-second responses, mid-call language switching, and custom voices. Your calls currently use the legacy Record mode. Continue?
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmStreaming(false)}>Cancel</Button>
+            <Button onClick={() => { set("voiceTransport", "streaming"); setConfirmStreaming(false); }}>Continue</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
