@@ -47,3 +47,14 @@ public class UpdateBusinessRequest
     [MaxLength(200)] public string? ReceiptFooterText { get; set; }
     [MaxLength(7)] public string? ReceiptAccentColor { get; set; }
 }
+
+/// <summary>Draft receipt settings sent to /business/receipt-preview to render a sample PDF.</summary>
+public class ReceiptPreviewRequest
+{
+    [MaxLength(80)] public string? ReceiptHeaderText { get; set; }
+    [MaxLength(200)] public string? ReceiptFooterText { get; set; }
+    [MaxLength(7)] public string? ReceiptAccentColor { get; set; }
+    [MaxLength(50)] public string? TaxId { get; set; }
+    public bool VatEnabled { get; set; }
+    [Range(0, 100)] public decimal VatRate { get; set; }
+}

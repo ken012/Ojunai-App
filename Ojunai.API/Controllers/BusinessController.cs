@@ -21,6 +21,7 @@ public class BusinessController : OjunaiBaseController
     private readonly IConfiguration _config;
     private readonly IHttpClientFactory _httpFactory;
     private readonly Services.Interfaces.IBackgroundImageService _backgroundImage;
+    private readonly IReceiptService _receipts;
 
     public BusinessController(
         IBusinessService business,
@@ -30,7 +31,8 @@ public class BusinessController : OjunaiBaseController
         ILogger<BusinessController> logger,
         IConfiguration config,
         IHttpClientFactory httpFactory,
-        Services.Interfaces.IBackgroundImageService backgroundImage)
+        Services.Interfaces.IBackgroundImageService backgroundImage,
+        IReceiptService receipts)
     {
         _business = business;
         _planGuard = planGuard;
@@ -40,6 +42,40 @@ public class BusinessController : OjunaiBaseController
         _config = config;
         _httpFactory = httpFactory;
         _backgroundImage = backgroundImage;
+        _receipts = receipts;
+    }
+
+    /// <summary>
+    /// Render a SAMPLE receipt PDF using the supplied (possibly unsaved) receipt settings, so the
+    /// owner can preview appearance before saving. Combines the business's real identity/address/
+    /// currency with the draft receipt fields from the request. Persists nothing.
+    /// </summary>
+    [HttpPost("receipt-preview")]
+    [RequirePermission(Permission.ManageSettings)]
+    public async Task<IActionResult> ReceiptPreview([FromBody] ReceiptPreviewRequest request)
+    {
+        var biz = await _db.Businesses.FindAsync(BusinessId);
+        if (biz == null) return NotFound();
+
+        var draft = new Business
+        {
+            Name = biz.Name,
+            Currency = biz.Currency,
+            Address = biz.Address,
+            City = biz.City,
+            State = biz.State,
+            Country = biz.Country,
+            ReceiptPrefix = biz.ReceiptPrefix,
+            ReceiptHeaderText = request.ReceiptHeaderText,
+            ReceiptFooterText = request.ReceiptFooterText,
+            ReceiptAccentColor = request.ReceiptAccentColor,
+            TaxId = request.TaxId,
+            VatEnabled = request.VatEnabled,
+            VatRate = request.VatRate,
+        };
+
+        var pdf = _receipts.GeneratePreview(draft);
+        return File(pdf, "application/pdf", "receipt-preview.pdf");
     }
 
     [HttpGet]

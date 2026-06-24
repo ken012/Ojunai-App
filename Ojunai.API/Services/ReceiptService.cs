@@ -16,6 +16,13 @@ public interface IReceiptService
     /// calls reuse the existing ReceiptNumber.
     /// </summary>
     Task<(byte[] pdfBytes, string receiptNumber)> GenerateAsync(Guid saleId, Guid businessId);
+
+    /// <summary>
+    /// Render a SAMPLE receipt PDF using the given (possibly unsaved) business receipt settings,
+    /// for the settings-page preview. Uses fixed sample line items; touches no DB, creates no Sale,
+    /// and burns no receipt number.
+    /// </summary>
+    byte[] GeneratePreview(Business biz);
 }
 
 public class ReceiptService : IReceiptService
@@ -86,6 +93,33 @@ public class ReceiptService : IReceiptService
         // Single word: take first 3 alphabetic characters
         var letters = new string(words[0].Where(char.IsLetter).Take(3).ToArray());
         return letters.Length > 0 ? letters.ToUpperInvariant() : "BIZ";
+    }
+
+    public byte[] GeneratePreview(Business biz)
+    {
+        // Fixed, realistic sample so the merchant sees the full layout (header/items/VAT/totals/footer)
+        // with their current settings applied. Nothing is persisted.
+        var items = new List<SaleItem>
+        {
+            new() { Quantity = 2, UnitPrice = 42000m, TotalPrice = 84000m, Product = new Product { Name = "Premium Rice (50kg bag)" } },
+            new() { Quantity = 3, UnitPrice = 9500m,  TotalPrice = 28500m, Product = new Product { Name = "Vegetable Oil (5L)" } },
+            new() { Quantity = 5, UnitPrice = 1300m,  TotalPrice = 6500m,  Product = new Product { Name = "Granulated Sugar (1kg)" } },
+        };
+        var itemsTotal = items.Sum(i => i.TotalPrice);
+        var vat = biz.VatEnabled ? Math.Round(itemsTotal * biz.VatRate / 100m, 2) : 0m;
+
+        var sample = new Sale
+        {
+            ReceiptNumber = $"RCT-{DerivePrefix(biz.Name)}-000123",
+            VatAmount = vat,
+            TotalAmount = itemsTotal + vat,
+            PaymentStatus = PaymentStatus.Paid,
+            PaymentMethod = "cash",
+            Contact = new Contact { Name = "Adaeze Okeke", PhoneNumber = "+234 801 234 5678" },
+            Items = items,
+        };
+
+        return BuildPdf(sample, biz);
     }
 
     private byte[] BuildPdf(Sale sale, Business biz)
