@@ -109,17 +109,13 @@ function SettingsPage() {
   const [mounted, setMounted] = useState(false);
   const searchParams = useSearchParams();
   const [showSuccess, setShowSuccess] = useState(false);
-  // Telegram/Messenger integration sections + nav links appear only once that channel is linked.
-  const [channelConnected, setChannelConnected] = useState<{ telegram: boolean; messenger: boolean }>({ telegram: false, messenger: false });
+  // Currency chosen in Plan & Billing — shared by BOTH the tier picker and the WhatsApp pack picker
+  // so switching it updates pack prices too (not just the plan tiers).
+  const [planCurrency, setPlanCurrency] = useState<SupportedCurrency>(getDefaultCurrency());
 
   useEffect(() => {
-    let cancelled = false;
-    api
-      .get<{ data: { telegram?: { connected?: boolean }; messenger?: { connected?: boolean } } }>("/channels/status")
-      .then(({ data }) => { if (!cancelled) setChannelConnected({ telegram: !!data.data.telegram?.connected, messenger: !!data.data.messenger?.connected }); })
-      .catch(() => { /* leave both disconnected */ });
-    return () => { cancelled = true; };
-  }, []);
+    if (business?.currency) setPlanCurrency(toBillingCurrency(business.currency));
+  }, [business?.currency]);
 
   useEffect(() => {
     if (syncBusiness) setBusiness(syncBusiness);
@@ -186,10 +182,7 @@ function SettingsPage() {
             { href: "#alerts", label: "Alerts" },
             { href: "#account", label: "Account" },
             { href: "#voice-ai", label: "Voice AI" },
-            ...(whatsAppActive ? [{ href: "#whatsapp", label: "WhatsApp" }] : []),
-            ...(channelConnected.telegram ? [{ href: "#telegram", label: "Telegram" }] : []),
-            ...(channelConnected.messenger ? [{ href: "#messenger", label: "Messenger" }] : []),
-            { href: "#channels", label: "Connected Channels" },
+            { href: "#channels", label: "Chat Channels" },
             { href: "#team", label: "Team" },
             { href: "#categories", label: "Categories" },
           ]}
@@ -309,16 +302,32 @@ function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection id="plan" title="Plan & Billing" icon={<CreditCard size={14} />}>
+      {/* Section-level currency — sets the display currency for BOTH the WhatsApp packs and the plan tiers below. */}
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <p className="text-xs text-slate-500 dark:text-slate-400">Prices shown in your selected currency.</p>
+        <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-400">
+          Currency
+          <select
+            value={planCurrency}
+            onChange={(e) => setPlanCurrency(e.target.value as SupportedCurrency)}
+            className="h-8 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+          >
+            {SUPPORTED_CURRENCIES.map((c) => (
+              <option key={c} value={c}>{CURRENCY_META[c].symbol} {c}</option>
+            ))}
+          </select>
+        </label>
+      </div>
       {/* Current-month assistant action usage — sits above the plan picker so a merchant
           who's hit a cap sees the trigger right where they decide whether to upgrade. */}
       <QuotaMeter />
       <div className="h-3" />
       {/* WhatsApp pack — separately purchasable since WhatsApp has per-conversation fees;
           merchants who only use Telegram/Messenger never need this. */}
-      <WhatsAppPackPicker />
+      <WhatsAppPackPicker currency={planCurrency} />
       <div className="h-3" />
       {/* Plan */}
-      <PlanCard business={business} />
+      <PlanCard business={business} selectedCurrency={planCurrency} />
       </SettingsSection>
 
       <SettingsSection id="alerts" title="Alerts" icon={<Bell size={14} />}>
@@ -531,127 +540,8 @@ function SettingsPage() {
       <VoiceAISettingsCard />
       </SettingsSection>
 
-      {whatsAppActive && (
-      <SettingsSection id="whatsapp" title="WhatsApp" icon={<MessageSquare size={14} />}>
-      {/* WhatsApp */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-            <MessageSquare size={15} className="text-green-500" />
-            WhatsApp Integration
-          </CardTitle>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">How you and your customers interact with the bot</p>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {/* Sale Confirmations sub-block — first because it's a behavior toggle the user
-              actively manages, vs. the integration info below which is more reference. */}
-          {hasPermission(Permission.ManageSettings) && (
-            <div className="rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50/40 dark:bg-emerald-950/20 p-3">
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
-                  <CheckCircle2 size={12} />
-                  Sale Confirmations
-                </p>
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">
-                When enabled, the bot asks for confirmation before recording sales above the threshold — useful for protecting against fat-fingered orders or staff mistakes.
-              </p>
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
-                  checked={business?.confirmLargeSales ?? false}
-                  onChange={async (e) => {
-                    try {
-                      const { data } = await api.put<{ data: typeof business }>("/business", { confirmLargeSales: e.target.checked });
-                      const updated = data.data!;
-                      setBusiness(updated);
-                      if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
-                    } catch (err: unknown) {
-                      const ax = err as { response?: { data?: { errors?: string[] } } };
-                      toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
-                    }
-                  }}
-                />
-                <div>
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Confirm large sales via WhatsApp</p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500">Bot will ask &quot;Confirm?&quot; before recording sales above the threshold below.</p>
-                </div>
-              </label>
-              {business?.confirmLargeSales && (
-                <div className="ml-7 mt-3">
-                  <Label className="text-xs">Confirmation Threshold</Label>
-                  <Input
-                    type="number"
-                    value={business?.confirmLargeSaleThreshold?.toString() ?? ""}
-                    placeholder="e.g. 500000"
-                    onChange={async (e) => {
-                      const val = Number(e.target.value);
-                      try {
-                        const { data } = await api.put<{ data: typeof business }>("/business", { confirmLargeSaleThreshold: val || 0 });
-                        const updated = data.data!;
-                        setBusiness(updated);
-                        if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
-                      } catch (err: unknown) {
-                        const ax = err as { response?: { data?: { errors?: string[] } } };
-                        toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
-                      }
-                    }}
-                  />
-                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Sales above {cs}{(business?.confirmLargeSaleThreshold ?? 0).toLocaleString()} will require WhatsApp confirmation.</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          <Separator className="my-2" />
-
-          <p className="text-sm text-slate-600 dark:text-slate-400">
-            Ojunai understands natural language. Here are some example commands you can send via WhatsApp:
-          </p>
-          <div className="grid grid-cols-1 gap-2 mt-2">
-            {[
-              "sell 5 bags of rice to Ade for 15k each",
-              "spent 2k on transport",
-              "received 10 bottles of oil from supplier",
-              "Emeka paid me 8,500",
-              "how much did I make today?",
-              "which products are running low?",
-              "how much does Kola owe me?",
-            ].map((example) => (
-              <div key={example} className="bg-slate-50 dark:bg-slate-950 border rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 font-mono">
-                &ldquo;{example}&rdquo;
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
-            Messages are processed by AI and executed automatically when confidence is high.
-          </p>
-
-          <a
-            href={TWILIO_WA_LINK}
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center justify-center gap-2 w-full px-4 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors mt-2"
-          >
-            <MessageSquare size={16} />
-            Chat with Ojunai on WhatsApp
-          </a>
-        </CardContent>
-      </Card>
-      </SettingsSection>
-      )}
-
-      {channelConnected.telegram && (
-        <ChannelIntegrationSection channel="telegram" business={business} setBusiness={setBusiness} cs={cs} refreshSync={refreshSync} />
-      )}
-
-      {channelConnected.messenger && (
-        <ChannelIntegrationSection channel="messenger" business={business} setBusiness={setBusiness} cs={cs} refreshSync={refreshSync} />
-      )}
-
-      <SettingsSection id="channels" title="Connected Channels" icon={<LinkIcon size={14} />}>
-        <ConnectedChannelsCard />
+      <SettingsSection id="channels" title="Chat Channels" icon={<LinkIcon size={14} />}>
+        <ConnectedChannelsCard business={business} setBusiness={setBusiness} cs={cs} refreshSync={refreshSync} />
       </SettingsSection>
 
       <EditBusinessDialog
@@ -812,6 +702,7 @@ function DobField() {
       await api.put("/auth/date-of-birth", { dateOfBirth: `${value}-01-01` });
       await refresh();
       setEditing(false);
+      toast.success("Birth year updated", "Your change was saved.");
       setValue("");
     } catch (err: unknown) {
                     const ax = err as { response?: { data?: { errors?: string[] } } };
@@ -1414,128 +1305,6 @@ function AlertTypeToggles({
   );
 }
 
-// ─── Telegram / Messenger integration section ─────────────────────────────────
-/**
- * Mirror of the WhatsApp Integration section for Telegram/Messenger. Only rendered when the channel
- * is connected. Each carries its OWN large-sale confirmation gate (independent of WhatsApp and of
- * each other) — enforced in the bot pipeline via the channel-specific Business fields.
- */
-function ChannelIntegrationSection({
-  channel,
-  business,
-  setBusiness,
-  cs,
-  refreshSync,
-}: {
-  channel: "telegram" | "messenger";
-  business: BusinessDto | null;
-  setBusiness: (b: BusinessDto) => void;
-  cs: string;
-  refreshSync: () => void;
-}) {
-  const { toast } = useToast();
-  const isTelegram = channel === "telegram";
-  const label = isTelegram ? "Telegram" : "Messenger";
-  const confirmKey = isTelegram ? "confirmLargeSalesTelegram" : "confirmLargeSalesMessenger";
-  const thresholdKey = isTelegram ? "confirmLargeSaleThresholdTelegram" : "confirmLargeSaleThresholdMessenger";
-  const accent = isTelegram ? "text-sky-600 dark:text-sky-400" : "text-blue-600 dark:text-blue-400";
-  const accentCard = isTelegram
-    ? "border-sky-200 dark:border-sky-900 bg-sky-50/40 dark:bg-sky-950/20"
-    : "border-blue-200 dark:border-blue-900 bg-blue-50/40 dark:bg-blue-950/20";
-  const accentText = isTelegram ? "text-sky-700 dark:text-sky-300" : "text-blue-700 dark:text-blue-300";
-
-  const confirmOn = !!(business as unknown as Record<string, boolean | undefined> | null)?.[confirmKey];
-  const thresholdVal = (business as unknown as Record<string, number | undefined> | null)?.[thresholdKey];
-
-  async function save(patch: Record<string, unknown>) {
-    try {
-      const { data } = await api.put<{ data: BusinessDto }>("/business", patch);
-      const updated = data.data!;
-      setBusiness(updated);
-      if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
-    } catch (err: unknown) {
-      const ax = err as { response?: { data?: { errors?: string[] } } };
-      toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
-    }
-  }
-
-  return (
-    <SettingsSection id={channel} title={label} icon={isTelegram ? <Send size={14} /> : <MessageSquare size={14} />}>
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-            {isTelegram ? <Send size={15} className={accent} /> : <MessageSquare size={15} className={accent} />}
-            {label} Integration
-          </CardTitle>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">How you interact with the bot on {label}</p>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {hasPermission(Permission.ManageSettings) && (
-            <div className={`rounded-lg border p-3 ${accentCard}`}>
-              <div className="flex items-center justify-between mb-1">
-                <p className={`text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5 ${accentText}`}>
-                  <CheckCircle2 size={12} />
-                  Sale Confirmations
-                </p>
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">
-                When enabled, the bot asks you to confirm before recording {label} sales above the threshold — independent of your other channels.
-              </p>
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
-                  checked={confirmOn}
-                  onChange={(e) => save({ [confirmKey]: e.target.checked })}
-                />
-                <div>
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Confirm large sales via {label}</p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500">Bot will ask &quot;Record it?&quot; before recording sales above the threshold below.</p>
-                </div>
-              </label>
-              {confirmOn && (
-                <div className="ml-7 mt-3">
-                  <Label className="text-xs">Confirmation Threshold</Label>
-                  <Input
-                    type="number"
-                    value={thresholdVal?.toString() ?? ""}
-                    placeholder="e.g. 500000"
-                    onChange={(e) => save({ [thresholdKey]: Number(e.target.value) || 0 })}
-                  />
-                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Sales above {cs}{(thresholdVal ?? 0).toLocaleString()} will require {label} confirmation.</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          <Separator className="my-2" />
-
-          <p className="text-sm text-slate-600 dark:text-slate-400">
-            Ojunai understands natural language. Here are some example commands you can send via {label}:
-          </p>
-          <div className="grid grid-cols-1 gap-2 mt-2">
-            {[
-              "sell 5 bags of rice to Ade for 15k each",
-              "spent 2k on transport",
-              "received 10 bottles of oil from supplier",
-              "Emeka paid me 8,500",
-              "how much did I make today?",
-              "which products are running low?",
-              "how much does Kola owe me?",
-            ].map((example) => (
-              <div key={example} className="bg-slate-50 dark:bg-slate-950 border rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 font-mono">
-                &ldquo;{example}&rdquo;
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
-            Messages are processed by AI and executed automatically when confidence is high.
-          </p>
-        </CardContent>
-      </Card>
-    </SettingsSection>
-  );
-}
 
 // ─── Connected Channels (Phase 4) ─────────────────────────────────────────────
 /**
@@ -1560,8 +1329,67 @@ type ChannelStatusResponse = {
   messenger: ChannelBindingStatus;
 };
 
-function ConnectedChannelsCard() {
+/** Inline per-channel "confirm large sales" toggle, shown under a connected channel row. */
+function SaleConfirmToggle({ business, save, cs, label, confirmKey, thresholdKey }: {
+  business: BusinessDto | null;
+  save: (patch: Record<string, unknown>) => void;
+  cs: string;
+  label: string;
+  confirmKey: string;
+  thresholdKey: string;
+}) {
+  const on = !!(business as unknown as Record<string, boolean | undefined> | null)?.[confirmKey];
+  const threshold = (business as unknown as Record<string, number | undefined> | null)?.[thresholdKey];
+  return (
+    <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+      <label className="flex items-start gap-2.5 cursor-pointer">
+        <input
+          type="checkbox"
+          className="mt-0.5 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
+          checked={on}
+          onChange={(e) => save({ [confirmKey]: e.target.checked })}
+        />
+        <div>
+          <p className="text-xs font-medium text-slate-700 dark:text-slate-300">Confirm large sales</p>
+          <p className="text-[11px] text-slate-400 dark:text-slate-500">Bot asks before recording a {label} sale above the threshold.</p>
+        </div>
+      </label>
+      {on && (
+        <div className="ml-6 mt-2 flex items-center gap-2">
+          <Input
+            type="number"
+            className="h-8 w-36 text-sm"
+            value={threshold?.toString() ?? ""}
+            placeholder="e.g. 500000"
+            onChange={(e) => save({ [thresholdKey]: Number(e.target.value) || 0 })}
+          />
+          <span className="text-[11px] text-slate-400 dark:text-slate-500">{cs} threshold</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConnectedChannelsCard({ business, setBusiness, cs, refreshSync }: {
+  business: BusinessDto | null;
+  setBusiness: (b: BusinessDto) => void;
+  cs: string;
+  refreshSync: () => void;
+}) {
   const { toast } = useToast();
+
+  async function saveBusiness(patch: Record<string, unknown>) {
+    try {
+      const { data } = await api.put<{ data: BusinessDto }>("/business", patch);
+      const updated = data.data!;
+      setBusiness(updated);
+      if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error("Couldn't save change", ax.response?.data?.errors?.[0] ?? "Please try again.");
+    }
+  }
+
   const [status, setStatus] = useState<ChannelStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [linking, setLinking] = useState(false);
@@ -1638,7 +1466,7 @@ function ConnectedChannelsCard() {
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-          Where Ojunai can reach you
+          Chat with Ojunai AI Assistant on your favorite app
         </CardTitle>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
           Connect a messaging account so you can record sales, expenses, and payments by chatting
@@ -1648,7 +1476,8 @@ function ConnectedChannelsCard() {
       <CardContent className="space-y-3">
         {/* WhatsApp — paid channel. Active state = at least one BusinessAddOn with a
             whatsapp_pack.<code> code. Quota meter drives the displayed pack name. */}
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 p-3">
+        <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 p-3">
+          <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-lg bg-green-50 dark:bg-green-950/40 flex items-center justify-center flex-shrink-0">
               <MessageSquare size={16} className="text-green-600 dark:text-green-400" />
@@ -1680,10 +1509,15 @@ function ConnectedChannelsCard() {
               Get a pack
             </a>
           )}
+          </div>
+          {whatsAppActive && hasPermission(Permission.ManageSettings) && (
+            <SaleConfirmToggle business={business} save={saveBusiness} cs={cs} label="WhatsApp" confirmKey="confirmLargeSales" thresholdKey="confirmLargeSaleThreshold" />
+          )}
         </div>
 
         {/* Telegram — full bind/unbind via /start deep link */}
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 p-3">
+        <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 p-3">
+          <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-lg bg-sky-50 dark:bg-sky-950/40 flex items-center justify-center flex-shrink-0">
               <Send size={16} className="text-sky-600 dark:text-sky-400" />
@@ -1727,10 +1561,15 @@ function ConnectedChannelsCard() {
               {linking ? "Generating link…" : "Connect"}
             </Button>
           )}
+          </div>
+          {status?.telegram?.connected && hasPermission(Permission.ManageSettings) && (
+            <SaleConfirmToggle business={business} save={saveBusiness} cs={cs} label="Telegram" confirmKey="confirmLargeSalesTelegram" thresholdKey="confirmLargeSaleThresholdTelegram" />
+          )}
         </div>
 
         {/* Messenger — linking active in Phase 3b; full NL handling lands in Phase 3c */}
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 p-3">
+        <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 p-3">
+          <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/40 flex items-center justify-center flex-shrink-0">
               <MessageSquare size={16} className="text-blue-600 dark:text-blue-400" />
@@ -1806,12 +1645,45 @@ function ConnectedChannelsCard() {
               Connect
             </Button>
           )}
+          </div>
+          {status?.messenger?.connected && hasPermission(Permission.ManageSettings) && (
+            <SaleConfirmToggle business={business} save={saveBusiness} cs={cs} label="Messenger" confirmKey="confirmLargeSalesMessenger" thresholdKey="confirmLargeSaleThresholdMessenger" />
+          )}
         </div>
 
         <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">
           Telegram links expire after 30 minutes if not used. You can disconnect a channel at any
           time to stop the bot from responding to that account.
         </p>
+
+        {/* Example commands — identical across channels, shown once. */}
+        <Separator className="my-1" />
+        <p className="text-xs text-slate-600 dark:text-slate-400">
+          Ojunai understands natural language. Example commands you can send the bot on any connected channel:
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {[
+            "sell 5 bags of rice to Ade for 15k each",
+            "spent 2k on transport",
+            "received 10 bottles of oil from supplier",
+            "Emeka paid me 8,500",
+            "how much did I make today?",
+            "which products are running low?",
+          ].map((example) => (
+            <div key={example} className="bg-slate-50 dark:bg-slate-950 border rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-slate-300 font-mono">
+              &ldquo;{example}&rdquo;
+            </div>
+          ))}
+        </div>
+        <a
+          href={TWILIO_WA_LINK}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium transition-colors mt-1"
+        >
+          <MessageSquare size={16} />
+          Chat with Ojunai on WhatsApp
+        </a>
       </CardContent>
     </Card>
   );
@@ -2015,6 +1887,8 @@ function ReceiptsCard({
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   // Track dirty state for the Save button enable
   const initialRef = useState({ ref: form })[0];
@@ -2058,6 +1932,32 @@ function ReceiptsCard({
     } finally {
       setSaving(false);
     }
+  }
+
+  // Render a sample receipt with the CURRENT (unsaved) form values and show it in an overlay.
+  async function handlePreview() {
+    setPreviewing(true);
+    setError(null);
+    try {
+      const res = await api.post<Blob>("/business/receipt-preview", {
+        vatEnabled: form.vatEnabled,
+        vatRate: form.vatRate,
+        taxId: form.taxId || null,
+        receiptHeaderText: form.receiptHeaderText || null,
+        receiptFooterText: form.receiptFooterText || null,
+        receiptAccentColor: form.receiptAccentColor || null,
+      }, { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      setPreviewUrl((old) => { if (old) URL.revokeObjectURL(old); return url; });
+    } catch {
+      setError("Couldn't generate the preview. Try again.");
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
+  function closePreview() {
+    setPreviewUrl((old) => { if (old) URL.revokeObjectURL(old); return null; });
   }
 
   return (
@@ -2162,7 +2062,7 @@ function ReceiptsCard({
               className="h-9 flex-1 max-w-[180px] rounded-md flex items-center justify-center text-xs font-semibold tracking-wider text-white"
               style={{ backgroundColor: form.receiptAccentColor }}
             >
-              PREVIEW
+              Accent
             </div>
           </div>
           <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Used for the header divider, RECEIPT label, item table border, and TOTAL row on the printed receipt.</p>
@@ -2177,6 +2077,15 @@ function ReceiptsCard({
             </p>
           )}
           <Button
+            variant="outline"
+            onClick={handlePreview}
+            disabled={previewing}
+            className="gap-1.5"
+          >
+            <FileText size={14} />
+            {previewing ? "Rendering…" : "Preview receipt"}
+          </Button>
+          <Button
             onClick={handleSave}
             disabled={saving || !isDirty}
             className="gap-1.5"
@@ -2185,6 +2094,27 @@ function ReceiptsCard({
             {saving ? "Saving…" : "Save changes"}
           </Button>
         </div>
+
+        {/* Receipt preview overlay — embeds the real sample PDF (desktop renders inline; the
+            "open in a new tab" link is the fallback for mobile browsers that won't frame a PDF). */}
+        {previewUrl && (
+          <Dialog open onOpenChange={(o) => !o && closePreview()}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Receipt preview</DialogTitle>
+              </DialogHeader>
+              <iframe
+                src={previewUrl}
+                title="Receipt preview"
+                className="w-full h-[70vh] rounded-md border border-slate-200 dark:border-slate-800 bg-white"
+              />
+              <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                Sample sale shown — your real receipts use actual sale data and a live receipt number. Not showing?{" "}
+                <a href={previewUrl} target="_blank" rel="noreferrer" className="text-cyan-600 hover:underline">Open in a new tab</a>.
+              </p>
+            </DialogContent>
+          </Dialog>
+        )}
       </CardContent>
     </Card>
   );
@@ -2410,7 +2340,10 @@ type PlanStatus = {
   pendingPlanChange: string | null;
 };
 
-function PlanCard({ business }: { business: BusinessShape | null }) {
+function PlanCard({ business, selectedCurrency }: {
+  business: BusinessShape | null;
+  selectedCurrency: SupportedCurrency;
+}) {
   const qc = useQueryClient();
   const { toast } = useToast();
   // Live prices from the backend (single source of truth) — never hardcoded in the dashboard.
@@ -2429,14 +2362,9 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
   const [payMethodPick, setPayMethodPick] = useState<{ plan: string; result: Record<string, unknown> } | null>(null);
   const [failedVerify, setFailedVerify] = useState<{transactionId?: string; txRef?: string} | null>(null);
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
-  const [selectedCurrency, setSelectedCurrency] = useState<SupportedCurrency>(getDefaultCurrency());
   // Confirm-price modal state — opened before any plan-change checkout so the user
   // sees exactly what we're about to charge (especially the mid-cycle delta).
   const [confirmTarget, setConfirmTarget] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (business?.currency) setSelectedCurrency(toBillingCurrency(business.currency));
-  }, [business?.currency]);
 
   // Poll plan-status every 10s while a mobile money payment is pending
   useEffect(() => {
@@ -2678,23 +2606,6 @@ function PlanCard({ business }: { business: BusinessShape | null }) {
             Annual
             {discount != null && <span className="ml-1 text-xs text-green-600 font-semibold">-{discount}%</span>}
           </button>
-        </div>
-
-        {/* Currency selector */}
-        <div className="flex gap-1.5 overflow-x-auto pb-1">
-          {SUPPORTED_CURRENCIES.map((c) => (
-            <button
-              key={c}
-              onClick={() => setSelectedCurrency(c)}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
-                selectedCurrency === c
-                  ? "bg-cyan-100 text-cyan-700 border border-cyan-200"
-                  : "bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
-              }`}
-            >
-              {CURRENCY_META[c].symbol} {c}
-            </button>
-          ))}
         </div>
 
         <div className="flex items-baseline gap-1">

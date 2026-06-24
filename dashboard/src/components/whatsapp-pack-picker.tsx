@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast";
 import { useBusiness } from "@/lib/data-sync";
-import { toBillingCurrency, formatPrice } from "@/lib/pricing";
+import { toBillingCurrency, formatPrice, type SupportedCurrency } from "@/lib/pricing";
 
 /**
  * WhatsAppPackPicker — surfaces the 5 WhatsApp pack options + the business's currently active
@@ -81,7 +81,7 @@ function loadFlutterwaveScript(): Promise<void> {
   });
 }
 
-export function WhatsAppPackPicker() {
+export function WhatsAppPackPicker({ currency: currencyProp }: { currency?: SupportedCurrency }) {
   const business = useBusiness();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -201,7 +201,8 @@ export function WhatsAppPackPicker() {
 
   if (isLoading || !data) return null;
 
-  const currency = toBillingCurrency(business?.currency ?? "USD");
+  // Follow the currency chosen in Plan & Billing; fall back to the business default if rendered standalone.
+  const currency = currencyProp ?? toBillingCurrency(business?.currency ?? "USD");
   const activeCode = data.activePack?.code ?? null;
 
   return (
@@ -213,7 +214,7 @@ export function WhatsAppPackPicker() {
             WhatsApp pack
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            WhatsApp is billed separately from your plan. Pick the pack that matches your monthly volume.
+            WhatsApp is billed separately from your plan. Each pack covers a set number of actions per month (one action = one message the assistant handles). Pick the size that matches your volume.
           </p>
         </div>
         {activeCode && (
@@ -221,16 +222,21 @@ export function WhatsAppPackPicker() {
             <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
               Current: {data.catalog.packs[activeCode]?.label}
             </span>
-            {data.activePack?.nextBillingAtUtc && (
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                {data.activePack.isAutoRenew ? "Auto-renews on " : "Expires on "}
-                {new Date(data.activePack.nextBillingAtUtc).toLocaleDateString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}
-              </p>
-            )}
+            {data.activePack?.nextBillingAtUtc && (() => {
+              const dateStr = new Date(data.activePack.nextBillingAtUtc).toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              });
+              return data.activePack.isAutoRenew ? (
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Auto-renews on {dateStr}</p>
+              ) : (
+                <>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">One-time pack · expires {dateStr}</p>
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500">Won&rsquo;t renew — no action needed.</p>
+                </>
+              );
+            })()}
             {data.activePack?.isAutoRenew && (
               <button
                 type="button"
