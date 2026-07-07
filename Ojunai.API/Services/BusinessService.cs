@@ -47,6 +47,7 @@ public class BusinessService : IBusinessService
         if (request.ConfirmLargeSaleThresholdTelegram.HasValue) business.ConfirmLargeSaleThresholdTelegram = request.ConfirmLargeSaleThresholdTelegram.Value;
         if (request.ConfirmLargeSalesMessenger.HasValue) business.ConfirmLargeSalesMessenger = request.ConfirmLargeSalesMessenger.Value;
         if (request.ConfirmLargeSaleThresholdMessenger.HasValue) business.ConfirmLargeSaleThresholdMessenger = request.ConfirmLargeSaleThresholdMessenger.Value;
+        if (request.VariantsEnabled.HasValue) business.VariantsEnabled = request.VariantsEnabled.Value;
         if (request.LargeSaleAlertWhatsApp.HasValue) business.LargeSaleAlertWhatsApp = request.LargeSaleAlertWhatsApp.Value;
         if (request.LargeSaleAlertTelegram.HasValue) business.LargeSaleAlertTelegram = request.LargeSaleAlertTelegram.Value;
         if (request.LargeSaleAlertMessenger.HasValue) business.LargeSaleAlertMessenger = request.LargeSaleAlertMessenger.Value;
@@ -111,6 +112,7 @@ public class BusinessService : IBusinessService
         ConfirmLargeSaleThresholdTelegram = b.ConfirmLargeSaleThresholdTelegram,
         ConfirmLargeSalesMessenger = b.ConfirmLargeSalesMessenger,
         ConfirmLargeSaleThresholdMessenger = b.ConfirmLargeSaleThresholdMessenger,
+        VariantsEnabled = b.VariantsEnabled,
         LargeSaleAlertWhatsApp = b.LargeSaleAlertWhatsApp,
         LargeSaleAlertTelegram = b.LargeSaleAlertTelegram,
         LargeSaleAlertMessenger = b.LargeSaleAlertMessenger,

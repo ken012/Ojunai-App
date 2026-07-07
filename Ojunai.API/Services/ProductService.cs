@@ -15,10 +15,15 @@ public class ProductService : IProductService
 
     public async Task<PaginatedResult<ProductDto>> GetAllAsync(
         Guid businessId, int page, int pageSize,
-        string? search, string? category = null, string? stockLevel = null)
+        string? search, string? category = null, string? stockLevel = null, bool excludeVariants = false)
     {
         var query = _db.Products
             .Where(p => p.BusinessId == businessId && p.IsActive);
+
+        // The inventory list opts into this so variant members show grouped on the Variants page,
+        // not as loose rows here. The sales/search picker doesn't set it, so variants stay sellable.
+        if (excludeVariants)
+            query = query.Where(p => p.VariantGroupId == null);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -226,8 +231,9 @@ public class ProductService : IProductService
 
     public async Task<ProductStockStatsDto> GetStockStatsAsync(Guid businessId, string? search, string? category)
     {
-        // Bundles aren't stocked (their components are), so they're excluded from stock-level stats.
-        var query = _db.Products.Where(p => p.BusinessId == businessId && p.IsActive && !p.IsBundle);
+        // Bundles aren't stocked; variant members are shown grouped on the Variants page. Exclude both
+        // so the chip counts match the inventory list (which also hides variant members).
+        var query = _db.Products.Where(p => p.BusinessId == businessId && p.IsActive && !p.IsBundle && p.VariantGroupId == null);
         if (!string.IsNullOrWhiteSpace(search))
         {
             // Must mirror the same prefix-first matching as GetAllAsync so the filter chips

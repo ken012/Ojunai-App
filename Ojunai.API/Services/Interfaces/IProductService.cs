@@ -7,7 +7,7 @@ public interface IProductService
 {
     Task<PaginatedResult<ProductDto>> GetAllAsync(
         Guid businessId, int page, int pageSize,
-        string? search, string? category = null, string? stockLevel = null);
+        string? search, string? category = null, string? stockLevel = null, bool excludeVariants = false);
     Task<ProductDto> GetByIdAsync(Guid businessId, Guid productId);
     /// <summary>Scan-to-lookup: the active product with this barcode, or null. Most recent wins if shared.</summary>
     Task<ProductDto?> GetByBarcodeAsync(Guid businessId, string barcode);

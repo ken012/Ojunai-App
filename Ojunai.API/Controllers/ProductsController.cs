@@ -20,9 +20,10 @@ public class ProductsController : OjunaiBaseController
         [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null,
         [FromQuery] string? category = null,
-        [FromQuery] string? stockLevel = null)
+        [FromQuery] string? stockLevel = null,
+        [FromQuery] bool excludeVariants = false)
     {
-        var result = await _products.GetAllAsync(BusinessId, page, pageSize, search, category, stockLevel);
+        var result = await _products.GetAllAsync(BusinessId, page, pageSize, search, category, stockLevel, excludeVariants);
         return Ok(ApiResponse<PaginatedResult<ProductDto>>.Ok(result));
     }
 

@@ -30,6 +30,13 @@ public class Product
     // its own. Its own CurrentStock is not tracked and it's excluded from low-stock views.
     public bool IsBundle { get; set; } = false;
 
+    // ── Variants (Tier 2, additive) ───────────────────────────────────────────
+    // When set, this product is one variant within a VariantGroup (a "style"). It remains a full,
+    // sellable/stockable product; the group is only a display/management grouping. Null = standalone.
+    public Guid? VariantGroupId { get; set; }
+    // JSON of this variant's option values, e.g. {"Size":"M","Color":"Red"}.
+    public string? VariantOptions { get; set; }
+
     public string Source { get; set; } = "Manual";
     public Guid? ImportBatchId { get; set; }
     public Guid? RecordedByUserId { get; set; }

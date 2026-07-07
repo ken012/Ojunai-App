@@ -21,6 +21,7 @@ public class AppDbContext : DbContext
     public DbSet<Stocktake> Stocktakes => Set<Stocktake>();
     public DbSet<StocktakeItem> StocktakeItems => Set<StocktakeItem>();
     public DbSet<BundleComponent> BundleComponents => Set<BundleComponent>();
+    public DbSet<VariantGroup> VariantGroups => Set<VariantGroup>();
     public DbSet<MessageLog> MessageLogs => Set<MessageLog>();
     public DbSet<InboundMessageClaim> InboundMessageClaims => Set<InboundMessageClaim>();
     public DbSet<DailySummary> DailySummaries => Set<DailySummary>();
@@ -114,6 +115,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.Version).IsRowVersion();
             e.HasIndex(x => x.ImportBatchId).HasFilter("\"ImportBatchId\" IS NOT NULL");
             e.HasIndex(x => new { x.BusinessId, x.Barcode }).HasFilter("\"Barcode\" IS NOT NULL");
+            e.HasIndex(x => x.VariantGroupId).HasFilter("\"VariantGroupId\" IS NOT NULL");
             e.ToTable(t => t.HasCheckConstraint("CK_Product_CurrentStock_NonNegative", "\"CurrentStock\" >= 0"));
             e.HasOne(x => x.Business)
              .WithMany(x => x.Products)
@@ -187,6 +189,19 @@ public class AppDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.BusinessId, x.BundleProductId });
             e.Property(x => x.Quantity).HasPrecision(18, 4);
+        });
+
+        mb.Entity<VariantGroup>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.BusinessId, x.CreatedAtUtc });
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Axes).HasMaxLength(1000);
+            e.Property(x => x.Category).HasMaxLength(100);
+            e.HasOne(x => x.Business)
+             .WithMany()
+             .HasForeignKey(x => x.BusinessId)
+             .OnDelete(DeleteBehavior.Cascade);
         });
 
         mb.Entity<Sale>(e =>

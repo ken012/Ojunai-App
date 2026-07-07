@@ -20,6 +20,7 @@ public class UpdateBusinessRequest
     public decimal? ConfirmLargeSaleThresholdTelegram { get; set; }
     public bool? ConfirmLargeSalesMessenger { get; set; }
     public decimal? ConfirmLargeSaleThresholdMessenger { get; set; }
+    public bool? VariantsEnabled { get; set; }
 
     // ── Per-source large-sale alert toggles ──────────
     // Owners can mute large-sale alerts independently per source channel.

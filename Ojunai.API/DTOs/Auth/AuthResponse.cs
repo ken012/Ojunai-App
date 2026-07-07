@@ -61,6 +61,7 @@ public class BusinessDto
     public decimal ConfirmLargeSaleThresholdTelegram { get; set; }
     public bool ConfirmLargeSalesMessenger { get; set; }
     public decimal ConfirmLargeSaleThresholdMessenger { get; set; }
+    public bool VariantsEnabled { get; set; }
     public bool IsActive { get; set; }
     public string AccountNumber { get; set; } = string.Empty;
 

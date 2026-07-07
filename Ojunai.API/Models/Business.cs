@@ -43,6 +43,11 @@ public class Business
     public bool ConfirmLargeSalesMessenger { get; set; } = false;
     public decimal ConfirmLargeSaleThresholdMessenger { get; set; } = 0;
 
+    // Opt-in flag for product variants (styles with size/color etc.). Off by default; when on, the
+    // dashboard surfaces the variant manager. Variants are ordinary products under a VariantGroup,
+    // so nothing downstream depends on this flag.
+    public bool VariantsEnabled { get; set; } = false;
+
     // ── Per-source large-sale alert toggles ────────────────────────────────
     // Owners can turn large-sale alerts on/off independently by source so a quiet sales
     // channel doesn't get the same treatment as their main channel. Default all true to
