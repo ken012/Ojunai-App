@@ -26,6 +26,7 @@ import {
   Activity,
   FileUp,
   Download,
+  Truck,
 } from "lucide-react";
 import { usePlanStatus } from "@/lib/use-plan-status";
 
@@ -64,6 +65,7 @@ const navGroups: NavGroup[] = [
     label: "Assets",
     items: [
       { href: "/inventory", label: "Inventory", icon: Package },
+      { href: "/purchasing", label: "Purchasing", icon: Truck },
       { href: "/contacts", label: "Contacts & Ledger", icon: Users },
     ],
   },

@@ -27,7 +27,9 @@ import {
 } from "@/components/ui/dialog";
 import { Drawer, DrawerHeader, DrawerBody, DrawerFooter } from "@/components/ui/drawer";
 import { useToast } from "@/components/toast";
-import { AlertTriangle, Package, Pencil, Trash2, Minus, Plus, Lock, Unlock, ShoppingCart, Ban, Search, X, LayoutList, LayoutGrid } from "lucide-react";
+import { AlertTriangle, Package, Pencil, Trash2, Minus, Plus, Lock, Unlock, ShoppingCart, Ban, Search, X, LayoutList, LayoutGrid, ScanLine } from "lucide-react";
+import { BarcodeScanner } from "@/components/barcode-scanner";
+import type { ContactDto } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { UpgradeInline } from "@/components/upgrade-prompt";
@@ -245,9 +247,11 @@ function AddProductDialog({ open, onClose }: { open: boolean; onClose: () => voi
     lowStockThreshold: "5",
     category: "",
     subcategory: "",
+    barcode: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   async function handleSave() {
     setSaving(true);
@@ -262,6 +266,7 @@ function AddProductDialog({ open, onClose }: { open: boolean; onClose: () => voi
         lowStockThreshold: form.lowStockThreshold ? Number(form.lowStockThreshold) : 5,
         category: form.category || null,
         subcategory: form.subcategory || null,
+        barcode: form.barcode || null,
       });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["low-stock"] });
@@ -275,7 +280,7 @@ function AddProductDialog({ open, onClose }: { open: boolean; onClose: () => voi
   }
 
   function handleClose() {
-    setForm({ name: "", unit: "", sellingPrice: "", costPrice: "", initialStock: "", lowStockThreshold: "5", category: "", subcategory: "" });
+    setForm({ name: "", unit: "", sellingPrice: "", costPrice: "", initialStock: "", lowStockThreshold: "5", category: "", subcategory: "", barcode: "" });
     setError(null);
     onClose();
   }
@@ -321,6 +326,15 @@ function AddProductDialog({ open, onClose }: { open: boolean; onClose: () => voi
               <Input type="number" value={form.lowStockThreshold} onChange={(e) => setForm({ ...form, lowStockThreshold: e.target.value })} />
             </div>
           </div>
+          <div>
+            <Label>Barcode <span className="text-slate-400 font-normal">(optional)</span></Label>
+            <div className="flex gap-2">
+              <Input value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} placeholder="Scan or type" className="font-mono" />
+              <Button type="button" variant="outline" onClick={() => setScanning(true)} className="flex-shrink-0 px-3" title="Scan barcode">
+                <ScanLine size={16} />
+              </Button>
+            </div>
+          </div>
           {error && <p className="text-xs text-red-500">{error}</p>}
         </div>
         <DialogFooter>
@@ -328,6 +342,7 @@ function AddProductDialog({ open, onClose }: { open: boolean; onClose: () => voi
           <Button onClick={handleSave} disabled={saving || !form.name}>{saving ? "Saving…" : "Add Product"}</Button>
         </DialogFooter>
       </DialogContent>
+      <BarcodeScanner open={scanning} onClose={() => setScanning(false)} onScan={(code) => setForm((f) => ({ ...f, barcode: code }))} />
     </Dialog>
   );
 }
@@ -352,9 +367,22 @@ function EditProductDialog({
     lowStockThreshold: "",
     category: "",
     subcategory: "",
+    barcode: "",
+    supplierId: "",
+    leadTimeDays: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+
+  const { data: suppliers } = useQuery({
+    queryKey: ["edit-product-suppliers"],
+    queryFn: async () => {
+      const { data } = await api.get<{ data: PaginatedResult<ContactDto> }>(`/contacts?type=supplier&pageSize=200`);
+      return data.data!.items;
+    },
+    enabled: open,
+  });
 
   // Re-populate form when a different product is opened for editing
   const productId = product?.id ?? "";
@@ -368,6 +396,9 @@ function EditProductDialog({
       lowStockThreshold: product.lowStockThreshold.toString(),
       category: product.category ?? "",
       subcategory: product.subcategory ?? "",
+      barcode: product.barcode ?? "",
+      supplierId: product.supplierId ?? "",
+      leadTimeDays: product.leadTimeDays != null ? String(product.leadTimeDays) : "",
     });
     setLastProductId(productId);
   }
@@ -385,6 +416,9 @@ function EditProductDialog({
         lowStockThreshold: form.lowStockThreshold ? Number(form.lowStockThreshold) : null,
         category: form.category || null,
         subcategory: form.subcategory || null,
+        barcode: form.barcode || null,
+        supplierId: form.supplierId || null,
+        leadTimeDays: form.leadTimeDays ? Number(form.leadTimeDays) : null,
       });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["low-stock"] });
@@ -399,7 +433,7 @@ function EditProductDialog({
   }
 
   function handleClose() {
-    setForm({ name: "", unit: "", costPrice: "", sellingPrice: "", lowStockThreshold: "", category: "", subcategory: "" });
+    setForm({ name: "", unit: "", costPrice: "", sellingPrice: "", lowStockThreshold: "", category: "", subcategory: "", barcode: "", supplierId: "", leadTimeDays: "" });
     setLastProductId("");
     setError(null);
     onClose();
@@ -474,6 +508,38 @@ function EditProductDialog({
                 <Label className="text-xs text-slate-500 dark:text-slate-400">Low Stock Threshold</Label>
                 <Input type="number" value={form.lowStockThreshold} onChange={(e) => setForm({ ...form, lowStockThreshold: e.target.value })} />
               </div>
+
+              {/* Sourcing (Tier 1) — supplier, lead time, barcode */}
+              <div className="border-t border-slate-200 dark:border-slate-800 pt-4">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">Sourcing</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs text-slate-500 dark:text-slate-400">Supplier</Label>
+                    <select
+                      className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
+                      value={form.supplierId}
+                      onChange={(e) => setForm(f => ({ ...f, supplierId: e.target.value }))}
+                    >
+                      <option value="">— None —</option>
+                      {suppliers?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-slate-500 dark:text-slate-400">Lead time (days)</Label>
+                    <Input type="number" min={0} value={form.leadTimeDays} onChange={(e) => setForm({ ...form, leadTimeDays: e.target.value })} placeholder="e.g. 3" />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <Label className="text-xs text-slate-500 dark:text-slate-400">Barcode</Label>
+                  <div className="flex gap-2">
+                    <Input value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} placeholder="Scan or type" className="font-mono" />
+                    <Button type="button" variant="outline" onClick={() => setScanning(true)} className="flex-shrink-0 px-3" title="Scan barcode">
+                      <ScanLine size={16} />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
               {error && <p className="text-xs text-rose-500">{error}</p>}
 
               {/* Current stock (read-only, since stock is changed via inline edit / Restock / Stock-out) */}
@@ -495,6 +561,7 @@ function EditProductDialog({
           </DrawerFooter>
         </>
       )}
+      <BarcodeScanner open={scanning} onClose={() => setScanning(false)} onScan={(code) => setForm((f) => ({ ...f, barcode: code }))} />
     </Drawer>
   );
 }

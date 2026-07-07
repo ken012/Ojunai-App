@@ -103,7 +103,42 @@ export interface ProductDto {
   recordedByName?: string;
   aliases?: string[];
   voiceDescription?: string;
+  barcode?: string;
+  supplierId?: string;
+  leadTimeDays?: number;
   createdAtUtc: string;
+}
+
+// ── Purchasing ───────────────────────────────────────────────
+export type PurchaseOrderStatus = "Draft" | "Sent" | "PartiallyReceived" | "Received" | "Cancelled";
+
+export interface PurchaseOrderItemDto {
+  id: string;
+  productId?: string;
+  productName: string;
+  unit: string;
+  quantityOrdered: number;
+  quantityReceived: number;
+  unitCost: number;
+  lineTotal: number;
+}
+
+export interface PurchaseOrderDto {
+  id: string;
+  poNumber: string;
+  supplierId?: string;
+  supplierName?: string;
+  status: PurchaseOrderStatus;
+  currency: string;
+  totalAmount: number;
+  notes?: string;
+  expectedAtUtc?: string;
+  recordedByName?: string;
+  createdAtUtc: string;
+  sentAtUtc?: string;
+  receivedAtUtc?: string;
+  cancelledAtUtc?: string;
+  items: PurchaseOrderItemDto[];
 }
 
 export interface SaleSummaryDto {
