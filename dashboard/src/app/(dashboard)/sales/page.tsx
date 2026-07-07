@@ -36,7 +36,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Ban, Trash2, RotateCcw, Search, X, ShoppingCart, FileDown, Mail } from "lucide-react";
+import { Ban, Trash2, RotateCcw, Search, X, ShoppingCart, FileDown, Mail, ScanLine } from "lucide-react";
+import { BarcodeScanner } from "@/components/barcode-scanner";
 import { EmptyState } from "@/components/empty-state";
 import { SearchableSelect } from "@/components/searchable-select";
 import { Pagination } from "@/components/pagination";
@@ -494,6 +495,7 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
   const [includeVat, setIncludeVat] = useState<boolean>(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   // On open: VAT pulls from business setting; smart defaults pull last-used values.
   // We also reset line items so the form starts clean each time.
@@ -592,6 +594,33 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
     setLines((prev) => prev.filter((_, i) => i !== idx));
   }
 
+  // Scan a barcode → resolve the product server-side and add it to the sale. Scanning the same
+  // item again bumps its quantity (natural checkout behaviour). Seeds productCache so the picker
+  // shows the name.
+  async function handleScanToSell(code: string) {
+    try {
+      const { data } = await api.get<{ data: ProductDto }>(`/products/by-barcode/${encodeURIComponent(code)}`);
+      const p = data.data;
+      setProductCache((prev) => ({ ...prev, [p.id]: p }));
+      const price = p.sellingPrice != null ? String(p.sellingPrice) : "";
+      setLines((prev) => {
+        const existing = prev.findIndex((l) => l.productId === p.id);
+        if (existing >= 0) {
+          const copy = [...prev];
+          copy[existing] = { ...copy[existing], quantity: String((Number(copy[existing].quantity) || 0) + 1) };
+          return copy;
+        }
+        const line = { productId: p.id, quantity: "1", unitPrice: price };
+        const empty = prev.findIndex((l) => !l.productId);
+        if (empty >= 0) { const copy = [...prev]; copy[empty] = line; return copy; }
+        return [...prev, line];
+      });
+      toast.success("Added to sale", p.name);
+    } catch {
+      toast.error("No match", `No product has barcode ${code}. Add it in Inventory first.`);
+    }
+  }
+
   const subtotal = lines.reduce((sum, l) => {
     const q = Number(l.quantity) || 0;
     const p = Number(l.unitPrice) || 0;
@@ -652,7 +681,16 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-2">
-            <Label>Items</Label>
+            <div className="flex items-center justify-between">
+              <Label>Items</Label>
+              <button
+                type="button"
+                onClick={() => setScanning(true)}
+                className="inline-flex items-center gap-1 text-xs font-medium text-cyan-600 hover:underline"
+              >
+                <ScanLine size={14} /> Scan
+              </button>
+            </div>
             {lines.map((line, idx) => (
               <div key={idx} className="grid grid-cols-12 gap-2 items-end">
                 <div className="col-span-5">
@@ -777,6 +815,7 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
           <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Record Sale"}</Button>
         </DialogFooter>
       </DialogContent>
+      <BarcodeScanner open={scanning} onClose={() => setScanning(false)} onScan={handleScanToSell} />
     </Dialog>
   );
 }

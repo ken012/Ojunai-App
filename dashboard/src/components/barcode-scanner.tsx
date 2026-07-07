@@ -26,16 +26,23 @@ export function BarcodeScanner({ open, onClose, onScan }: {
     const reader = new BrowserMultiFormatReader();
     readerRef.current = reader;
 
+    // Prefer the REAR/environment camera — on phones the default is often the selfie cam, which
+    // can't see a barcode the user is pointing at a product. "ideal" (not "exact") so laptops with
+    // only a front camera still work instead of erroring.
     reader
-      .decodeFromVideoDevice(null, videoRef.current!, (result) => {
-        if (result && !cancelled) {
-          const text = result.getText();
-          if (text) {
-            onScan(text);
-            onClose();
+      .decodeFromConstraints(
+        { video: { facingMode: { ideal: "environment" } } },
+        videoRef.current!,
+        (result) => {
+          if (result && !cancelled) {
+            const text = result.getText();
+            if (text) {
+              onScan(text);
+              onClose();
+            }
           }
-        }
-      })
+        },
+      )
       .catch((e: unknown) => {
         if (cancelled) return;
         const name = (e as { name?: string })?.name;

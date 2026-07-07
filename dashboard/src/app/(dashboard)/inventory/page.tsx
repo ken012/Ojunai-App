@@ -236,7 +236,7 @@ function ProductCard({
 }
 
 // ─── Add Product dialog ──────────────────────────────────────────────────────
-function AddProductDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function AddProductDialog({ open, onClose, initialBarcode }: { open: boolean; onClose: () => void; initialBarcode?: string | null }) {
   const qc = useQueryClient();
   const [form, setForm] = useState({
     name: "",
@@ -252,6 +252,11 @@ function AddProductDialog({ open, onClose }: { open: boolean; onClose: () => voi
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+
+  // Prefill the barcode when opened from a "scan → not found → add new" flow.
+  useEffect(() => {
+    if (open && initialBarcode) setForm((f) => ({ ...f, barcode: initialBarcode }));
+  }, [open, initialBarcode]);
 
   async function handleSave() {
     setSaving(true);
@@ -1344,6 +1349,8 @@ export default function InventoryPage() {
   const [adding, setAdding] = useState(false);
   const [addingHold, setAddingHold] = useState(false);
   const [editing, setEditing] = useState<ProductDto | null>(null);
+  const [scanFind, setScanFind] = useState(false);
+  const [prefillBarcode, setPrefillBarcode] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<ProductDto | null>(null);
   const [damaging, setDamaging] = useState<ProductDto | null>(null);
   const [removingStock, setRemovingStock] = useState<ProductDto | null>(null);
@@ -1588,25 +1595,43 @@ export default function InventoryPage() {
     return stockFilter === "wastage" ? [] : allProducts;
   }, [allProducts, stockFilter]);
 
+  // Scan a barcode → open that product if we know it, else offer to add a new one with it prefilled.
+  async function handleScanFind(code: string) {
+    try {
+      const { data } = await api.get<{ data: ProductDto }>(`/products/by-barcode/${encodeURIComponent(code)}`);
+      setEditing(data.data);
+      toast.success("Product found", data.data.name);
+    } catch {
+      setPrefillBarcode(code);
+      setAdding(true);
+      toast.error("No match", `No product has barcode ${code}. Add it now.`);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Inventory"
         subtitle="Current stock levels for all products"
         actions={
-          hasPermission(Permission.ManageStock) ? (
-            <>
-              <Button variant="outline" onClick={() => setWastaging(true)} className="text-orange-600 border-orange-200 hover:bg-orange-50">
-                <Ban size={14} className="mr-1" /> Wastage
-              </Button>
-              {hasHolds && (
-                <Button variant="outline" onClick={() => setAddingHold(true)}>
-                  <Lock size={14} className="mr-1" /> Hold Stock
+          <>
+            <Button variant="outline" onClick={() => setScanFind(true)} title="Scan a barcode to find a product">
+              <ScanLine size={14} className="mr-1" /> Scan
+            </Button>
+            {hasPermission(Permission.ManageStock) && (
+              <>
+                <Button variant="outline" onClick={() => setWastaging(true)} className="text-orange-600 border-orange-200 hover:bg-orange-50">
+                  <Ban size={14} className="mr-1" /> Wastage
                 </Button>
-              )}
-              <Button onClick={() => setAdding(true)}>+ Add Product</Button>
-            </>
-          ) : null
+                {hasHolds && (
+                  <Button variant="outline" onClick={() => setAddingHold(true)}>
+                    <Lock size={14} className="mr-1" /> Hold Stock
+                  </Button>
+                )}
+                <Button onClick={() => setAdding(true)}>+ Add Product</Button>
+              </>
+            )}
+          </>
         }
       />
 
@@ -1986,7 +2011,8 @@ export default function InventoryPage() {
         </Dialog>
       )}
 
-      <AddProductDialog open={adding} onClose={() => setAdding(false)} />
+      <AddProductDialog open={adding} onClose={() => { setAdding(false); setPrefillBarcode(null); }} initialBarcode={prefillBarcode} />
+      <BarcodeScanner open={scanFind} onClose={() => setScanFind(false)} onScan={handleScanFind} />
       <AddHoldDialog open={addingHold} onClose={() => setAddingHold(false)} products={allProducts} />
       <EditProductDialog
         product={editing}
