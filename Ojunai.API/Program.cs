@@ -183,6 +183,7 @@ builder.Services.AddScoped<ISalesService, SalesService>();
 builder.Services.AddScoped<IExpenseService, ExpenseService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
+builder.Services.AddScoped<IStocktakeService, StocktakeService>();
 builder.Services.AddScoped<IContactService, ContactService>();
 builder.Services.AddScoped<ILedgerService, LedgerService>();
 builder.Services.AddScoped<IReportService, ReportService>();

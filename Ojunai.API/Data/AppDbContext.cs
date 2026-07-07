@@ -18,6 +18,8 @@ public class AppDbContext : DbContext
     public DbSet<InventoryTransaction> InventoryTransactions => Set<InventoryTransaction>();
     public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
     public DbSet<PurchaseOrderItem> PurchaseOrderItems => Set<PurchaseOrderItem>();
+    public DbSet<Stocktake> Stocktakes => Set<Stocktake>();
+    public DbSet<StocktakeItem> StocktakeItems => Set<StocktakeItem>();
     public DbSet<MessageLog> MessageLogs => Set<MessageLog>();
     public DbSet<InboundMessageClaim> InboundMessageClaims => Set<InboundMessageClaim>();
     public DbSet<DailySummary> DailySummaries => Set<DailySummary>();
@@ -148,6 +150,35 @@ public class AppDbContext : DbContext
             e.Property(x => x.QuantityReceived).HasPrecision(18, 4);
             e.Property(x => x.UnitCost).HasPrecision(18, 2);
             e.Property(x => x.LineTotal).HasPrecision(18, 2);
+        });
+
+        mb.Entity<Stocktake>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.BusinessId, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.BusinessId, x.Status });
+            e.Property(x => x.Reference).HasMaxLength(40).IsRequired();
+            e.Property(x => x.Scope).HasMaxLength(200);
+            e.Property(x => x.Notes).HasMaxLength(1000);
+            e.HasOne(x => x.Business)
+             .WithMany()
+             .HasForeignKey(x => x.BusinessId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Items)
+             .WithOne(x => x.Stocktake)
+             .HasForeignKey(x => x.StocktakeId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        mb.Entity<StocktakeItem>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.StocktakeId);
+            e.Property(x => x.ProductName).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Unit).HasMaxLength(50).HasDefaultValue("unit");
+            e.Property(x => x.SystemQuantity).HasPrecision(18, 4);
+            e.Property(x => x.CountedQuantity).HasPrecision(18, 4);
+            e.Property(x => x.UnitCost).HasPrecision(18, 2);
         });
 
         mb.Entity<Sale>(e =>
