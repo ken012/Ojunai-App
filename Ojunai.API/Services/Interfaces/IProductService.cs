@@ -9,6 +9,8 @@ public interface IProductService
         Guid businessId, int page, int pageSize,
         string? search, string? category = null, string? stockLevel = null);
     Task<ProductDto> GetByIdAsync(Guid businessId, Guid productId);
+    /// <summary>Scan-to-lookup: the active product with this barcode, or null. Most recent wins if shared.</summary>
+    Task<ProductDto?> GetByBarcodeAsync(Guid businessId, string barcode);
     Task<ProductDto> CreateAsync(Guid businessId, CreateProductRequest request, Guid? recordedByUserId = null, string? recordedByName = null, DateTime? createdAtUtc = null);
     Task<ProductDto> UpdateAsync(Guid businessId, Guid productId, UpdateProductRequest request, Guid? recordedByUserId = null, string? recordedByName = null);
     Task<ProductDto> UpdatePriceAsync(Guid businessId, Guid productId, UpdatePriceRequest request);

@@ -13,6 +13,9 @@ public class CreateProductRequest
     [Range(0, 999999)] public decimal LowStockThreshold { get; set; } = 5;
     [MaxLength(100)] public string? Category { get; set; }
     [MaxLength(100)] public string? Subcategory { get; set; }
+    [MaxLength(64)] public string? Barcode { get; set; }
+    public Guid? SupplierId { get; set; }
+    [Range(0, 3650)] public int? LeadTimeDays { get; set; }
 }
 
 public class UpdateProductRequest
@@ -27,6 +30,9 @@ public class UpdateProductRequest
     public bool? IsActive { get; set; }
     public List<string>? Aliases { get; set; }
     [MaxLength(500)] public string? VoiceDescription { get; set; }
+    [MaxLength(64)] public string? Barcode { get; set; }
+    public Guid? SupplierId { get; set; }
+    [Range(0, 3650)] public int? LeadTimeDays { get; set; }
 }
 
 public class UpdateStockRequest
@@ -61,5 +67,8 @@ public class ProductDto
     public string? RecordedByName { get; set; }
     public List<string>? Aliases { get; set; }
     public string? VoiceDescription { get; set; }
+    public string? Barcode { get; set; }
+    public Guid? SupplierId { get; set; }
+    public int? LeadTimeDays { get; set; }
     public DateTime CreatedAtUtc { get; set; }
 }

@@ -57,6 +57,17 @@ public class ProductsController : OjunaiBaseController
         return Ok(ApiResponse<ProductDto>.Ok(result));
     }
 
+    /// <summary>Scan-to-lookup: find a product by its barcode. 404 if no active product has it.</summary>
+    [HttpGet("by-barcode/{barcode}")]
+    [RequirePermission(Permission.ViewStock)]
+    public async Task<ActionResult<ApiResponse<ProductDto>>> GetByBarcode(string barcode)
+    {
+        var result = await _products.GetByBarcodeAsync(BusinessId, barcode);
+        return result == null
+            ? NotFound(ApiResponse<ProductDto>.Fail("No product found with that barcode."))
+            : Ok(ApiResponse<ProductDto>.Ok(result));
+    }
+
     [HttpPost]
     [RequirePermission(Permission.ManageStock)]
     public async Task<ActionResult<ApiResponse<ProductDto>>> Create([FromBody] CreateProductRequest request)

@@ -16,6 +16,8 @@ public class AppDbContext : DbContext
     public DbSet<Contact> Contacts => Set<Contact>();
     public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();
     public DbSet<InventoryTransaction> InventoryTransactions => Set<InventoryTransaction>();
+    public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+    public DbSet<PurchaseOrderItem> PurchaseOrderItems => Set<PurchaseOrderItem>();
     public DbSet<MessageLog> MessageLogs => Set<MessageLog>();
     public DbSet<InboundMessageClaim> InboundMessageClaims => Set<InboundMessageClaim>();
     public DbSet<DailySummary> DailySummaries => Set<DailySummary>();
@@ -105,13 +107,47 @@ public class AppDbContext : DbContext
             e.Property(x => x.SellingPrice).HasPrecision(18, 2);
             e.Property(x => x.CurrentStock).HasPrecision(18, 4);
             e.Property(x => x.LowStockThreshold).HasPrecision(18, 4);
+            e.Property(x => x.Barcode).HasMaxLength(64);
             e.Property(x => x.Version).IsRowVersion();
             e.HasIndex(x => x.ImportBatchId).HasFilter("\"ImportBatchId\" IS NOT NULL");
+            e.HasIndex(x => new { x.BusinessId, x.Barcode }).HasFilter("\"Barcode\" IS NOT NULL");
             e.ToTable(t => t.HasCheckConstraint("CK_Product_CurrentStock_NonNegative", "\"CurrentStock\" >= 0"));
             e.HasOne(x => x.Business)
              .WithMany(x => x.Products)
              .HasForeignKey(x => x.BusinessId)
              .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        mb.Entity<PurchaseOrder>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.BusinessId, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.BusinessId, x.Status });
+            e.Property(x => x.PoNumber).HasMaxLength(40).IsRequired();
+            e.Property(x => x.SupplierName).HasMaxLength(200);
+            e.Property(x => x.Currency).HasMaxLength(10).HasDefaultValue("NGN");
+            e.Property(x => x.TotalAmount).HasPrecision(18, 2);
+            e.Property(x => x.Notes).HasMaxLength(1000);
+            e.HasOne(x => x.Business)
+             .WithMany()
+             .HasForeignKey(x => x.BusinessId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Items)
+             .WithOne(x => x.PurchaseOrder)
+             .HasForeignKey(x => x.PurchaseOrderId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        mb.Entity<PurchaseOrderItem>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.PurchaseOrderId);
+            e.Property(x => x.ProductName).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Unit).HasMaxLength(50).HasDefaultValue("unit");
+            e.Property(x => x.QuantityOrdered).HasPrecision(18, 4);
+            e.Property(x => x.QuantityReceived).HasPrecision(18, 4);
+            e.Property(x => x.UnitCost).HasPrecision(18, 2);
+            e.Property(x => x.LineTotal).HasPrecision(18, 2);
         });
 
         mb.Entity<Sale>(e =>

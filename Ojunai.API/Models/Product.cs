@@ -16,6 +16,16 @@ public class Product
     public string? Aliases { get; set; } // JSON array: ["alias1", "alias2"]
     public string? VoiceDescription { get; set; } // Short factual description for Voice AI LLM context
     public bool IsActive { get; set; } = true;
+
+    // ── Purchasing / sourcing (Tier 1, additive) ──────────────────────────────
+    // Preferred supplier to reorder this product from — a Contact (Supplier/Both). App-level
+    // reference (no DB FK) so deleting a contact never blocks; validated when set.
+    public Guid? SupplierId { get; set; }
+    // Typical days from placing an order to stock arriving — helps time reorders.
+    public int? LeadTimeDays { get; set; }
+    // Barcode / EAN / UPC for scan-to-lookup. Not unique (merchants legitimately share codes).
+    public string? Barcode { get; set; }
+
     public string Source { get; set; } = "Manual";
     public Guid? ImportBatchId { get; set; }
     public Guid? RecordedByUserId { get; set; }

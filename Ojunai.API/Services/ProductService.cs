@@ -128,6 +128,9 @@ public class ProductService : IProductService
             LowStockThreshold = request.LowStockThreshold,
             Category = category,
             Subcategory = subcategory,
+            Barcode = string.IsNullOrWhiteSpace(request.Barcode) ? null : request.Barcode.Trim(),
+            SupplierId = request.SupplierId,
+            LeadTimeDays = request.LeadTimeDays,
             RecordedByUserId = recordedByUserId,
             RecordedByName = recordedByName,
             CreatedAtUtc = effectiveDate
@@ -169,10 +172,24 @@ public class ProductService : IProductService
         if (request.IsActive.HasValue) product.IsActive = request.IsActive.Value;
         if (request.Aliases != null) product.Aliases = request.Aliases.Count > 0 ? System.Text.Json.JsonSerializer.Serialize(request.Aliases) : null;
         if (request.VoiceDescription != null) product.VoiceDescription = string.IsNullOrWhiteSpace(request.VoiceDescription) ? null : request.VoiceDescription.Trim();
+        if (request.Barcode != null) product.Barcode = string.IsNullOrWhiteSpace(request.Barcode) ? null : request.Barcode.Trim();
+        if (request.SupplierId.HasValue) product.SupplierId = request.SupplierId.Value == Guid.Empty ? null : request.SupplierId;
+        if (request.LeadTimeDays.HasValue) product.LeadTimeDays = request.LeadTimeDays.Value;
         if (recordedByUserId.HasValue) { product.RecordedByUserId = recordedByUserId; product.RecordedByName = recordedByName; }
 
         await _db.SaveChangesAsync();
         return ToDto(product);
+    }
+
+    public async Task<ProductDto?> GetByBarcodeAsync(Guid businessId, string barcode)
+    {
+        var code = barcode?.Trim();
+        if (string.IsNullOrEmpty(code)) return null;
+        var product = await _db.Products
+            .Where(p => p.BusinessId == businessId && p.IsActive && p.Barcode == code)
+            .OrderByDescending(p => p.CreatedAtUtc)
+            .FirstOrDefaultAsync();
+        return product == null ? null : ToDto(product);
     }
 
     public async Task<ProductDto> UpdatePriceAsync(Guid businessId, Guid productId, UpdatePriceRequest request)
@@ -275,6 +292,9 @@ public class ProductService : IProductService
         RecordedByName = p.RecordedByName,
         Aliases = string.IsNullOrEmpty(p.Aliases) ? null : System.Text.Json.JsonSerializer.Deserialize<List<string>>(p.Aliases),
         VoiceDescription = p.VoiceDescription,
+        Barcode = p.Barcode,
+        SupplierId = p.SupplierId,
+        LeadTimeDays = p.LeadTimeDays,
         CreatedAtUtc = p.CreatedAtUtc
     };
 }
