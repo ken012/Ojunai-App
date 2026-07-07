@@ -141,6 +141,38 @@ export interface PurchaseOrderDto {
   items: PurchaseOrderItemDto[];
 }
 
+// ── Stocktake (physical counts) ──────────────────────────────
+export type StocktakeStatus = "Draft" | "Completed" | "Cancelled";
+
+export interface StocktakeItemDto {
+  id: string;
+  productId: string;
+  productName: string;
+  unit: string;
+  systemQuantity: number;
+  countedQuantity?: number | null;
+  unitCost: number;
+  variance?: number | null;
+  varianceValue?: number | null;
+}
+
+export interface StocktakeDto {
+  id: string;
+  reference: string;
+  status: StocktakeStatus;
+  scope?: string;
+  notes?: string;
+  recordedByName?: string;
+  totalItems: number;
+  countedItems: number;
+  varianceItems: number;
+  netVarianceValue: number;
+  createdAtUtc: string;
+  completedAtUtc?: string;
+  cancelledAtUtc?: string;
+  items: StocktakeItemDto[];
+}
+
 export interface SaleSummaryDto {
   id: string;
   totalAmount: number;

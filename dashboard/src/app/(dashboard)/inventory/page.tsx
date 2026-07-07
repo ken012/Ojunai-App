@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useStickyState } from "@/lib/sticky-state";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, fetchAllPaged } from "@/lib/api";
@@ -27,7 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { Drawer, DrawerHeader, DrawerBody, DrawerFooter } from "@/components/ui/drawer";
 import { useToast } from "@/components/toast";
-import { AlertTriangle, Package, Pencil, Trash2, Minus, Plus, Lock, Unlock, ShoppingCart, Ban, Search, X, LayoutList, LayoutGrid, ScanLine } from "lucide-react";
+import { AlertTriangle, Package, Pencil, Trash2, Minus, Plus, Lock, Unlock, ShoppingCart, Ban, Search, X, LayoutList, LayoutGrid, ScanLine, ClipboardCheck } from "lucide-react";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import type { ContactDto } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
@@ -1346,6 +1347,7 @@ function ProductRow({
 
 export default function InventoryPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [addingHold, setAddingHold] = useState(false);
   const [editing, setEditing] = useState<ProductDto | null>(null);
@@ -1620,6 +1622,9 @@ export default function InventoryPage() {
             </Button>
             {hasPermission(Permission.ManageStock) && (
               <>
+                <Button variant="outline" onClick={() => router.push("/stocktake")}>
+                  <ClipboardCheck size={14} className="mr-1" /> Stock count
+                </Button>
                 <Button variant="outline" onClick={() => setWastaging(true)} className="text-orange-600 border-orange-200 hover:bg-orange-50">
                   <Ban size={14} className="mr-1" /> Wastage
                 </Button>
