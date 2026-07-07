@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { Drawer, DrawerHeader, DrawerBody, DrawerFooter } from "@/components/ui/drawer";
 import { useToast } from "@/components/toast";
-import { AlertTriangle, Package, Pencil, Trash2, Minus, Plus, Lock, Unlock, ShoppingCart, Ban, Search, X, LayoutList, LayoutGrid, ScanLine, ClipboardCheck } from "lucide-react";
+import { AlertTriangle, Package, Pencil, Trash2, Minus, Plus, Lock, Unlock, ShoppingCart, Ban, Search, X, LayoutList, LayoutGrid, ScanLine, ClipboardCheck, Layers } from "lucide-react";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import type { ContactDto, BundleDto } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
@@ -1449,6 +1449,7 @@ function ProductRow({
 export default function InventoryPage() {
   const { toast } = useToast();
   const router = useRouter();
+  const business = useBusiness();
   const [adding, setAdding] = useState(false);
   const [addingHold, setAddingHold] = useState(false);
   const [editing, setEditing] = useState<ProductDto | null>(null);
@@ -1517,6 +1518,9 @@ export default function InventoryPage() {
       if (debouncedSearch) params.set("search", debouncedSearch);
       if (categoryFilter) params.set("category", categoryFilter);
       if (stockLevelParam) params.set("stockLevel", stockLevelParam);
+      // Variant members live on the Variants page, not as loose rows here. (Harmless when no
+      // variants exist — every existing product has no group.)
+      params.set("excludeVariants", "true");
       const { data } = await api.get<{ data: PaginatedResult<ProductDto> }>(`/products?${params.toString()}`);
       return data.data;
     },
@@ -1721,6 +1725,11 @@ export default function InventoryPage() {
             <Button variant="outline" onClick={() => setScanFind(true)} title="Scan a barcode to find a product">
               <ScanLine size={14} className="mr-1" /> Scan
             </Button>
+            {business?.variantsEnabled && (
+              <Button variant="outline" onClick={() => router.push("/variants")}>
+                <Layers size={14} className="mr-1" /> Variants
+              </Button>
+            )}
             {hasPermission(Permission.ManageStock) && (
               <>
                 <Button variant="outline" onClick={() => router.push("/stocktake")}>

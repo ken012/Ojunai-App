@@ -69,6 +69,7 @@ export interface BusinessDto {
   confirmLargeSaleThresholdTelegram?: number;
   confirmLargeSalesMessenger?: boolean;
   confirmLargeSaleThresholdMessenger?: number;
+  variantsEnabled?: boolean;
   accountNumber?: string;
   voiceAIEnabled?: boolean;
   voiceAIPlanStatus?: string;
@@ -122,6 +123,39 @@ export interface BundleDto {
   productId: string;
   isBundle: boolean;
   components: BundleComponentDto[];
+}
+
+// ── Variants (styles) ────────────────────────────────────────
+export interface VariantAxisDto {
+  name: string;
+  values: string[];
+}
+
+export interface VariantDto {
+  productId: string;
+  name: string;
+  options: Record<string, string>;
+  sku?: string;
+  barcode?: string;
+  unit: string;
+  sellingPrice?: number;
+  costPrice?: number;
+  currentStock: number;
+  lowStockThreshold: number;
+  isLowStock: boolean;
+}
+
+export interface VariantGroupDto {
+  id: string;
+  name: string;
+  category?: string;
+  axes: VariantAxisDto[];
+  variantCount: number;
+  totalStock: number;
+  minPrice?: number;
+  maxPrice?: number;
+  createdAtUtc: string;
+  variants: VariantDto[];
 }
 
 // ── Purchasing ───────────────────────────────────────────────
