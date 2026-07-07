@@ -30,7 +30,7 @@ import { Drawer, DrawerHeader, DrawerBody, DrawerFooter } from "@/components/ui/
 import { useToast } from "@/components/toast";
 import { AlertTriangle, Package, Pencil, Trash2, Minus, Plus, Lock, Unlock, ShoppingCart, Ban, Search, X, LayoutList, LayoutGrid, ScanLine, ClipboardCheck } from "lucide-react";
 import { BarcodeScanner } from "@/components/barcode-scanner";
-import type { ContactDto } from "@/lib/types";
+import type { ContactDto, BundleDto } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { UpgradeInline } from "@/components/upgrade-prompt";
@@ -188,13 +188,21 @@ function ProductCard({
 
         <div className="mt-3 flex items-end justify-between">
           <div>
-            <p className="text-2xl font-bold text-slate-900 dark:text-slate-50 tabular-nums">
-              {product.currentStock}
-              <span className="text-sm font-normal text-slate-500 dark:text-slate-400 ml-1">{product.unit}</span>
-            </p>
-            <p className="text-xs text-slate-400 dark:text-slate-500">
-              Threshold: {product.lowStockThreshold} {product.unit}
-            </p>
+            {product.isBundle ? (
+              <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
+                <Package size={12} /> Bundle
+              </span>
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-slate-900 dark:text-slate-50 tabular-nums">
+                  {product.currentStock}
+                  <span className="text-sm font-normal text-slate-500 dark:text-slate-400 ml-1">{product.unit}</span>
+                </p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  Threshold: {product.lowStockThreshold} {product.unit}
+                </p>
+              </>
+            )}
           </div>
           <div className="text-right">
             {product.sellingPrice && (
@@ -381,6 +389,10 @@ function EditProductDialog({
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
 
+  const [isBundle, setIsBundle] = useState(false);
+  const [bundleRows, setBundleRows] = useState<{ componentProductId: string; quantity: string }[]>([]);
+  const [bundleSeededFor, setBundleSeededFor] = useState("");
+
   const { data: suppliers } = useQuery({
     queryKey: ["edit-product-suppliers"],
     queryFn: async () => {
@@ -390,9 +402,33 @@ function EditProductDialog({
     enabled: open,
   });
 
+  const { data: pickProducts } = useQuery({
+    queryKey: ["bundle-pick-products"],
+    queryFn: async () => {
+      const { data } = await api.get<{ data: PaginatedResult<ProductDto> }>(`/products?pageSize=500`);
+      return data.data!.items;
+    },
+    enabled: open,
+  });
+
   // Re-populate form when a different product is opened for editing
   const productId = product?.id ?? "";
   const [lastProductId, setLastProductId] = useState("");
+
+  const { data: bundle } = useQuery({
+    queryKey: ["product-bundle", productId],
+    queryFn: async () => {
+      const { data } = await api.get<{ data: BundleDto }>(`/products/${productId}/bundle`);
+      return data.data!;
+    },
+    enabled: open && !!productId,
+  });
+  // Seed bundle editor once per product from the fetched definition.
+  if (bundle && bundleSeededFor !== productId) {
+    setIsBundle(bundle.isBundle);
+    setBundleRows(bundle.components.map((c) => ({ componentProductId: c.componentProductId, quantity: String(c.quantity) })));
+    setBundleSeededFor(productId);
+  }
   if (open && product && productId !== lastProductId) {
     setForm({
       name: product.name,
@@ -426,8 +462,19 @@ function EditProductDialog({
         supplierId: form.supplierId || null,
         leadTimeDays: form.leadTimeDays ? Number(form.leadTimeDays) : null,
       });
+      // Save the bundle definition alongside the product. Sending isBundle=false clears it.
+      const validComponents = bundleRows
+        .filter((r) => r.componentProductId && Number(r.quantity) > 0)
+        .map((r) => ({ componentProductId: r.componentProductId, quantity: Number(r.quantity) }));
+      if (isBundle || bundle?.isBundle) {
+        await api.put(`/products/${product.id}/bundle`, {
+          isBundle,
+          components: isBundle ? validComponents : [],
+        });
+      }
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["low-stock"] });
+      qc.invalidateQueries({ queryKey: ["product-bundle", product.id] });
       toast.success("Product updated", form.name);
       handleClose();
     } catch (err: unknown) {
@@ -441,6 +488,9 @@ function EditProductDialog({
   function handleClose() {
     setForm({ name: "", unit: "", costPrice: "", sellingPrice: "", lowStockThreshold: "", category: "", subcategory: "", barcode: "", supplierId: "", leadTimeDays: "" });
     setLastProductId("");
+    setIsBundle(false);
+    setBundleRows([]);
+    setBundleSeededFor("");
     setError(null);
     onClose();
   }
@@ -546,9 +596,59 @@ function EditProductDialog({
                 </div>
               </div>
 
+              {/* Bundle / kit (Tier 2) — selling this depletes its components, not its own stock */}
+              <div className="border-t border-slate-200 dark:border-slate-800 pt-4">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
+                    checked={isBundle}
+                    onChange={(e) => { setIsBundle(e.target.checked); if (e.target.checked && bundleRows.length === 0) setBundleRows([{ componentProductId: "", quantity: "1" }]); }}
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">This is a bundle / kit</p>
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500">Selling it depletes the component products below (not its own stock).</p>
+                  </div>
+                </label>
+
+                {isBundle && (
+                  <div className="mt-3 space-y-2 pl-1">
+                    {bundleRows.map((row, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <select
+                          className="flex-1 h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
+                          value={row.componentProductId}
+                          onChange={(e) => setBundleRows((rs) => rs.map((r, j) => j === i ? { ...r, componentProductId: e.target.value } : r))}
+                        >
+                          <option value="">Pick a component…</option>
+                          {pickProducts?.filter((p) => p.id !== product.id && !p.isBundle).map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                        <Input
+                          type="number" min={0}
+                          className="w-20 h-9"
+                          value={row.quantity}
+                          onChange={(e) => setBundleRows((rs) => rs.map((r, j) => j === i ? { ...r, quantity: e.target.value } : r))}
+                          placeholder="Qty"
+                        />
+                        <button type="button" onClick={() => setBundleRows((rs) => rs.filter((_, j) => j !== i))} className="p-1 text-slate-400 hover:text-rose-500">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => setBundleRows((rs) => [...rs, { componentProductId: "", quantity: "1" }])} className="text-xs font-medium text-cyan-600 hover:underline inline-flex items-center gap-1">
+                      <Plus size={13} /> Add component
+                    </button>
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500">Quantity = units of each component per one bundle.</p>
+                  </div>
+                )}
+              </div>
+
               {error && <p className="text-xs text-rose-500">{error}</p>}
 
-              {/* Current stock (read-only, since stock is changed via inline edit / Restock / Stock-out) */}
+              {/* Current stock — not shown for bundles (they hold no stock of their own) */}
+              {!isBundle && (
               <div className="border-t border-slate-200 dark:border-slate-800 pt-4 mt-2">
                 <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Current stock</p>
                 <p className="text-2xl font-bold text-slate-900 dark:text-slate-50 tabular-nums">
@@ -559,6 +659,7 @@ function EditProductDialog({
                   Use the inline cell, Restock, or Stock-out actions to change stock — keeps the audit trail clean.
                 </p>
               </div>
+              )}
             </div>
           </DrawerBody>
           <DrawerFooter>

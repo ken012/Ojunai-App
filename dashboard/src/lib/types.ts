@@ -106,7 +106,22 @@ export interface ProductDto {
   barcode?: string;
   supplierId?: string;
   leadTimeDays?: number;
+  isBundle?: boolean;
   createdAtUtc: string;
+}
+
+export interface BundleComponentDto {
+  componentProductId: string;
+  componentName: string;
+  unit: string;
+  componentStock: number;
+  quantity: number;
+}
+
+export interface BundleDto {
+  productId: string;
+  isBundle: boolean;
+  components: BundleComponentDto[];
 }
 
 // ── Purchasing ───────────────────────────────────────────────
