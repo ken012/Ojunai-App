@@ -23,6 +23,11 @@ public interface IProductService
     /// client to load every product.
     /// </summary>
     Task<ProductStockStatsDto> GetStockStatsAsync(Guid businessId, string? search, string? category);
+
+    /// <summary>Get a product's bundle definition (its components), if any.</summary>
+    Task<BundleDto> GetBundleAsync(Guid businessId, Guid productId);
+    /// <summary>Set (or clear) a product's bundle components. Marks IsBundle accordingly.</summary>
+    Task<BundleDto> SetBundleAsync(Guid businessId, Guid productId, SetBundleRequest request);
 }
 
 public class ProductStockStatsDto

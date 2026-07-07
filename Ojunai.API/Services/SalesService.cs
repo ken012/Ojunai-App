@@ -49,11 +49,43 @@ public class SalesService : ISalesService
             .Where(p => p.BusinessId == businessId && productIds.Contains(p.Id) && p.IsActive)
             .ToDictionaryAsync(p => p.Id);
 
+        // Bundles: a sold bundle depletes its COMPONENT products' stock, not its own. Load the
+        // component maps + component products (tracked, so decrements persist and rowversion
+        // concurrency still applies). Non-bundle products are entirely unaffected by this.
+        var bundleIds = products.Values.Where(p => p.IsBundle).Select(p => p.Id).ToList();
+        var componentsByBundle = new Dictionary<Guid, List<BundleComponent>>();
+        var componentProducts = new Dictionary<Guid, Product>();
+        if (bundleIds.Count > 0)
+        {
+            var comps = await _db.BundleComponents
+                .Where(c => c.BusinessId == businessId && bundleIds.Contains(c.BundleProductId))
+                .ToListAsync();
+            componentsByBundle = comps.GroupBy(c => c.BundleProductId).ToDictionary(g => g.Key, g => g.ToList());
+            var compIds = comps.Select(c => c.ComponentProductId).Distinct().ToList();
+            componentProducts = await _db.Products
+                .Where(p => p.BusinessId == businessId && compIds.Contains(p.Id))
+                .ToDictionaryAsync(p => p.Id);
+        }
+
         foreach (var item in request.Items)
         {
             if (!products.TryGetValue(item.ProductId, out var product))
                 throw new KeyNotFoundException($"Product {item.ProductId} not found.");
-            if (product.CurrentStock < item.Quantity)
+            if (product.IsBundle)
+            {
+                var comps = componentsByBundle.GetValueOrDefault(product.Id) ?? new List<BundleComponent>();
+                if (comps.Count == 0)
+                    throw new InvalidOperationException($"'{product.Name}' is a bundle with no items set up yet. Edit it to add components.");
+                foreach (var c in comps)
+                {
+                    if (!componentProducts.TryGetValue(c.ComponentProductId, out var cp))
+                        throw new KeyNotFoundException($"A component of '{product.Name}' no longer exists. Fix the bundle before selling it.");
+                    var required = c.Quantity * item.Quantity;
+                    if (cp.CurrentStock < required)
+                        throw new InvalidOperationException($"Not enough '{cp.Name}' to make {item.Quantity:0.##} {product.Name}. Need {required:0.##} {cp.Unit}, have {cp.CurrentStock:0.##}.");
+                }
+            }
+            else if (product.CurrentStock < item.Quantity)
                 throw new InvalidOperationException($"Insufficient stock for '{product.Name}'. Available: {product.CurrentStock} {product.Unit}.");
         }
 
@@ -130,19 +162,43 @@ public class SalesService : ISalesService
                 TotalPrice = lineTotal
             });
 
-            product.CurrentStock -= itemReq.Quantity;
-
-            inventoryTxns.Add(new InventoryTransaction
+            if (product.IsBundle)
             {
-                BusinessId = businessId,
-                ProductId = itemReq.ProductId,
-                Type = InventoryTransactionType.StockOut,
-                Quantity = itemReq.Quantity,
-                Notes = $"Sale",
-                RecordedByUserId = recordedByUserId,
-                RecordedByName = recordedByName,
-                CreatedAtUtc = sale.CreatedAtUtc
-            });
+                // Deplete each component instead of the bundle itself.
+                foreach (var c in componentsByBundle.GetValueOrDefault(product.Id) ?? new List<BundleComponent>())
+                {
+                    var cp = componentProducts[c.ComponentProductId];
+                    var qty = c.Quantity * itemReq.Quantity;
+                    cp.CurrentStock -= qty;
+                    inventoryTxns.Add(new InventoryTransaction
+                    {
+                        BusinessId = businessId,
+                        ProductId = cp.Id,
+                        Type = InventoryTransactionType.StockOut,
+                        Quantity = qty,
+                        Notes = $"Sale (bundle: {product.Name})",
+                        RecordedByUserId = recordedByUserId,
+                        RecordedByName = recordedByName,
+                        CreatedAtUtc = sale.CreatedAtUtc
+                    });
+                }
+            }
+            else
+            {
+                product.CurrentStock -= itemReq.Quantity;
+
+                inventoryTxns.Add(new InventoryTransaction
+                {
+                    BusinessId = businessId,
+                    ProductId = itemReq.ProductId,
+                    Type = InventoryTransactionType.StockOut,
+                    Quantity = itemReq.Quantity,
+                    Notes = $"Sale",
+                    RecordedByUserId = recordedByUserId,
+                    RecordedByName = recordedByName,
+                    CreatedAtUtc = sale.CreatedAtUtc
+                });
+            }
         }
 
         sale.TotalAmount = total;

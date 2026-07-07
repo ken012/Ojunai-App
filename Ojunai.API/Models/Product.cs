@@ -26,6 +26,10 @@ public class Product
     // Barcode / EAN / UPC for scan-to-lookup. Not unique (merchants legitimately share codes).
     public string? Barcode { get; set; }
 
+    // Bundle/kit: when true, selling this product depletes its BundleComponents' stock instead of
+    // its own. Its own CurrentStock is not tracked and it's excluded from low-stock views.
+    public bool IsBundle { get; set; } = false;
+
     public string Source { get; set; } = "Manual";
     public Guid? ImportBatchId { get; set; }
     public Guid? RecordedByUserId { get; set; }

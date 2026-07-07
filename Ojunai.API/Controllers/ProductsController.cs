@@ -105,4 +105,14 @@ public class ProductsController : OjunaiBaseController
         await _products.DeleteAsync(BusinessId, id);
         return Ok(ApiResponse<object>.Ok(null!, "Product deleted."));
     }
+
+    [HttpGet("{id:guid}/bundle")]
+    [RequirePermission(Permission.ViewStock)]
+    public async Task<ActionResult<ApiResponse<BundleDto>>> GetBundle(Guid id)
+        => Ok(ApiResponse<BundleDto>.Ok(await _products.GetBundleAsync(BusinessId, id)));
+
+    [HttpPut("{id:guid}/bundle")]
+    [RequirePermission(Permission.ManageStock)]
+    public async Task<ActionResult<ApiResponse<BundleDto>>> SetBundle(Guid id, [FromBody] SetBundleRequest request)
+        => Ok(ApiResponse<BundleDto>.Ok(await _products.SetBundleAsync(BusinessId, id, request), "Bundle saved."));
 }

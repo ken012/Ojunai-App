@@ -152,7 +152,7 @@ public class AlertService : IAlertService
         if (business.AlertDashboardLowStock)
         {
             var lowStock = await _db.Products
-                .Where(p => p.BusinessId == businessId && p.IsActive && p.CurrentStock <= p.LowStockThreshold)
+                .Where(p => p.BusinessId == businessId && p.IsActive && !p.IsBundle && p.CurrentStock <= p.LowStockThreshold)
                 .OrderBy(p => p.CurrentStock)
                 .Take(10)
                 .ToListAsync();

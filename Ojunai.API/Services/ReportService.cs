@@ -32,7 +32,7 @@ public partial class ReportService : IReportService
         var (outstandingReceivables, outstandingPayables) = await GetOutstandingLedgerAsync(businessId);
 
         var lowStockCount = await _db.Products
-            .CountAsync(p => p.BusinessId == businessId && p.IsActive && p.CurrentStock <= p.LowStockThreshold);
+            .CountAsync(p => p.BusinessId == businessId && p.IsActive && !p.IsBundle && p.CurrentStock <= p.LowStockThreshold);
 
         // 7-day trend
         var sevenDaysAgo = todayUtc.AddDays(-6);
@@ -115,7 +115,7 @@ public partial class ReportService : IReportService
         var (receivables, payables) = await GetOutstandingLedgerAsync(businessId);
 
         var lowStockItems = await _db.Products
-            .Where(p => p.BusinessId == businessId && p.IsActive && p.CurrentStock <= p.LowStockThreshold)
+            .Where(p => p.BusinessId == businessId && p.IsActive && !p.IsBundle && p.CurrentStock <= p.LowStockThreshold)
             .Select(p => new ProductDto
             {
                 Id = p.Id, Name = p.Name, SKU = p.SKU, Unit = p.Unit,
@@ -174,7 +174,7 @@ public partial class ReportService : IReportService
             .ToListAsync();
 
         var lowStockItems = await _db.Products
-            .Where(p => p.BusinessId == businessId && p.IsActive && p.CurrentStock <= p.LowStockThreshold)
+            .Where(p => p.BusinessId == businessId && p.IsActive && !p.IsBundle && p.CurrentStock <= p.LowStockThreshold)
             .Select(p => new ProductDto
             {
                 Id = p.Id, Name = p.Name, SKU = p.SKU, Unit = p.Unit,

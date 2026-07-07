@@ -111,7 +111,7 @@ public class InventoryController : OjunaiBaseController
         if (AlertChannels.IsNone(owner.AlertChannel)) return;
 
         var lowStock = await _db.Products
-            .Where(p => p.BusinessId == BusinessId && p.IsActive && p.CurrentStock <= p.LowStockThreshold)
+            .Where(p => p.BusinessId == BusinessId && p.IsActive && !p.IsBundle && p.CurrentStock <= p.LowStockThreshold)
             .OrderBy(p => p.CurrentStock).Take(5).ToListAsync();
 
         if (lowStock.Count == 0) return;

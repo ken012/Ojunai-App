@@ -70,5 +70,35 @@ public class ProductDto
     public string? Barcode { get; set; }
     public Guid? SupplierId { get; set; }
     public int? LeadTimeDays { get; set; }
+    public bool IsBundle { get; set; }
     public DateTime CreatedAtUtc { get; set; }
+}
+
+// ── Bundles / kits ───────────────────────────────────────────
+public class BundleComponentDto
+{
+    public Guid ComponentProductId { get; set; }
+    public string ComponentName { get; set; } = string.Empty;
+    public string Unit { get; set; } = "unit";
+    public decimal ComponentStock { get; set; }
+    public decimal Quantity { get; set; }
+}
+
+public class BundleDto
+{
+    public Guid ProductId { get; set; }
+    public bool IsBundle { get; set; }
+    public List<BundleComponentDto> Components { get; set; } = new();
+}
+
+public class SetBundleComponentInput
+{
+    [Required] public Guid ComponentProductId { get; set; }
+    [Range(0.0001, 9999999)] public decimal Quantity { get; set; }
+}
+
+public class SetBundleRequest
+{
+    public bool IsBundle { get; set; }
+    public List<SetBundleComponentInput>? Components { get; set; }
 }

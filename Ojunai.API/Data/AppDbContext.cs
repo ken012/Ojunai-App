@@ -20,6 +20,7 @@ public class AppDbContext : DbContext
     public DbSet<PurchaseOrderItem> PurchaseOrderItems => Set<PurchaseOrderItem>();
     public DbSet<Stocktake> Stocktakes => Set<Stocktake>();
     public DbSet<StocktakeItem> StocktakeItems => Set<StocktakeItem>();
+    public DbSet<BundleComponent> BundleComponents => Set<BundleComponent>();
     public DbSet<MessageLog> MessageLogs => Set<MessageLog>();
     public DbSet<InboundMessageClaim> InboundMessageClaims => Set<InboundMessageClaim>();
     public DbSet<DailySummary> DailySummaries => Set<DailySummary>();
@@ -179,6 +180,13 @@ public class AppDbContext : DbContext
             e.Property(x => x.SystemQuantity).HasPrecision(18, 4);
             e.Property(x => x.CountedQuantity).HasPrecision(18, 4);
             e.Property(x => x.UnitCost).HasPrecision(18, 2);
+        });
+
+        mb.Entity<BundleComponent>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.BusinessId, x.BundleProductId });
+            e.Property(x => x.Quantity).HasPrecision(18, 4);
         });
 
         mb.Entity<Sale>(e =>

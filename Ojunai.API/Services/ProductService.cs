@@ -59,7 +59,7 @@ public class ProductService : IProductService
         if (normalized == "low")
             query = query.Where(p => p.CurrentStock <= p.LowStockThreshold && p.CurrentStock > 0);
         else if (normalized == "out")
-            query = query.Where(p => p.CurrentStock <= 0);
+            query = query.Where(p => p.CurrentStock <= 0 && !p.IsBundle);
         else if (normalized == "sufficient")
             query = query.Where(p => p.CurrentStock > p.LowStockThreshold);
 
@@ -218,7 +218,7 @@ public class ProductService : IProductService
     public async Task<List<ProductDto>> GetLowStockAsync(Guid businessId)
     {
         return await _db.Products
-            .Where(p => p.BusinessId == businessId && p.IsActive && p.CurrentStock <= p.LowStockThreshold)
+            .Where(p => p.BusinessId == businessId && p.IsActive && !p.IsBundle && p.CurrentStock <= p.LowStockThreshold)
             .OrderBy(p => p.CurrentStock)
             .Select(p => ToDto(p))
             .ToListAsync();
@@ -226,7 +226,8 @@ public class ProductService : IProductService
 
     public async Task<ProductStockStatsDto> GetStockStatsAsync(Guid businessId, string? search, string? category)
     {
-        var query = _db.Products.Where(p => p.BusinessId == businessId && p.IsActive);
+        // Bundles aren't stocked (their components are), so they're excluded from stock-level stats.
+        var query = _db.Products.Where(p => p.BusinessId == businessId && p.IsActive && !p.IsBundle);
         if (!string.IsNullOrWhiteSpace(search))
         {
             // Must mirror the same prefix-first matching as GetAllAsync so the filter chips
@@ -284,7 +285,7 @@ public class ProductService : IProductService
         SellingPrice = p.SellingPrice,
         CurrentStock = p.CurrentStock,
         LowStockThreshold = p.LowStockThreshold,
-        IsLowStock = p.CurrentStock <= p.LowStockThreshold,
+        IsLowStock = !p.IsBundle && p.CurrentStock <= p.LowStockThreshold,
         IsActive = p.IsActive,
         Category = p.Category,
         Subcategory = p.Subcategory,
@@ -295,6 +296,81 @@ public class ProductService : IProductService
         Barcode = p.Barcode,
         SupplierId = p.SupplierId,
         LeadTimeDays = p.LeadTimeDays,
+        IsBundle = p.IsBundle,
         CreatedAtUtc = p.CreatedAtUtc
     };
+
+    public async Task<BundleDto> GetBundleAsync(Guid businessId, Guid productId)
+    {
+        var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == productId && p.BusinessId == businessId)
+            ?? throw new KeyNotFoundException("Product not found.");
+
+        var comps = await _db.BundleComponents
+            .Where(c => c.BusinessId == businessId && c.BundleProductId == productId)
+            .ToListAsync();
+
+        var names = await _db.Products
+            .Where(p => p.BusinessId == businessId && comps.Select(c => c.ComponentProductId).Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id, p => new { p.Name, p.Unit, p.CurrentStock });
+
+        return new BundleDto
+        {
+            ProductId = product.Id,
+            IsBundle = product.IsBundle,
+            Components = comps.Select(c => new BundleComponentDto
+            {
+                ComponentProductId = c.ComponentProductId,
+                ComponentName = names.GetValueOrDefault(c.ComponentProductId)?.Name ?? "(deleted)",
+                Unit = names.GetValueOrDefault(c.ComponentProductId)?.Unit ?? "unit",
+                ComponentStock = names.GetValueOrDefault(c.ComponentProductId)?.CurrentStock ?? 0,
+                Quantity = c.Quantity,
+            }).ToList(),
+        };
+    }
+
+    public async Task<BundleDto> SetBundleAsync(Guid businessId, Guid productId, SetBundleRequest request)
+    {
+        var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == productId && p.BusinessId == businessId)
+            ?? throw new KeyNotFoundException("Product not found.");
+
+        // Replace the component set wholesale.
+        var existing = await _db.BundleComponents
+            .Where(c => c.BusinessId == businessId && c.BundleProductId == productId)
+            .ToListAsync();
+        _db.BundleComponents.RemoveRange(existing);
+
+        if (request.IsBundle)
+        {
+            var comps = (request.Components ?? new List<SetBundleComponentInput>())
+                .Where(c => c.Quantity > 0 && c.ComponentProductId != productId) // no self-reference
+                .ToList();
+            if (comps.Count == 0)
+                throw new InvalidOperationException("A bundle needs at least one component.");
+
+            var validIds = await _db.Products
+                .Where(p => p.BusinessId == businessId && comps.Select(c => c.ComponentProductId).Contains(p.Id) && !p.IsBundle)
+                .Select(p => p.Id)
+                .ToListAsync();
+            foreach (var c in comps)
+            {
+                if (!validIds.Contains(c.ComponentProductId))
+                    throw new InvalidOperationException("A component must be an existing, non-bundle product.");
+                _db.BundleComponents.Add(new BundleComponent
+                {
+                    BusinessId = businessId,
+                    BundleProductId = productId,
+                    ComponentProductId = c.ComponentProductId,
+                    Quantity = c.Quantity,
+                });
+            }
+            product.IsBundle = true;
+        }
+        else
+        {
+            product.IsBundle = false;
+        }
+
+        await _db.SaveChangesAsync();
+        return await GetBundleAsync(businessId, productId);
+    }
 }
