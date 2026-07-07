@@ -43,3 +43,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Throwaway venv for PDF generators
+scripts/.pdfvenv/
