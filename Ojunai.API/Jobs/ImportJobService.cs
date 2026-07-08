@@ -162,6 +162,16 @@ public class ImportJobService
             .Where(p => p.BusinessId == job.BusinessId && p.IsActive)
             .ToDictionaryAsync(p => p.Name.ToLower(), p => p);
 
+        // Supplier lookup for the optional "Supplier" column — match an existing supplier contact by
+        // name (case-insensitive). Match-only: an unknown name is ignored, never auto-created.
+        var supplierCache = (await _db.Contacts
+            .Where(c => c.BusinessId == job.BusinessId
+                && (c.Type == Models.ContactType.Supplier || c.Type == Models.ContactType.Both))
+            .Select(c => new { c.Id, c.Name })
+            .ToListAsync())
+            .GroupBy(c => c.Name.Trim().ToLowerInvariant())
+            .ToDictionary(g => g.Key, g => g.First().Id);
+
         _db.ChangeTracker.AutoDetectChangesEnabled = false;
         try
         {
@@ -210,6 +220,14 @@ public class ImportJobService
                     var csvSubcategory = row.GetValueOrDefault("subcategory");
                     var csvThreshold = CsvParser.ParseDecimal(row.GetValueOrDefault("threshold"));
 
+                    // New optional sourcing columns (Phase 1). All safe to leave blank.
+                    var csvSku = row.GetValueOrDefault("sku")?.Trim();
+                    var csvBarcode = row.GetValueOrDefault("barcode")?.Trim();
+                    var csvLeadTime = CsvParser.ParseDecimal(row.GetValueOrDefault("leadtime"));
+                    var csvSupplierName = row.GetValueOrDefault("supplier")?.Trim();
+                    Guid? csvSupplierId = !string.IsNullOrEmpty(csvSupplierName)
+                        && supplierCache.TryGetValue(csvSupplierName.ToLowerInvariant(), out var sid) ? sid : null;
+
                     Product product;
                     if (!productCache.TryGetValue(name!.ToLower(), out var existingProduct))
                     {
@@ -221,6 +239,7 @@ public class ImportJobService
                         {
                             BusinessId = job.BusinessId,
                             Name = name!,
+                            SKU = string.IsNullOrWhiteSpace(csvSku) ? null : csvSku,
                             Unit = inferredUnit,
                             CostPrice = costPrice,
                             SellingPrice = sellingPrice,
@@ -228,6 +247,9 @@ public class ImportJobService
                             LowStockThreshold = csvThreshold ?? 5,
                             Category = csvCategory ?? inferredCat,
                             Subcategory = csvSubcategory ?? inferredSubcat,
+                            Barcode = string.IsNullOrWhiteSpace(csvBarcode) ? null : csvBarcode,
+                            SupplierId = csvSupplierId,
+                            LeadTimeDays = csvLeadTime.HasValue ? (int)csvLeadTime.Value : null,
                             Source = EntrySource.Import,
                             ImportBatchId = job.Id,
                             RecordedByUserId = user?.Id,
@@ -259,6 +281,12 @@ public class ImportJobService
                         product.CurrentStock += qty!.Value;
                         if (costPrice.HasValue) product.CostPrice = costPrice;
                         if (sellingPrice.HasValue && !product.SellingPrice.HasValue) product.SellingPrice = sellingPrice;
+                        // Backfill the new fields only when currently empty — never clobber values the
+                        // merchant set in the UI by re-importing.
+                        if (!string.IsNullOrWhiteSpace(csvSku) && string.IsNullOrWhiteSpace(product.SKU)) product.SKU = csvSku;
+                        if (!string.IsNullOrWhiteSpace(csvBarcode) && string.IsNullOrWhiteSpace(product.Barcode)) product.Barcode = csvBarcode;
+                        if (csvSupplierId.HasValue && !product.SupplierId.HasValue) product.SupplierId = csvSupplierId;
+                        if (csvLeadTime.HasValue && !product.LeadTimeDays.HasValue) product.LeadTimeDays = (int)csvLeadTime.Value;
                         _db.Entry(product).State = EntityState.Modified;
 
                         _db.InventoryTransactions.Add(new InventoryTransaction

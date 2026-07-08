@@ -168,6 +168,7 @@ public class ProductService : IProductService
             ?? throw new KeyNotFoundException("Product not found.");
 
         if (request.Name != null) product.Name = request.Name;
+        if (request.SKU != null) product.SKU = string.IsNullOrWhiteSpace(request.SKU) ? null : request.SKU.Trim();
         if (request.Unit != null) product.Unit = request.Unit;
         if (request.CostPrice.HasValue) product.CostPrice = request.CostPrice;
         if (request.SellingPrice.HasValue) product.SellingPrice = request.SellingPrice;

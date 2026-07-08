@@ -21,6 +21,7 @@ public class CreateProductRequest
 public class UpdateProductRequest
 {
     [MinLength(1), MaxLength(200)] public string? Name { get; set; }
+    [MaxLength(100)] public string? SKU { get; set; }
     [MaxLength(50)] public string? Unit { get; set; }
     [Range(0, 999999999)] public decimal? CostPrice { get; set; }
     [Range(0, 999999999)] public decimal? SellingPrice { get; set; }

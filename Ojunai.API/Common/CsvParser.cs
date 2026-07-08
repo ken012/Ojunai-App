@@ -205,6 +205,24 @@ public static class CsvParser
         ["min stock"] = "threshold",
         ["reorder level"] = "threshold",
 
+        // Sourcing (Phase 1)
+        ["sku"] = "sku",
+        ["item code"] = "sku",
+        ["product code"] = "sku",
+        ["sku code"] = "sku",
+        ["barcode"] = "barcode",
+        ["bar code"] = "barcode",
+        ["ean"] = "barcode",
+        ["upc"] = "barcode",
+        ["supplier"] = "supplier",
+        ["supplier name"] = "supplier",
+        ["vendor"] = "supplier",
+        ["leadtime"] = "leadtime",
+        ["lead time"] = "leadtime",
+        ["lead days"] = "leadtime",
+        ["lead time (days)"] = "leadtime",
+        ["lead time days"] = "leadtime",
+
         // Customer
         ["customername"] = "customername",
         ["customer name"] = "customername",
