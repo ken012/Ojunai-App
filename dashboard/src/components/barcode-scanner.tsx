@@ -19,6 +19,13 @@ export function BarcodeScanner({ open, onClose, onScan }: {
   const readerRef = useRef<BrowserMultiFormatReader | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Keep the latest callbacks in refs so the camera effect depends ONLY on `open`. Without this the
+  // effect re-ran on every parent render (onScan/onClose are new identities each time), tearing down
+  // and restarting the camera constantly → a black, never-decoding feed even though the stream was live.
+  const onScanRef = useRef(onScan);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onScanRef.current = onScan; onCloseRef.current = onClose; });
+
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -37,12 +44,16 @@ export function BarcodeScanner({ open, onClose, onScan }: {
           if (result && !cancelled) {
             const text = result.getText();
             if (text) {
-              onScan(text);
-              onClose();
+              onScanRef.current(text);
+              onCloseRef.current();
             }
           }
         },
       )
+      .then(() => {
+        // Some browsers (notably iOS Safari) don't auto-start playback; nudge it.
+        videoRef.current?.play?.().catch(() => { /* autoplay policy — the stream still renders */ });
+      })
       .catch((e: unknown) => {
         if (cancelled) return;
         const name = (e as { name?: string })?.name;
@@ -60,7 +71,7 @@ export function BarcodeScanner({ open, onClose, onScan }: {
       try { reader.reset(); } catch { /* already stopped */ }
       readerRef.current = null;
     };
-  }, [open, onScan, onClose]);
+  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
