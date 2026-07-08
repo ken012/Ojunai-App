@@ -350,6 +350,9 @@ function AddProductDialog({ open, onClose, initialBarcode }: { open: boolean; on
             </div>
           </div>
           {error && <p className="text-xs text-red-500">{error}</p>}
+          <p className="text-[11px] text-slate-400 dark:text-slate-500 border-t border-slate-100 dark:border-slate-800 pt-2">
+            Selling this as a <span className="font-medium">kit/bundle</span> or in <span className="font-medium">sizes/colours</span>? Save it, then open it to tick &ldquo;bundle&rdquo;, or use the <span className="font-medium">Variants</span> button in the toolbar.
+          </p>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={handleClose} disabled={saving}>Cancel</Button>
@@ -1484,7 +1487,6 @@ function ProductRow({
 export default function InventoryPage() {
   const { toast } = useToast();
   const router = useRouter();
-  const business = useBusiness();
   const [adding, setAdding] = useState(false);
   const [addingHold, setAddingHold] = useState(false);
   const [editing, setEditing] = useState<ProductDto | null>(null);
@@ -1760,13 +1762,11 @@ export default function InventoryPage() {
             <Button variant="outline" onClick={() => setScanFind(true)} title="Scan a barcode to find a product">
               <ScanLine size={14} className="mr-1" /> Scan
             </Button>
-            {business?.variantsEnabled && (
-              <Button variant="outline" onClick={() => router.push("/variants")}>
-                <Layers size={14} className="mr-1" /> Variants
-              </Button>
-            )}
             {hasPermission(Permission.ManageStock) && (
               <>
+                <Button variant="outline" onClick={() => router.push("/variants")} title="Sell products in sizes, colours, etc.">
+                  <Layers size={14} className="mr-1" /> Variants
+                </Button>
                 <Button variant="outline" onClick={() => router.push("/expiring")}>
                   <CalendarClock size={14} className="mr-1" /> Expiry
                 </Button>
