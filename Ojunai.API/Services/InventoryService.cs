@@ -33,6 +33,21 @@ public class InventoryService : IInventoryService
         product.CurrentStock += request.Quantity;
         if (request.UnitCost.HasValue) product.CostPrice = request.UnitCost;
 
+        // Batch/expiry: record a lot for batch-tracked products (additive; no-op otherwise).
+        if (product.TracksBatches)
+        {
+            _db.ProductBatches.Add(new ProductBatch
+            {
+                BusinessId = businessId,
+                ProductId = product.Id,
+                Quantity = request.Quantity,
+                ExpiryDate = request.ExpiryDate,
+                LotNumber = string.IsNullOrWhiteSpace(request.LotNumber) ? null : request.LotNumber.Trim(),
+                CostPrice = request.UnitCost,
+                ReceivedAtUtc = createdAtUtc ?? DateTime.UtcNow,
+            });
+        }
+
         _db.InventoryTransactions.Add(txn);
         await _db.SaveChangesAsync();
         return ToDto(txn, product.Name, product.Unit);

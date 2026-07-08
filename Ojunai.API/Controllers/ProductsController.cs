@@ -1,5 +1,6 @@
 using Ojunai.API.Common;
 using Ojunai.API.DTOs.Products;
+using Ojunai.API.DTOs.Inventory;
 using Ojunai.API.Services.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,10 +10,11 @@ namespace Ojunai.API.Controllers;
 public class ProductsController : OjunaiBaseController
 {
     private readonly IProductService _products;
+    private readonly IProductBatchService _batches;
     private readonly Data.AppDbContext _db;
     private readonly PlanGuard _planGuard;
 
-    public ProductsController(IProductService products, Data.AppDbContext db, PlanGuard planGuard) { _products = products; _db = db; _planGuard = planGuard; }
+    public ProductsController(IProductService products, IProductBatchService batches, Data.AppDbContext db, PlanGuard planGuard) { _products = products; _batches = batches; _db = db; _planGuard = planGuard; }
 
     [HttpGet]
     [RequirePermission(Permission.ViewStock)]
@@ -105,6 +107,25 @@ public class ProductsController : OjunaiBaseController
     {
         await _products.DeleteAsync(BusinessId, id);
         return Ok(ApiResponse<object>.Ok(null!, "Product deleted."));
+    }
+
+    [HttpGet("expiring")]
+    [RequirePermission(Permission.ViewStock)]
+    public async Task<ActionResult<ApiResponse<List<ProductBatchDto>>>> Expiring([FromQuery] int days = 30)
+        => Ok(ApiResponse<List<ProductBatchDto>>.Ok(await _batches.ExpiringAsync(BusinessId, days)));
+
+    [HttpGet("{id:guid}/batches")]
+    [RequirePermission(Permission.ViewStock)]
+    public async Task<ActionResult<ApiResponse<List<ProductBatchDto>>>> GetBatches(Guid id)
+        => Ok(ApiResponse<List<ProductBatchDto>>.Ok(await _batches.ListAsync(BusinessId, id)));
+
+    [HttpPost("{id:guid}/batches/{batchId:guid}/write-off")]
+    [RequirePermission(Permission.ManageStock)]
+    public async Task<ActionResult<ApiResponse<List<ProductBatchDto>>>> WriteOffBatch(Guid id, Guid batchId, [FromBody] WriteOffBatchRequest request)
+    {
+        var user = await _db.Users.FindAsync(UserId);
+        var result = await _batches.WriteOffAsync(BusinessId, id, batchId, request, user?.Id, user?.FullName);
+        return Ok(ApiResponse<List<ProductBatchDto>>.Ok(result, "Lot written off."));
     }
 
     [HttpGet("{id:guid}/bundle")]

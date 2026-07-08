@@ -8,6 +8,30 @@ public class StockInRequest
     [Range(0.001, 999999)] public decimal Quantity { get; set; }
     [Range(0, 999999999)] public decimal? UnitCost { get; set; }
     [MaxLength(500)] public string? Notes { get; set; }
+    // Batch/expiry — only used when the product tracks batches. Additive; ignored otherwise.
+    public DateOnly? ExpiryDate { get; set; }
+    [MaxLength(80)] public string? LotNumber { get; set; }
+}
+
+// ── Batch / expiry ───────────────────────────────────────────
+public class ProductBatchDto
+{
+    public Guid Id { get; set; }
+    public Guid ProductId { get; set; }
+    public string ProductName { get; set; } = string.Empty;
+    public string Unit { get; set; } = "unit";
+    public decimal Quantity { get; set; }
+    public DateOnly? ExpiryDate { get; set; }
+    public string? LotNumber { get; set; }
+    public int? DaysToExpiry { get; set; }
+    public bool IsExpired { get; set; }
+    public DateTime ReceivedAtUtc { get; set; }
+}
+
+public class WriteOffBatchRequest
+{
+    /// <summary>How much of the lot to write off. Null/0 = the whole remaining quantity.</summary>
+    [Range(0, 999999)] public decimal? Quantity { get; set; }
 }
 
 public class StockOutRequest

@@ -180,6 +180,7 @@ public class ProductService : IProductService
         if (request.Barcode != null) product.Barcode = string.IsNullOrWhiteSpace(request.Barcode) ? null : request.Barcode.Trim();
         if (request.SupplierId.HasValue) product.SupplierId = request.SupplierId.Value == Guid.Empty ? null : request.SupplierId;
         if (request.LeadTimeDays.HasValue) product.LeadTimeDays = request.LeadTimeDays.Value;
+        if (request.TracksBatches.HasValue) product.TracksBatches = request.TracksBatches.Value;
         if (recordedByUserId.HasValue) { product.RecordedByUserId = recordedByUserId; product.RecordedByName = recordedByName; }
 
         await _db.SaveChangesAsync();
@@ -303,6 +304,7 @@ public class ProductService : IProductService
         SupplierId = p.SupplierId,
         LeadTimeDays = p.LeadTimeDays,
         IsBundle = p.IsBundle,
+        TracksBatches = p.TracksBatches,
         CreatedAtUtc = p.CreatedAtUtc
     };
 

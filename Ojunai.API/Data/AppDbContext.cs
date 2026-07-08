@@ -22,6 +22,7 @@ public class AppDbContext : DbContext
     public DbSet<StocktakeItem> StocktakeItems => Set<StocktakeItem>();
     public DbSet<BundleComponent> BundleComponents => Set<BundleComponent>();
     public DbSet<VariantGroup> VariantGroups => Set<VariantGroup>();
+    public DbSet<ProductBatch> ProductBatches => Set<ProductBatch>();
     public DbSet<MessageLog> MessageLogs => Set<MessageLog>();
     public DbSet<InboundMessageClaim> InboundMessageClaims => Set<InboundMessageClaim>();
     public DbSet<DailySummary> DailySummaries => Set<DailySummary>();
@@ -201,6 +202,20 @@ public class AppDbContext : DbContext
             e.HasOne(x => x.Business)
              .WithMany()
              .HasForeignKey(x => x.BusinessId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        mb.Entity<ProductBatch>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.BusinessId, x.ProductId });
+            e.HasIndex(x => new { x.BusinessId, x.ExpiryDate });
+            e.Property(x => x.Quantity).HasPrecision(18, 4);
+            e.Property(x => x.CostPrice).HasPrecision(18, 2);
+            e.Property(x => x.LotNumber).HasMaxLength(80);
+            e.HasOne(x => x.Product)
+             .WithMany()
+             .HasForeignKey(x => x.ProductId)
              .OnDelete(DeleteBehavior.Cascade);
         });
 

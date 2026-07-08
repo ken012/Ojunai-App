@@ -37,6 +37,11 @@ public class Product
     // JSON of this variant's option values, e.g. {"Size":"M","Color":"Red"}.
     public string? VariantOptions { get; set; }
 
+    // Expiry/batch tracking (Tier 3, opt-in per product). When true, stock-ins can record a lot with
+    // an expiry date; expiring lots surface in the expiry report + can be written off. Off by default;
+    // products without it behave exactly as before.
+    public bool TracksBatches { get; set; } = false;
+
     public string Source { get; set; } = "Manual";
     public Guid? ImportBatchId { get; set; }
     public Guid? RecordedByUserId { get; set; }

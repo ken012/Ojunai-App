@@ -33,6 +33,7 @@ public class UpdateProductRequest
     [MaxLength(64)] public string? Barcode { get; set; }
     public Guid? SupplierId { get; set; }
     [Range(0, 3650)] public int? LeadTimeDays { get; set; }
+    public bool? TracksBatches { get; set; }
 }
 
 public class UpdateStockRequest
@@ -71,6 +72,7 @@ public class ProductDto
     public Guid? SupplierId { get; set; }
     public int? LeadTimeDays { get; set; }
     public bool IsBundle { get; set; }
+    public bool TracksBatches { get; set; }
     public DateTime CreatedAtUtc { get; set; }
 }
 
