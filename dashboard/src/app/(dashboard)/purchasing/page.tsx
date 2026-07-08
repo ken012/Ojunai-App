@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
-import { formatNaira, formatDateTime } from "@/lib/format";
+import { formatNaira, formatDateTime, pluralUnit } from "@/lib/format";
 import { hasPermission, Permission } from "@/lib/permissions";
 import type { PurchaseOrderDto, PurchaseOrderStatus, ContactDto, ProductDto, PaginatedResult } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
@@ -376,7 +376,7 @@ function PODetailDialog({ id, canManage, onClose }: { id: string; canManage: boo
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{it.productName}</p>
                         <p className="text-[11px] text-slate-400">
-                          {it.quantityReceived}/{it.quantityOrdered} {it.unit} received · {formatNaira(it.unitCost)} each
+                          {it.quantityReceived}/{it.quantityOrdered} {pluralUnit(it.quantityOrdered, it.unit)} received · {formatNaira(it.unitCost)} each
                         </p>
                       </div>
                       {mode === "receive" && remaining > 0 ? (

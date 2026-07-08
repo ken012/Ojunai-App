@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { formatNaira } from "@/lib/format";
+import { formatNaira, pluralUnit } from "@/lib/format";
 import { useBusiness } from "@/lib/data-sync";
 import type {
   DashboardOverviewDto,
@@ -316,7 +316,7 @@ export default function TodayPage() {
         severity: p.currentStock === 0 ? "high" : "med",
         icon: <Package size={14} />,
         title: p.name,
-        meta: p.currentStock === 0 ? "Out of stock" : `${p.currentStock} ${p.unit} left · threshold ${p.lowStockThreshold}`,
+        meta: p.currentStock === 0 ? "Out of stock" : `${p.currentStock} ${pluralUnit(p.currentStock, p.unit)} left · threshold ${p.lowStockThreshold}`,
         ctaLabel: "Restock",
         onCta: () => router.push(`/inventory?focus=${p.id}`),
       });

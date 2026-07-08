@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { formatNaira } from "@/lib/format";
+import { formatNaira, pluralUnit } from "@/lib/format";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { useBusiness } from "@/lib/data-sync";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
@@ -311,9 +311,9 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                         <span className={`text-xs ${p.urgency === "critical" ? "text-red-500" : p.urgency === "warning" ? "text-amber-500" : "text-green-500"}`}>●</span>
                         <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">{p.productName}</p>
                       </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 ml-5">{p.currentStock} {p.unit} left — ~{p.daysLeft} days at {p.dailyRate}/{p.unit} per day</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 ml-5">{p.currentStock} {pluralUnit(p.currentStock, p.unit)} left — ~{p.daysLeft} days at {p.dailyRate}/{p.unit} per day</p>
                     </div>
-                    {p.restockQty > 0 && (<Badge variant="outline" className="text-xs ml-2 shrink-0">Restock {p.restockQty} {p.unit}</Badge>)}
+                    {p.restockQty > 0 && (<Badge variant="outline" className="text-xs ml-2 shrink-0">Restock {p.restockQty} {pluralUnit(p.restockQty, p.unit)}</Badge>)}
                   </div>
                 ))}
               </div>
@@ -328,7 +328,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                   <div key={p.productId} className="flex items-center justify-between border rounded-lg px-3 py-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">{p.productName}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">{p.currentStock} {p.unit} in stock — {p.daysSinceLastSale >= 0 ? `last sold ${p.daysSinceLastSale} days ago` : "never sold"}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{p.currentStock} {pluralUnit(p.currentStock, p.unit)} in stock — {p.daysSinceLastSale >= 0 ? `last sold ${p.daysSinceLastSale} days ago` : "never sold"}</p>
                     </div>
                   </div>
                 ))}
@@ -377,7 +377,7 @@ function OverviewTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                     <p className="text-xs text-slate-400 dark:text-slate-500 mb-1">{s.saleCount} sale{s.saleCount !== 1 ? "s" : ""}</p>
                     {s.items.slice(0, 5).map((item) => (
                       <div key={item.productName} className="flex justify-between text-xs py-0.5">
-                        <span className="text-slate-600 dark:text-slate-400 truncate">{item.quantity} {item.unit} {item.productName}</span>
+                        <span className="text-slate-600 dark:text-slate-400 truncate">{item.quantity} {pluralUnit(item.quantity, item.unit)} {item.productName}</span>
                         <span className="text-slate-900 dark:text-slate-50 font-medium ml-2 shrink-0">{formatNaira(item.revenue)}</span>
                       </div>
                     ))}
@@ -1300,11 +1300,11 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                         <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">{r.productName}</p>
                       </div>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        {r.currentStock} {r.unit} left — {r.dailyVelocity}/day velocity
+                        {r.currentStock} {pluralUnit(r.currentStock, r.unit)} left — {r.dailyVelocity}/day velocity
                       </p>
                     </div>
                     <div className="text-right ml-2 shrink-0">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-50">Reorder {r.suggestedReorderQty} {r.unit}</p>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-50">Reorder {r.suggestedReorderQty} {pluralUnit(r.suggestedReorderQty, r.unit)}</p>
                       {r.estimatedCost > 0 && <p className="text-xs text-slate-400 dark:text-slate-500">~{formatNaira(r.estimatedCost)}</p>}
                     </div>
                   </div>
@@ -1334,7 +1334,7 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                     {turnover.slice(0, 30).map((t) => (
                       <tr key={t.productId} className="border-b border-slate-100 dark:border-slate-800">
                         <td className="py-2 text-slate-900 dark:text-slate-50">{t.productName}</td>
-                        <td className="text-right text-slate-600 dark:text-slate-400">{t.currentStock} {t.unit}</td>
+                        <td className="text-right text-slate-600 dark:text-slate-400">{t.currentStock} {pluralUnit(t.currentStock, t.unit)}</td>
                         <td className="text-right text-slate-600 dark:text-slate-400">{t.soldLast30Days}</td>
                         <td className="text-right text-slate-600 dark:text-slate-400">{t.daysOfStockRemaining >= 999 ? "∞" : t.daysOfStockRemaining}</td>
                         <td className="text-right text-slate-600 dark:text-slate-400">{formatNaira(t.inventoryValue)}</td>
@@ -1377,7 +1377,7 @@ function InventoryTab({ hasAdvanced }: { hasAdvanced: boolean }) {
                       <span className="text-slate-900 dark:text-slate-50 truncate">{w.productName}</span>
                       <div className="text-right ml-2 shrink-0">
                         <span className="text-red-600 font-medium">{formatNaira(w.estimatedLoss)}</span>
-                        <span className="text-slate-400 dark:text-slate-500 ml-2">({w.quantityDamaged} {w.unit})</span>
+                        <span className="text-slate-400 dark:text-slate-500 ml-2">({w.quantityDamaged} {pluralUnit(w.quantityDamaged, w.unit)})</span>
                       </div>
                     </div>
                   ))}

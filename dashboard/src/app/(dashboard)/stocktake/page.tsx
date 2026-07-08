@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
-import { formatNaira, formatDateTime } from "@/lib/format";
+import { formatNaira, formatDateTime, pluralUnit } from "@/lib/format";
 import { hasPermission, Permission } from "@/lib/permissions";
 import { CATEGORY_NAMES } from "@/lib/categories";
 import type { StocktakeDto, StocktakeStatus, PaginatedResult } from "@/lib/types";
@@ -266,7 +266,7 @@ function CountView({ id, canManage, onBack }: { id: string; canManage: boolean; 
                     <div className="col-span-5 min-w-0">
                       <p className="text-sm text-slate-800 dark:text-slate-200 truncate">{it.productName}</p>
                     </div>
-                    <div className="col-span-2 text-right text-sm text-slate-500 tabular-nums">{it.systemQuantity} <span className="text-[10px] text-slate-400">{it.unit}</span></div>
+                    <div className="col-span-2 text-right text-sm text-slate-500 tabular-nums">{it.systemQuantity} <span className="text-[10px] text-slate-400">{pluralUnit(it.systemQuantity, it.unit)}</span></div>
                     <div className="col-span-3">
                       {isDraft && canManage ? (
                         <Input

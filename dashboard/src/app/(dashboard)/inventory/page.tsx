@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { useStickyState } from "@/lib/sticky-state";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, fetchAllPaged } from "@/lib/api";
-import { formatNaira } from "@/lib/format";
+import { formatNaira, pluralUnit } from "@/lib/format";
 import type { PaginatedResult, ProductDto, StockHoldDto } from "@/lib/types";
 import { CATEGORIES, CATEGORY_NAMES } from "@/lib/categories";
 import { useBusiness } from "@/lib/data-sync";
@@ -196,10 +196,10 @@ function ProductCard({
               <>
                 <p className="text-2xl font-bold text-slate-900 dark:text-slate-50 tabular-nums">
                   {product.currentStock}
-                  <span className="text-sm font-normal text-slate-500 dark:text-slate-400 ml-1">{product.unit}</span>
+                  <span className="text-sm font-normal text-slate-500 dark:text-slate-400 ml-1">{pluralUnit(product.currentStock, product.unit)}</span>
                 </p>
                 <p className="text-xs text-slate-400 dark:text-slate-500">
-                  Threshold: {product.lowStockThreshold} {product.unit}
+                  Threshold: {product.lowStockThreshold} {pluralUnit(product.lowStockThreshold, product.unit)}
                 </p>
               </>
             )}
@@ -681,7 +681,7 @@ function EditProductDialog({
                 <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Current stock</p>
                 <p className="text-2xl font-bold text-slate-900 dark:text-slate-50 tabular-nums">
                   {product.currentStock}
-                  <span className="text-sm font-normal text-slate-500 dark:text-slate-400 ml-1.5">{product.unit}</span>
+                  <span className="text-sm font-normal text-slate-500 dark:text-slate-400 ml-1.5">{pluralUnit(product.currentStock, product.unit)}</span>
                 </p>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
                   Use the inline cell, Restock, or Stock-out actions to change stock — keeps the audit trail clean.
@@ -762,7 +762,7 @@ function AddHoldDialog({
               <option value="">Select product</option>
               {products.filter((p) => p.currentStock > 0).map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} ({p.currentStock} {p.unit} available)
+                  {p.name} ({p.currentStock} {pluralUnit(p.currentStock, p.unit)} available)
                 </option>
               ))}
             </select>
@@ -913,7 +913,7 @@ function DamagedDialog({ product, open, onClose }: { product: ProductDto | null;
             <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
               <p className="text-sm font-medium text-amber-900">{product.name}</p>
               <p className="text-xs text-amber-700 mt-0.5">
-                Current stock: {product.currentStock} {product.unit}
+                Current stock: {product.currentStock} {pluralUnit(product.currentStock, product.unit)}
               </p>
             </div>
             <div>
@@ -1001,7 +1001,7 @@ function StockOutDialog({ product, open, onClose }: { product: ProductDto | null
             <div className="rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3">
               <p className="text-sm font-medium text-slate-900 dark:text-slate-50">{product.name}</p>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Current stock: {product.currentStock} {product.unit}
+                Current stock: {product.currentStock} {pluralUnit(product.currentStock, product.unit)}
               </p>
             </div>
             <div>
@@ -1095,7 +1095,7 @@ function RestockDialog({ product, open, onClose }: { product: ProductDto | null;
             <div className="rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-3">
               <p className="text-sm font-medium text-slate-900 dark:text-slate-50">{product.name}</p>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Current stock: {product.currentStock} {product.unit}
+                Current stock: {product.currentStock} {pluralUnit(product.currentStock, product.unit)}
               </p>
             </div>
             <div>
@@ -1207,7 +1207,7 @@ function WastageDialog({ open, onClose, products }: { open: boolean; onClose: ()
             >
               <option value="">Select product</option>
               {products.filter((p) => p.currentStock > 0).map((p) => (
-                <option key={p.id} value={p.id}>{p.name} ({p.currentStock} {p.unit} available)</option>
+                <option key={p.id} value={p.id}>{p.name} ({p.currentStock} {pluralUnit(p.currentStock, p.unit)} available)</option>
               ))}
             </select>
           </div>
@@ -1423,7 +1423,7 @@ function ProductRow({
         <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider">Stock</p>
         <InlineNumericCell
           value={product.currentStock}
-          suffix={` ${product.unit ?? ""}`.trimEnd()}
+          suffix={` ${pluralUnit(product.currentStock, product.unit)}`.trimEnd()}
           step={1}
           min={0}
           onSave={onSaveStock}
@@ -1833,7 +1833,7 @@ export default function InventoryPage() {
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">
-                      {hold.quantity} {hold.unit} of {hold.productName}
+                      {hold.quantity} {pluralUnit(hold.quantity, hold.unit)} of {hold.productName}
                     </p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                       For <strong>{hold.contactName}</strong> — {formatDateTime(hold.createdAtUtc)}

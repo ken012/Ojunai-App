@@ -10,7 +10,7 @@ import { hasPermission, Permission } from "@/lib/permissions";
 import { useBusiness } from "@/lib/data-sync";
 import { useToast } from "@/components/toast";
 import { Drawer, DrawerHeader, DrawerBody, DrawerFooter } from "@/components/ui/drawer";
-import { formatNaira, formatDateTime } from "@/lib/format";
+import { formatNaira, formatDateTime, pluralUnit } from "@/lib/format";
 import type { PaginatedResult, SaleSummaryDto, SaleDto, ProductDto, ContactDto, ApiResponse } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -533,18 +533,18 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
     return items.map(p => ({
       value: p.id,
       label: p.name,
-      secondary: `${p.currentStock} ${p.unit}` + (p.sellingPrice ? ` · ${biz?.currency ?? ""}${p.sellingPrice}` : ""),
+      secondary: `${p.currentStock} ${pluralUnit(p.currentStock, p.unit)}` + (p.sellingPrice ? ` · ${biz?.currency ?? ""}${p.sellingPrice}` : ""),
     }));
   }, [biz?.currency]);
 
   const resolveProduct = useCallback(async (id: string) => {
     const cached = productCache[id];
-    if (cached) return { value: cached.id, label: cached.name, secondary: `${cached.currentStock} ${cached.unit}` };
+    if (cached) return { value: cached.id, label: cached.name, secondary: `${cached.currentStock} ${pluralUnit(cached.currentStock, cached.unit)}` };
     try {
       const { data } = await api.get<{ data: ProductDto }>(`/products/${id}`);
       const p = data.data;
       setProductCache(prev => ({ ...prev, [p.id]: p }));
-      return { value: p.id, label: p.name, secondary: `${p.currentStock} ${p.unit}` };
+      return { value: p.id, label: p.name, secondary: `${p.currentStock} ${pluralUnit(p.currentStock, p.unit)}` };
     } catch { return null; }
   }, [productCache]);
 
@@ -1026,7 +1026,7 @@ function SaleDetailDialog({
                 {detail.items.map((item) => (
                   <div key={item.productId} className="flex justify-between text-sm">
                     <span className="text-slate-700 dark:text-slate-300">
-                      {item.quantity} {item.unit} {item.productName}
+                      {item.quantity} {pluralUnit(item.quantity, item.unit)} {item.productName}
                       <span className="text-slate-400 dark:text-slate-500 ml-1">@ {formatNaira(item.unitPrice)}</span>
                     </span>
                     <span className="font-semibold text-slate-900 dark:text-slate-50 tabular-nums ml-2">{formatNaira(item.totalPrice)}</span>

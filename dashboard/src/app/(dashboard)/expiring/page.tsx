@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { pluralUnit } from "@/lib/format";
 import { PageHeader } from "@/components/page-header";
 import { hasPermission, Permission } from "@/lib/permissions";
 import type { ProductBatchDto } from "@/lib/types";
@@ -31,7 +32,7 @@ export default function ExpiringPage() {
   });
 
   async function writeOff(b: ProductBatchDto) {
-    if (!confirm(`Write off ${b.quantity} ${b.unit} of ${b.productName}? This records a wastage and reduces stock.`)) return;
+    if (!confirm(`Write off ${b.quantity} ${pluralUnit(b.quantity, b.unit)} of ${b.productName}? This records a wastage and reduces stock.`)) return;
     setBusy(b.id);
     try {
       await api.post(`/products/${b.productId}/batches/${b.id}/write-off`, {});
@@ -81,7 +82,7 @@ export default function ExpiringPage() {
                 <div className="min-w-0">
                   <p className="font-medium text-sm text-slate-900 dark:text-slate-50 truncate">{b.productName}</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    {b.quantity} {b.unit}{b.lotNumber ? ` · lot ${b.lotNumber}` : ""}
+                    {b.quantity} {pluralUnit(b.quantity, b.unit)}{b.lotNumber ? ` · lot ${b.lotNumber}` : ""}
                     {" · "}
                     {b.isExpired ? (
                       <span className="text-rose-600 font-medium inline-flex items-center gap-1"><AlertTriangle size={11} /> expired {b.expiryDate}</span>

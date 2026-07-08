@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
-import { formatNaira } from "@/lib/format";
+import { formatNaira, pluralUnit } from "@/lib/format";
 import { hasPermission, Permission } from "@/lib/permissions";
 import { useBusiness, useDataSync } from "@/lib/data-sync";
 import type { VariantGroupDto } from "@/lib/types";
@@ -301,7 +301,7 @@ function StyleView({ id, canManage, onBack }: { id: string; canManage: boolean; 
                     {v.sku && <p className="text-[10px] text-slate-400 font-mono">SKU {v.sku}</p>}
                   </div>
                   <div className={`col-span-2 text-right text-sm tabular-nums ${v.isLowStock ? "text-amber-600 font-medium" : "text-slate-600 dark:text-slate-300"}`}>
-                    {v.currentStock} <span className="text-[10px] text-slate-400">{v.unit}</span>
+                    {v.currentStock} <span className="text-[10px] text-slate-400">{pluralUnit(v.currentStock, v.unit)}</span>
                   </div>
                   <div className="col-span-2">
                     {canManage ? (
