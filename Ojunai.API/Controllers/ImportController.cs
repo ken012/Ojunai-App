@@ -167,7 +167,7 @@ public class ImportController : OjunaiBaseController
             FileName = SanitizeFileName(file.FileName),
             TotalRows = rowCount,
             ImportMode = mode,
-            SkipExpenses = mode == "existing_stock" || mode == "price_update"
+            SkipExpenses = mode == "existing_stock" || mode == "price_update" || mode == "update_details"
         };
         _db.ImportJobs.Add(job);
         await _db.SaveChangesAsync();

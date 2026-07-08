@@ -156,7 +156,8 @@ public class ImportJobService
     {
         var mode = job.ImportMode ?? "new_purchase";
         var isPriceUpdate = mode == "price_update";
-        var skipExpenses = mode == "existing_stock" || mode == "price_update";
+        var isUpdateDetails = mode == "update_details";
+        var skipExpenses = mode == "existing_stock" || mode == "price_update" || mode == "update_details";
 
         var productCache = await _db.Products
             .Where(p => p.BusinessId == job.BusinessId && p.IsActive)
@@ -199,6 +200,44 @@ public class ImportJobService
                         }
                         if (costPrice.HasValue) existing.CostPrice = costPrice;
                         if (sellingPrice.HasValue) existing.SellingPrice = sellingPrice;
+                        _db.Entry(existing).State = EntityState.Modified;
+                        job.SuccessCount++;
+                        job.ProcessedRows = i + 1;
+                        if ((i + 1) % ProgressBatchSize == 0) { _db.ChangeTracker.DetectChanges(); await _db.SaveChangesAsync(); }
+                        continue;
+                    }
+
+                    // Update-details mode: overwrite fields on EXISTING products; no stock change, no
+                    // expense, no Date needed. Safe for export → edit → re-import bulk edits.
+                    if (isUpdateDetails)
+                    {
+                        if (!productCache.TryGetValue(name!.ToLower(), out var existing))
+                        {
+                            errors.Add($"Row {rowNum}: Product '{name}' not found — skipped (details update only applies to existing products)");
+                            continue;
+                        }
+                        if (costPrice.HasValue) existing.CostPrice = costPrice;
+                        if (sellingPrice.HasValue) existing.SellingPrice = sellingPrice;
+                        var uSku = row.GetValueOrDefault("sku")?.Trim();
+                        if (!string.IsNullOrWhiteSpace(uSku)) existing.SKU = uSku;
+                        var uBarcode = row.GetValueOrDefault("barcode")?.Trim();
+                        if (!string.IsNullOrWhiteSpace(uBarcode)) existing.Barcode = uBarcode;
+                        var uUnit = row.GetValueOrDefault("unit")?.Trim();
+                        if (!string.IsNullOrWhiteSpace(uUnit)) existing.Unit = uUnit;
+                        var uCat = row.GetValueOrDefault("category")?.Trim();
+                        if (!string.IsNullOrWhiteSpace(uCat)) existing.Category = uCat;
+                        var uSub = row.GetValueOrDefault("subcategory")?.Trim();
+                        if (!string.IsNullOrWhiteSpace(uSub)) existing.Subcategory = uSub;
+                        var uThreshold = CsvParser.ParseDecimal(row.GetValueOrDefault("threshold"));
+                        if (uThreshold.HasValue) existing.LowStockThreshold = uThreshold.Value;
+                        var uLead = CsvParser.ParseDecimal(row.GetValueOrDefault("leadtime"));
+                        if (uLead.HasValue) existing.LeadTimeDays = (int)uLead.Value;
+                        var uSupplier = row.GetValueOrDefault("supplier")?.Trim();
+                        if (!string.IsNullOrEmpty(uSupplier))
+                        {
+                            if (supplierCache.TryGetValue(uSupplier.ToLowerInvariant(), out var usid)) existing.SupplierId = usid;
+                            else errors.Add($"Row {rowNum}: Supplier '{uSupplier}' not found for '{name}' — left unchanged (create the supplier contact first).");
+                        }
                         _db.Entry(existing).State = EntityState.Modified;
                         job.SuccessCount++;
                         job.ProcessedRows = i + 1;

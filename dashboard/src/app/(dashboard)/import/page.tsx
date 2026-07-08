@@ -170,6 +170,12 @@ export default function ImportPage() {
     example: "Rice,3000,5000\nShampoo,1200,2500\nCement,4500,6000",
     required: "ProductName, and at least one of CostPrice or SellingPrice",
     optional: "Both price columns are optional individually — only provided values are updated.",
+  } : importMode === "update_details" ? {
+    ...baseFormat,
+    headers: "ProductName,SKU,Barcode,Category,Unit,CostPrice,SellingPrice,Supplier,LeadTime",
+    example: "Rice,RICE-50,6001234567890,Food,bag,3000,5000,Musa Foods,3\nShampoo,SH-01,,Beauty,bottle,1200,2500,,",
+    required: "ProductName (must already exist)",
+    optional: "Any of SKU, Barcode, Category, Subcategory, Unit, CostPrice, SellingPrice, Threshold, Supplier, LeadTime — only provided values overwrite. No stock is added and no Date is needed. Ideal for editing an exported catalog.",
   } : baseFormat;
   const canImport = hasPermission(format.permission);
   const hasCsvImport = planStatus?.hasCsvImport ?? true;
@@ -380,6 +386,13 @@ export default function ImportPage() {
                 <div>
                   <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Price update only — Just update my catalog prices</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Updates cost and selling prices on existing products. Stock levels are not changed. New products are skipped.</p>
+                </div>
+              </label>
+              <label className={`flex items-start gap-3 cursor-pointer rounded-lg border p-3 transition-colors ${importMode === "update_details" ? "border-cyan-300 bg-cyan-50/50" : "border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"}`}>
+                <input type="radio" name="inv-mode" value="update_details" checked={importMode === "update_details"} onChange={() => setImportMode("update_details")} className="mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Update details — Edit SKU, barcode, supplier &amp; more</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Overwrites product fields (SKU, barcode, category, unit, prices, supplier, lead time) on existing products. No stock is added and no expense is recorded — safe to re-import an exported catalog. New products are skipped.</p>
                 </div>
               </label>
             </div>
