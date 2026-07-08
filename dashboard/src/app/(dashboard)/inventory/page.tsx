@@ -378,6 +378,7 @@ function EditProductDialog({
   const { toast } = useToast();
   const [form, setForm] = useState({
     name: "",
+    sku: "",
     unit: "",
     costPrice: "",
     sellingPrice: "",
@@ -436,6 +437,7 @@ function EditProductDialog({
   if (open && product && productId !== lastProductId) {
     setForm({
       name: product.name,
+      sku: product.sku ?? "",
       unit: product.unit,
       costPrice: product.costPrice?.toString() ?? "",
       sellingPrice: product.sellingPrice?.toString() ?? "",
@@ -457,6 +459,7 @@ function EditProductDialog({
     try {
       await api.put(`/products/${product.id}`, {
         name: form.name,
+        sku: form.sku || null,
         unit: form.unit,
         costPrice: form.costPrice ? Number(form.costPrice) : null,
         sellingPrice: form.sellingPrice ? Number(form.sellingPrice) : null,
@@ -492,7 +495,7 @@ function EditProductDialog({
   }
 
   function handleClose() {
-    setForm({ name: "", unit: "", costPrice: "", sellingPrice: "", lowStockThreshold: "", category: "", subcategory: "", barcode: "", supplierId: "", leadTimeDays: "" });
+    setForm({ name: "", sku: "", unit: "", costPrice: "", sellingPrice: "", lowStockThreshold: "", category: "", subcategory: "", barcode: "", supplierId: "", leadTimeDays: "" });
     setLastProductId("");
     setIsBundle(false);
     setBundleRows([]);
@@ -517,9 +520,15 @@ function EditProductDialog({
                 <Label className="text-xs text-slate-500 dark:text-slate-400">Name</Label>
                 <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               </div>
-              <div>
-                <Label className="text-xs text-slate-500 dark:text-slate-400">Unit</Label>
-                <Input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs text-slate-500 dark:text-slate-400">SKU <span className="text-slate-400">(optional)</span></Label>
+                  <Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="Item code" className="font-mono" />
+                </div>
+                <div>
+                  <Label className="text-xs text-slate-500 dark:text-slate-400">Unit</Label>
+                  <Input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

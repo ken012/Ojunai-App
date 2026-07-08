@@ -26,10 +26,10 @@ type ImportType = "inventory" | "sales" | "expenses" | "contacts" | "contacts-le
 const FORMATS: Record<ImportType, { headers: string; example: string; required: string; optional: string; permission: string; label: string }> = {
   inventory: {
     label: "Inventory (Products & Stock)",
-    headers: "ProductName,Quantity,Unit,CostPrice,SellingPrice,Date",
-    example: "Rice,100,bag,3000,5000,2026-03-15\nShampoo,50,bottle,1200,2500,2026-03-15\nCement,30,bag,4500,6000,2026-03-16",
+    headers: "ProductName,Quantity,Unit,CostPrice,SellingPrice,SKU,Barcode,Supplier,LeadTime,Date",
+    example: "Rice,100,bag,3000,5000,RICE-50,6001234567890,Musa Foods,3,2026-03-15\nShampoo,50,bottle,1200,2500,,,,,2026-03-15",
     required: "ProductName, Quantity, Date",
-    optional: "Unit (default: bag), CostPrice, SellingPrice. Category auto-detected.",
+    optional: "Unit (default: bag), CostPrice, SellingPrice, SKU, Barcode, Supplier (must match an existing supplier contact), LeadTime (days). Category auto-detected.",
     permission: Permission.ManageStock,
   },
   sales: {

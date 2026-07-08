@@ -349,14 +349,18 @@ export default function ExportPage() {
   async function handleProducts(mode: "csv" | "print") {
     setProductsLoading(true);
     try {
-      const { data } = await api.get<{ data: PaginatedResult<ProductDto> }>(
-        "/products?page=1&pageSize=10000"
-      );
-      const items = data.data?.items ?? [];
-      const headers = ["Name", "SKU", "Category", "Subcategory", "Unit", "Cost Price", "Selling Price", "Current Stock", "Low Stock Threshold", "Status"];
+      // Fetch products + contacts so we can export the supplier NAME (which round-trips with import).
+      const [prodRes, contactRes] = await Promise.all([
+        api.get<{ data: PaginatedResult<ProductDto> }>("/products?page=1&pageSize=10000"),
+        api.get<{ data: PaginatedResult<ContactDto> }>("/contacts?page=1&pageSize=10000"),
+      ]);
+      const items = prodRes.data.data?.items ?? [];
+      const supplierNameById = new Map((contactRes.data.data?.items ?? []).map((c) => [c.id, c.name]));
+      const headers = ["Name", "SKU", "Barcode", "Category", "Subcategory", "Unit", "Cost Price", "Selling Price", "Current Stock", "Low Stock Threshold", "Supplier", "Lead Time (Days)", "Status"];
       const rows = items.map((p) => [
         p.name,
         p.sku ?? "",
+        p.barcode ?? "",
         p.category ?? "",
         p.subcategory ?? "",
         p.unit,
@@ -364,6 +368,8 @@ export default function ExportPage() {
         p.sellingPrice != null ? String(p.sellingPrice) : "",
         String(p.currentStock),
         String(p.lowStockThreshold),
+        p.supplierId ? (supplierNameById.get(p.supplierId) ?? "") : "",
+        p.leadTimeDays != null ? String(p.leadTimeDays) : "",
         p.isActive ? "Active" : "Inactive",
       ]);
       if (mode === "csv") downloadCsv(`ojunai-inventory-${todayStamp()}.csv`, headers, rows);
