@@ -58,7 +58,7 @@ public class InventoryService : IInventoryService
         var product = await GetProductAsync(businessId, request.ProductId);
 
         if (product.CurrentStock < request.Quantity)
-            throw new InvalidOperationException($"Insufficient stock. Available: {product.CurrentStock} {product.Unit}.");
+            throw new InvalidOperationException($"Insufficient stock. Available: {product.CurrentStock} {UnitFormat.Plural(product.CurrentStock, product.Unit)}.");
 
         var txn = new InventoryTransaction
         {
@@ -104,7 +104,7 @@ public class InventoryService : IInventoryService
         var product = await GetProductAsync(businessId, request.ProductId);
 
         if (product.CurrentStock < request.Quantity)
-            throw new InvalidOperationException($"Insufficient stock. Available: {product.CurrentStock} {product.Unit}.");
+            throw new InvalidOperationException($"Insufficient stock. Available: {product.CurrentStock} {UnitFormat.Plural(product.CurrentStock, product.Unit)}.");
 
         var txn = new InventoryTransaction
         {
@@ -128,7 +128,7 @@ public class InventoryService : IInventoryService
         var product = await GetProductAsync(businessId, request.ProductId);
 
         if (product.CurrentStock < request.Quantity)
-            throw new InvalidOperationException($"Insufficient stock. Available: {product.CurrentStock} {product.Unit}.");
+            throw new InvalidOperationException($"Insufficient stock. Available: {product.CurrentStock} {UnitFormat.Plural(product.CurrentStock, product.Unit)}.");
 
         var txn = new InventoryTransaction
         {

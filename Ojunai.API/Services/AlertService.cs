@@ -1,4 +1,5 @@
 using Ojunai.API.Data;
+using Ojunai.API.Common;
 using Ojunai.API.Models;
 using Ojunai.API.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
@@ -163,7 +164,7 @@ public class AlertService : IAlertService
                 var title = critical ? $"{p.Name} is out of stock" : $"{p.Name} is running low";
                 var body = critical
                     ? "Reorder now — you have 0 units left."
-                    : $"{p.CurrentStock:0.##} {p.Unit} left (threshold: {p.LowStockThreshold:0.##}).";
+                    : $"{p.CurrentStock:0.##} {UnitFormat.Plural(p.CurrentStock, p.Unit)} left (threshold: {p.LowStockThreshold:0.##}).";
                 await CreateAsync(
                     businessId, userId: null,
                     type: AlertType.LowStock,

@@ -453,7 +453,7 @@ public partial class ReportService : IReportService
             foreach (var s in salesRaw)
             {
                 var itemSummary = s.Items.Count > 0
-                    ? string.Join(", ", s.Items.Select(i => $"{i.Quantity:0.##} {i.Product.Unit} {i.Product.Name}"))
+                    ? string.Join(", ", s.Items.Select(i => $"{i.Quantity:0.##} {UnitFormat.Plural(i.Quantity, i.Product.Unit)} {i.Product.Name}"))
                     : "items";
 
                 // Original sale entry — always shown
@@ -545,12 +545,12 @@ public partial class ReportService : IReportService
                 RefId = MakeRef(t.Id, "INV"),
                 Type = "inventory",
                 Description = t.Type == InventoryTransactionType.StockIn
-                    ? $"Restocked {t.Quantity:0.##} {t.Product.Unit} of {t.Product.Name}"
+                    ? $"Restocked {t.Quantity:0.##} {UnitFormat.Plural(t.Quantity, t.Product.Unit)} of {t.Product.Name}"
                     : t.Type == InventoryTransactionType.StockOut
-                    ? $"Removed {t.Quantity:0.##} {t.Product.Unit} of {t.Product.Name}"
+                    ? $"Removed {t.Quantity:0.##} {UnitFormat.Plural(t.Quantity, t.Product.Unit)} of {t.Product.Name}"
                     : t.Type == InventoryTransactionType.Damaged
-                    ? $"Marked {t.Quantity:0.##} {t.Product.Unit} of {t.Product.Name} as damaged"
-                    : $"Adjusted {t.Product.Name} stock by {t.Quantity:0.##} {t.Product.Unit}",
+                    ? $"Marked {t.Quantity:0.##} {UnitFormat.Plural(t.Quantity, t.Product.Unit)} of {t.Product.Name} as damaged"
+                    : $"Adjusted {t.Product.Name} stock by {t.Quantity:0.##} {UnitFormat.Plural(t.Quantity, t.Product.Unit)}",
                 Amount = t.UnitCost.HasValue ? t.Quantity * t.UnitCost.Value : null,
                 RecordedBy = t.RecordedByName,
                 Source = t.RecordedByName != null ? "Staff" : null,

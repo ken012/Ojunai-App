@@ -1,4 +1,5 @@
 using Ojunai.API.Data;
+using Ojunai.API.Common;
 using Ojunai.API.DTOs.Inventory;
 using Ojunai.API.DTOs.Sales;
 using Ojunai.API.Models;
@@ -28,7 +29,7 @@ public class StockHoldService : IStockHoldService
         var available = product.CurrentStock - heldQty;
 
         if (quantity > available)
-            throw new InvalidOperationException($"Only {available:0.##} {product.Unit} of {product.Name} available (total: {product.CurrentStock:0.##}, on hold: {heldQty:0.##}).");
+            throw new InvalidOperationException($"Only {available:0.##} {UnitFormat.Plural(available, product.Unit)} of {product.Name} available (total: {product.CurrentStock:0.##}, on hold: {heldQty:0.##}).");
 
         var hold = new StockHold
         {

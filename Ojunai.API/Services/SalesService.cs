@@ -82,11 +82,11 @@ public class SalesService : ISalesService
                         throw new KeyNotFoundException($"A component of '{product.Name}' no longer exists. Fix the bundle before selling it.");
                     var required = c.Quantity * item.Quantity;
                     if (cp.CurrentStock < required)
-                        throw new InvalidOperationException($"Not enough '{cp.Name}' to make {item.Quantity:0.##} {product.Name}. Need {required:0.##} {cp.Unit}, have {cp.CurrentStock:0.##}.");
+                        throw new InvalidOperationException($"Not enough '{cp.Name}' to make {item.Quantity:0.##} {product.Name}. Need {required:0.##} {UnitFormat.Plural(required, cp.Unit)}, have {cp.CurrentStock:0.##}.");
                 }
             }
             else if (product.CurrentStock < item.Quantity)
-                throw new InvalidOperationException($"Insufficient stock for '{product.Name}'. Available: {product.CurrentStock} {product.Unit}.");
+                throw new InvalidOperationException($"Insufficient stock for '{product.Name}'. Available: {product.CurrentStock} {UnitFormat.Plural(product.CurrentStock, product.Unit)}.");
         }
 
         // ── VAT processing ────────────────────────────────────────────────────
@@ -215,7 +215,7 @@ public class SalesService : ISalesService
         if (sale.PaymentStatus != PaymentStatus.Paid && sale.ContactId.HasValue && sale.TotalAmount > 0)
         {
             var itemsSummary = string.Join(", ", sale.Items.Select(i =>
-                $"{i.Quantity:0.##} {products[i.ProductId].Unit} {products[i.ProductId].Name}"));
+                $"{i.Quantity:0.##} {UnitFormat.Plural(i.Quantity, products[i.ProductId].Unit)} {products[i.ProductId].Name}"));
             _db.LedgerEntries.Add(new LedgerEntry
             {
                 BusinessId = businessId,
@@ -276,7 +276,7 @@ public class SalesService : ISalesService
                 PaymentStatus = s.PaymentStatus.ToString(),
                 PaymentMethod = s.PaymentMethod,
                 ItemCount = s.Items.Count,
-                ItemSummary = string.Join(", ", s.Items.Select(i => $"{i.Quantity:0.##} {i.Product.Unit} {i.Product.Name}")),
+                ItemSummary = string.Join(", ", s.Items.Select(i => $"{i.Quantity:0.##} {UnitFormat.Plural(i.Quantity, i.Product.Unit)} {i.Product.Name}")),
                 ContactId = s.ContactId,
                 CustomerName = s.Contact != null ? s.Contact.Name : null,
                 RecordedByName = s.RecordedByName,
@@ -315,7 +315,7 @@ public class SalesService : ISalesService
             // Build a readable summary of what was in the sale for audit notes
             var saleSummary = string.Join(", ", sale.Items
                 .Where(i => products.ContainsKey(i.ProductId))
-                .Select(i => $"{i.Quantity:0.##} {products[i.ProductId].Unit} {products[i.ProductId].Name}"));
+                .Select(i => $"{i.Quantity:0.##} {UnitFormat.Plural(i.Quantity, products[i.ProductId].Unit)} {products[i.ProductId].Name}"));
             var customerNote = sale.Contact != null ? $" to {sale.Contact.Name}" : "";
             var business = await _db.Businesses.FindAsync(businessId);
             var cs = BillingConfig.Symbol(business?.Currency);
@@ -331,7 +331,7 @@ public class SalesService : ISalesService
                         ProductId = item.ProductId,
                         Type = InventoryTransactionType.Adjustment,
                         Quantity = item.Quantity,
-                        Notes = $"Voided sale: {item.Quantity:0.##} {product.Unit} {product.Name} ({cs}{item.TotalPrice:N0}) returned to stock",
+                        Notes = $"Voided sale: {item.Quantity:0.##} {UnitFormat.Plural(item.Quantity, product.Unit)} {product.Name} ({cs}{item.TotalPrice:N0}) returned to stock",
                         RecordedByUserId = voidedByUserId ?? sale.RecordedByUserId,
                         RecordedByName = voidedByName ?? sale.RecordedByName
                     });
@@ -389,7 +389,7 @@ public class SalesService : ISalesService
 
             var saleSummary = string.Join(", ", sale.Items
                 .Where(i => products.ContainsKey(i.ProductId))
-                .Select(i => $"{i.Quantity:0.##} {products[i.ProductId].Unit} {products[i.ProductId].Name}"));
+                .Select(i => $"{i.Quantity:0.##} {UnitFormat.Plural(i.Quantity, products[i.ProductId].Unit)} {products[i.ProductId].Name}"));
             var customerNote = sale.Contact != null ? $" to {sale.Contact.Name}" : "";
             var business = await _db.Businesses.FindAsync(businessId);
             var cs = BillingConfig.Symbol(business?.Currency);
@@ -405,7 +405,7 @@ public class SalesService : ISalesService
                         ProductId = item.ProductId,
                         Type = InventoryTransactionType.Adjustment,
                         Quantity = item.Quantity,
-                        Notes = $"Returned sale: {item.Quantity:0.##} {product.Unit} {product.Name} ({cs}{item.TotalPrice:N0}) returned to stock",
+                        Notes = $"Returned sale: {item.Quantity:0.##} {UnitFormat.Plural(item.Quantity, product.Unit)} {product.Name} ({cs}{item.TotalPrice:N0}) returned to stock",
                         RecordedByUserId = returnedByUserId ?? sale.RecordedByUserId,
                         RecordedByName = returnedByName ?? sale.RecordedByName
                     });
@@ -462,7 +462,7 @@ public class SalesService : ISalesService
                 PaymentStatus = s.PaymentStatus.ToString(),
                 PaymentMethod = s.PaymentMethod,
                 ItemCount = s.Items.Count,
-                ItemSummary = string.Join(", ", s.Items.Select(i => $"{i.Quantity:0.##} {i.Product.Unit} {i.Product.Name}")),
+                ItemSummary = string.Join(", ", s.Items.Select(i => $"{i.Quantity:0.##} {UnitFormat.Plural(i.Quantity, i.Product.Unit)} {i.Product.Name}")),
                 ContactId = s.ContactId,
                 CustomerName = s.Contact != null ? s.Contact.Name : null,
                 RecordedByName = s.RecordedByName,
@@ -501,7 +501,7 @@ public class SalesService : ISalesService
                 PaymentStatus = s.PaymentStatus.ToString(),
                 PaymentMethod = s.PaymentMethod,
                 ItemCount = s.Items.Count,
-                ItemSummary = string.Join(", ", s.Items.Select(i => $"{i.Quantity:0.##} {i.Product.Unit} {i.Product.Name}")),
+                ItemSummary = string.Join(", ", s.Items.Select(i => $"{i.Quantity:0.##} {UnitFormat.Plural(i.Quantity, i.Product.Unit)} {i.Product.Name}")),
                 ContactId = s.ContactId,
                 CustomerName = s.Contact != null ? s.Contact.Name : null,
                 RecordedByName = s.RecordedByName,

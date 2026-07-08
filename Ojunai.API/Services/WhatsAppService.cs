@@ -702,7 +702,7 @@ public class WhatsAppService : IWhatsAppService
                 if (p.CurrentStock <= 0)
                     alerts.Add($"🚫 *{p.Name}* is out of stock — reorder now!");
                 else
-                    alerts.Add($"⚠️ *{p.Name}* is running low — {p.CurrentStock:0.##} {p.Unit} left (threshold: {p.LowStockThreshold:0.##})");
+                    alerts.Add($"⚠️ *{p.Name}* is running low — {p.CurrentStock:0.##} {UnitFormat.Plural(p.CurrentStock, p.Unit)} left (threshold: {p.LowStockThreshold:0.##})");
             }
 
             // Opportunistic cleanup of expired cooldown entries. Bounded by cooldown, so the dict
@@ -1002,7 +1002,7 @@ public class WhatsAppService : IWhatsAppService
             PaymentMethod = paymentMethod
         }, _currentSource, recordedBy.Id, recordedBy.FullName);
 
-        var lines = sale.Items.Select(i => $"• {i.Quantity} {i.Unit} of {i.ProductName} @ {_cs}{i.UnitPrice:N0} = {_cs}{i.TotalPrice:N0}");
+        var lines = sale.Items.Select(i => $"• {i.Quantity} {UnitFormat.Plural(i.Quantity, i.Unit)} of {i.ProductName} @ {_cs}{i.UnitPrice:N0} = {_cs}{i.TotalPrice:N0}");
         var debtNote = "";
 
         // Receivable is auto-created in SalesService.CreateAsync for credit sales
@@ -1084,7 +1084,7 @@ public class WhatsAppService : IWhatsAppService
                 var qty = sellAll ? product.CurrentStock : sellEachQty!.Value;
                 if (sellHalf) qty = Math.Floor(product.CurrentStock / 2);
                 if (qty <= 0) continue;
-                if (product.CurrentStock < qty) { skipped.Add($"{product.Name} (only {product.CurrentStock:0.##} {product.Unit})"); continue; }
+                if (product.CurrentStock < qty) { skipped.Add($"{product.Name} (only {product.CurrentStock:0.##} {UnitFormat.Plural(product.CurrentStock, product.Unit)})"); continue; }
                 var price = product.SellingPrice ?? 0;
                 if (price <= 0) { skipped.Add($"{product.Name} (no selling price)"); continue; }
                 if (discountPercent.HasValue) price = price * (1 - discountPercent.Value / 100);
@@ -1128,10 +1128,10 @@ public class WhatsAppService : IWhatsAppService
                 }
 
                 if (qty <= 0) { if (isBatch) { skipped.Add($"{productName} (invalid qty)"); continue; } return $"Please provide a valid quantity for {productName}."; }
-                if (product.CurrentStock < qty) { if (isBatch) { skipped.Add($"{product.Name} (only {product.CurrentStock:0.##} {product.Unit})"); continue; } return $"❌ Not enough stock for {product.Name}. You have {product.CurrentStock} {product.Unit} available, but need {qty}."; }
+                if (product.CurrentStock < qty) { if (isBatch) { skipped.Add($"{product.Name} (only {product.CurrentStock:0.##} {UnitFormat.Plural(product.CurrentStock, product.Unit)})"); continue; } return $"❌ Not enough stock for {product.Name}. You have {product.CurrentStock} {UnitFormat.Plural(product.CurrentStock, product.Unit)} available, but need {qty}."; }
 
                 var finalPrice = unitPrice ?? product.SellingPrice ?? 0;
-                if (finalPrice <= 0) { if (isBatch) { skipped.Add($"{product.Name} (no price)"); continue; } return $"No selling price is set for {product.Name}. Please say the price, e.g. \"I sold {qty} {product.Unit} of {product.Name} at 5000\""; }
+                if (finalPrice <= 0) { if (isBatch) { skipped.Add($"{product.Name} (no price)"); continue; } return $"No selling price is set for {product.Name}. Please say the price, e.g. \"I sold {qty} {UnitFormat.Plural(qty, product.Unit)} of {product.Name} at 5000\""; }
                 if (discountPercent.HasValue && unitPriceUserProvided == false) finalPrice = finalPrice * (1 - discountPercent.Value / 100);
 
                 // fromCatalog reflects the ORIGINAL price source — reverse-calc derives qty from
@@ -1191,7 +1191,7 @@ public class WhatsAppService : IWhatsAppService
             PaymentMethod = paymentMethod
         }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
 
-        var lines = sale.Items.Select(i => $"• {i.Quantity} {i.Unit} of {i.ProductName} @ {_cs}{i.UnitPrice:N0} = {_cs}{i.TotalPrice:N0}");
+        var lines = sale.Items.Select(i => $"• {i.Quantity} {UnitFormat.Plural(i.Quantity, i.Unit)} of {i.ProductName} @ {_cs}{i.UnitPrice:N0} = {_cs}{i.TotalPrice:N0}");
         var debtNote = "";
 
         // Receivable is auto-created in SalesService.CreateAsync for credit sales
@@ -1331,12 +1331,12 @@ public class WhatsAppService : IWhatsAppService
                         {
                             Category = "Inventory",
                             Amount = purchaseTotal,
-                            Notes = $"Bought {qty.Value:0.##} {product.Unit} of {product.Name} @ {_cs}{effectiveCost.Value:N0}",
+                            Notes = $"Bought {qty.Value:0.##} {UnitFormat.Plural(qty.Value, product.Unit)} of {product.Name} @ {_cs}{effectiveCost.Value:N0}",
                         }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
                     }
 
                     var newTag = isNew ? " 🆕" : "";
-                    results.Add($"• {product.Name}: +{qty.Value:0.##} {product.Unit} (stock: {(stockBefore + qty.Value):0.##}){newTag}");
+                    results.Add($"• {product.Name}: +{qty.Value:0.##} {UnitFormat.Plural(qty.Value, product.Unit)} (stock: {(stockBefore + qty.Value):0.##}){newTag}");
                 }
                 catch (Exception ex)
                 {
@@ -1426,7 +1426,7 @@ public class WhatsAppService : IWhatsAppService
                 {
                     Category = "Inventory",
                     Amount = purchaseTotal,
-                    Notes = $"Bought {qty:0.##} {product.Unit} of {product.Name} @ {_cs}{effectiveCost.Value:N0}/{product.Unit}",
+                    Notes = $"Bought {qty:0.##} {UnitFormat.Plural(qty, product.Unit)} of {product.Name} @ {_cs}{effectiveCost.Value:N0}/{product.Unit}",
                     PaidTo = paidTo
                 }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
             }
@@ -1457,7 +1457,7 @@ public class WhatsAppService : IWhatsAppService
             {
                 ContactId = contact.Id,
                 Amount = totalOwed,
-                Notes = totalOwed > 0 ? $"Credit purchase: {qty:0.##} {product.Unit} of {product.Name} @ {_cs}{payLaterCost!.Value:N0}" : $"PAY_LATER:{product.Name}:{qty:0.##}"
+                Notes = totalOwed > 0 ? $"Credit purchase: {qty:0.##} {UnitFormat.Plural(qty, product.Unit)} of {product.Name} @ {_cs}{payLaterCost!.Value:N0}" : $"PAY_LATER:{product.Name}:{qty:0.##}"
             }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
 
             if (totalOwed > 0)
@@ -1466,7 +1466,7 @@ public class WhatsAppService : IWhatsAppService
                 debtNote = $"\n💳 Pay-later from *{sName}* — set a cost price to update the amount owed";
         }
 
-        return $"✅ Added {qty:0.##} {product.Unit} of {product.Name}.{createdNote}\nNew stock: {(stockBefore + qty):0.##} {product.Unit}{costNote}{debtNote}";
+        return $"✅ Added {qty:0.##} {UnitFormat.Plural(qty, product.Unit)} of {product.Name}.{createdNote}\nNew stock: {(stockBefore + qty):0.##} {UnitFormat.Plural((stockBefore + qty), product.Unit)}{costNote}{debtNote}";
     }
 
     private async Task<string> HandleRemoveInventoryAsync(Guid businessId, JsonElement ba, User? recordedBy = null)
@@ -1510,7 +1510,7 @@ public class WhatsAppService : IWhatsAppService
                 {
                     ProductId = product.Id, Quantity = removed, Notes = "Batch zero-out"
                 }, recordedBy?.Id, recordedBy?.FullName);
-                results.Add($"• {product.Name}: {removed:0.##} {product.Unit} removed → 0");
+                results.Add($"• {product.Name}: {removed:0.##} {UnitFormat.Plural(removed, product.Unit)} removed → 0");
             }
 
             if (results.Count == 0 && skipped.Count > 0)
@@ -1544,7 +1544,7 @@ public class WhatsAppService : IWhatsAppService
             return "Please specify the quantity to remove.";
 
         if (prod.CurrentStock < qty.Value)
-            return $"❌ Can't remove {qty.Value} {prod.Unit} of {prod.Name} — only {prod.CurrentStock:0.##} in stock.";
+            return $"❌ Can't remove {qty.Value} {UnitFormat.Plural(qty.Value, prod.Unit)} of {prod.Name} — only {prod.CurrentStock:0.##} in stock.";
 
         var stockBefore = prod.CurrentStock;
         await _inventory.StockOutAsync(businessId, new StockOutRequest
@@ -1552,7 +1552,7 @@ public class WhatsAppService : IWhatsAppService
             ProductId = prod.Id, Quantity = qty.Value, Notes = ba.GetStringOrNull("notes")
         }, recordedBy?.Id, recordedBy?.FullName);
 
-        return $"✅ Removed {qty.Value:0.##} {prod.Unit} of {prod.Name}.\nRemaining: {(stockBefore - qty.Value):0.##} {prod.Unit}";
+        return $"✅ Removed {qty.Value:0.##} {UnitFormat.Plural(qty.Value, prod.Unit)} of {prod.Name}.\nRemaining: {(stockBefore - qty.Value):0.##} {UnitFormat.Plural((stockBefore - qty.Value), prod.Unit)}";
     }
 
     private async Task<string> HandleMarkDamagedAsync(Guid businessId, JsonElement ba, User? recordedBy = null)
@@ -1567,7 +1567,7 @@ public class WhatsAppService : IWhatsAppService
         if (product == null) return error!;
 
         if (product.CurrentStock < qty.Value)
-            return $"❌ Can't mark {qty.Value} {product.Unit} as damaged — only {product.CurrentStock} {product.Unit} of {product.Name} in stock.";
+            return $"❌ Can't mark {qty.Value} {UnitFormat.Plural(qty.Value, product.Unit)} as damaged — only {product.CurrentStock} {UnitFormat.Plural(product.CurrentStock, product.Unit)} of {product.Name} in stock.";
 
         var stockBefore = product.CurrentStock;
         await _inventory.MarkDamagedAsync(businessId, new DamagedRequest
@@ -1575,7 +1575,7 @@ public class WhatsAppService : IWhatsAppService
             ProductId = product.Id, Quantity = qty.Value, Notes = ba.GetStringOrNull("notes")
         }, recordedBy?.Id, recordedBy?.FullName);
 
-        return $"✅ {qty.Value:0.##} {product.Unit} of {product.Name} marked as damaged.\nRemaining: {(stockBefore - qty.Value):0.##} {product.Unit}";
+        return $"✅ {qty.Value:0.##} {UnitFormat.Plural(qty.Value, product.Unit)} of {product.Name} marked as damaged.\nRemaining: {(stockBefore - qty.Value):0.##} {UnitFormat.Plural((stockBefore - qty.Value), product.Unit)}";
     }
 
     private async Task<string> HandleCreateReceivableAsync(Guid businessId, JsonElement ba, User? recordedBy = null)
@@ -1849,7 +1849,7 @@ public class WhatsAppService : IWhatsAppService
                 if (noteParts.Length >= 3 && decimal.TryParse(noteParts[2], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var qty))
                 {
                     entry.Amount = qty * costPrice.Value;
-                    entry.Notes = $"Credit purchase: {qty:0.##} {product.Unit} of {product.Name} @ {_cs}{costPrice.Value:N0}";
+                    entry.Notes = $"Credit purchase: {qty:0.##} {UnitFormat.Plural(qty, product.Unit)} of {product.Name} @ {_cs}{costPrice.Value:N0}";
                     payLaterNote += $"\n💳 Updated payable: {_cs}{entry.Amount:N0} owed";
                 }
             }
@@ -1949,7 +1949,7 @@ public class WhatsAppService : IWhatsAppService
                 if (p.CostPrice.HasValue) prices.Add($"Cost: {_cs}{p.CostPrice.Value:N0}");
                 if (prices.Count > 0) priceStr = $" — {string.Join(" | ", prices)}";
             }
-            return $"• {p.Name}: {p.CurrentStock:0.##} {p.Unit}{holdStr}{flag}{priceStr}";
+            return $"• {p.Name}: {p.CurrentStock:0.##} {UnitFormat.Plural(p.CurrentStock, p.Unit)}{holdStr}{flag}{priceStr}";
         });
         return $"📦 *Stock Levels*\n{string.Join("\n", lines)}";
     }
@@ -1964,7 +1964,7 @@ public class WhatsAppService : IWhatsAppService
         var lines = items.Select(p =>
         {
             var priceStr = p.SellingPrice.HasValue ? $" — {_cs}{p.SellingPrice.Value:N0}" : "";
-            return $"• {p.Name}: {p.CurrentStock:0.##} {p.Unit} (min: {p.LowStockThreshold:0.##}){priceStr}";
+            return $"• {p.Name}: {p.CurrentStock:0.##} {UnitFormat.Plural(p.CurrentStock, p.Unit)} (min: {p.LowStockThreshold:0.##}){priceStr}";
         });
         return $"⚠️ *Low Stock* ({items.Count} items)\n{string.Join("\n", lines)}";
     }
@@ -2257,7 +2257,7 @@ public class WhatsAppService : IWhatsAppService
             if (p.CostPrice.HasValue) prices.Add($"Cost: {_cs}{p.CostPrice.Value:N0}");
             var priceStr = prices.Count > 0 ? $" — {string.Join(" | ", prices)}" : "";
             var flag = p.CurrentStock <= p.LowStockThreshold ? " ⚠️" : "";
-            return $"• {p.Name}: {p.CurrentStock:0.##} {p.Unit}{flag}{priceStr}";
+            return $"• {p.Name}: {p.CurrentStock:0.##} {UnitFormat.Plural(p.CurrentStock, p.Unit)}{flag}{priceStr}";
         });
 
         return $"📦 *Stock*\n{string.Join("\n", lines)}";
@@ -2284,7 +2284,7 @@ public class WhatsAppService : IWhatsAppService
             .OrderByDescending(p => p.Rev).ToList();
 
         var total = grouped.Sum(p => p.Rev);
-        var lines = grouped.Select(p => $"• {p.Name}: {p.Qty:0.##} {p.Unit} — {_cs}{p.Rev:N0}");
+        var lines = grouped.Select(p => $"• {p.Name}: {p.Qty:0.##} {UnitFormat.Plural(p.Qty, p.Unit)} — {_cs}{p.Rev:N0}");
 
         return $"📊 *{staffName}'s sales today*\n{string.Join("\n", lines)}\n\n*Total: {_cs}{total:N0}*";
     }
@@ -2314,12 +2314,12 @@ public class WhatsAppService : IWhatsAppService
         var oldQty = saleItem.Quantity;
 
         if (newQty.Value == oldQty)
-            return $"The last sale was already {oldQty:0.##} {product.Unit} of {product.Name}. No change needed.";
+            return $"The last sale was already {oldQty:0.##} {UnitFormat.Plural(oldQty, product.Unit)} of {product.Name}. No change needed.";
 
         await _sales.VoidAsync(businessId, lastSale.Id, recordedBy?.Id, recordedBy?.FullName);
 
         if (newQty.Value == 0)
-            return $"✅ Last sale voided. {oldQty:0.##} {product.Unit} of {product.Name} returned to stock.";
+            return $"✅ Last sale voided. {oldQty:0.##} {UnitFormat.Plural(oldQty, product.Unit)} of {product.Name} returned to stock.";
 
         // Create new sale with corrected qty
         var unitPrice = saleItem.UnitPrice;
@@ -2335,8 +2335,8 @@ public class WhatsAppService : IWhatsAppService
 
         var diff = oldQty - newQty.Value;
         return $"✅ Corrected! Previous sale of {oldQty:0.##} voided.\n" +
-               $"• {newQty.Value:0.##} {product.Unit} of {product.Name} @ {_cs}{unitPrice:N0} = {_cs}{newSale.TotalAmount:N0}\n" +
-               (diff > 0 ? $"Stock restored: {diff:0.##} {product.Unit} returned to inventory." : $"Stock adjusted: {Math.Abs(diff):0.##} {product.Unit} additional removed.");
+               $"• {newQty.Value:0.##} {UnitFormat.Plural(newQty.Value, product.Unit)} of {product.Name} @ {_cs}{unitPrice:N0} = {_cs}{newSale.TotalAmount:N0}\n" +
+               (diff > 0 ? $"Stock restored: {diff:0.##} {UnitFormat.Plural(diff, product.Unit)} returned to inventory." : $"Stock adjusted: {Math.Abs(diff):0.##} {UnitFormat.Plural(Math.Abs(diff), product.Unit)} additional removed.");
     }
 
     private async Task<string> HandleReturnProductAsync(Guid businessId, JsonElement ba, User? recordedBy = null)
@@ -2362,7 +2362,7 @@ public class WhatsAppService : IWhatsAppService
         var refundAmount = product.SellingPrice.HasValue ? qty.Value * product.SellingPrice.Value : 0;
         var refundNote = refundAmount > 0 ? $"\nRefund amount: {_cs}{refundAmount:N0}" : "";
 
-        return $"✅ Return processed:\n• {qty.Value:0.##} {product.Unit} of {product.Name} returned to stock\nNew stock: {(product.CurrentStock + qty.Value):0.##} {product.Unit}{refundNote}";
+        return $"✅ Return processed:\n• {qty.Value:0.##} {UnitFormat.Plural(qty.Value, product.Unit)} of {product.Name} returned to stock\nNew stock: {(product.CurrentStock + qty.Value):0.##} {UnitFormat.Plural((product.CurrentStock + qty.Value), product.Unit)}{refundNote}";
     }
 
     // ─── Batch action handler ──────────────────────────────────────────────────
@@ -2454,7 +2454,7 @@ public class WhatsAppService : IWhatsAppService
         var lines = sales.Select(s =>
         {
             var time = TimeZoneInfo.ConvertTimeFromUtc(s.CreatedAtUtc, _tz).ToString("h:mm tt");
-            var items = string.Join(", ", s.Items.Select(i => $"{i.Quantity:0.##} {i.Product.Unit} {i.Product.Name}"));
+            var items = string.Join(", ", s.Items.Select(i => $"{i.Quantity:0.##} {UnitFormat.Plural(i.Quantity, i.Product.Unit)} {i.Product.Name}"));
             var buyer = s.Contact?.Name ?? "Walk-in";
             var staff = s.RecordedByName ?? "—";
             return $"• {time} — {items} → {buyer} — {_cs}{s.TotalAmount:N0} ({s.PaymentStatus}) [by {staff}]";
@@ -2482,7 +2482,7 @@ public class WhatsAppService : IWhatsAppService
 
         if (deadStock.Count == 0) return "All your products have sold in the last 2 weeks. No dead stock.";
 
-        var lines = deadStock.Select(p => $"• {p.Name}: {p.CurrentStock:0.##} {p.Unit} in stock — no sales in 14 days");
+        var lines = deadStock.Select(p => $"• {p.Name}: {p.CurrentStock:0.##} {UnitFormat.Plural(p.CurrentStock, p.Unit)} in stock — no sales in 14 days");
         return $"💤 *Dead Stock* ({deadStock.Count} items)\n{string.Join("\n", lines)}\n\nConsider discounting or returning these.";
     }
 
@@ -2569,8 +2569,8 @@ public class WhatsAppService : IWhatsAppService
         var lines = predictions.Select(p =>
         {
             var urgency = p.DaysLeft <= 3 ? "🔴" : p.DaysLeft <= 7 ? "🟡" : "🟢";
-            var restockNote = p.Restock > 0 ? $" — restock {p.Restock:0.##} {p.Unit} for 7 days" : "";
-            return $"{urgency} {p.Name}: ~{p.DaysLeft:0.#} days left ({p.CurrentStock:0.##} {p.Unit}){restockNote}";
+            var restockNote = p.Restock > 0 ? $" — restock {p.Restock:0.##} {UnitFormat.Plural(p.Restock, p.Unit)} for 7 days" : "";
+            return $"{urgency} {p.Name}: ~{p.DaysLeft:0.#} days left ({p.CurrentStock:0.##} {UnitFormat.Plural(p.CurrentStock, p.Unit)}){restockNote}";
         });
 
         return $"🔮 *Stockout Predictions*\n{string.Join("\n", lines)}";
@@ -2606,7 +2606,7 @@ public class WhatsAppService : IWhatsAppService
             : allSold.OrderByDescending(p => p.TotalRevenue).Take(count).ToList();
 
         var lines = sorted.Select((p, i) =>
-            $"{i + 1}. {p.Name}: {p.TotalQty:0.##} {p.Unit} sold — {_cs}{p.TotalRevenue:N0}");
+            $"{i + 1}. {p.Name}: {p.TotalQty:0.##} {UnitFormat.Plural(p.TotalQty, p.Unit)} sold — {_cs}{p.TotalRevenue:N0}");
 
         var title = isBottom ? "📉 *Least Selling Products (Last 30 Days)*" : "🏆 *Top Products (Last 30 Days)*";
         return $"{title}\n{string.Join("\n", lines)}";
@@ -2637,7 +2637,7 @@ public class WhatsAppService : IWhatsAppService
 
         var grandTotal = grouped.Sum(p => p.TotalRevenue);
         var lines = grouped.Select(p =>
-            $"• {p.Name}: {p.TotalQty:0.##} {p.Unit} sold — {_cs}{p.TotalRevenue:N0}");
+            $"• {p.Name}: {p.TotalQty:0.##} {UnitFormat.Plural(p.TotalQty, p.Unit)} sold — {_cs}{p.TotalRevenue:N0}");
 
         return $"🛒 *Products Sold Today*\n{string.Join("\n", lines)}\n\n*Total: {_cs}{grandTotal:N0}*";
     }
@@ -2657,7 +2657,7 @@ public class WhatsAppService : IWhatsAppService
         try
         {
             var hold = await _holds.CreateHoldAsync(businessId, product.Id, contactName ?? "Customer", qty.Value, ba.GetStringOrNull("notes"), _currentSource);
-            return $"✅ Held {qty.Value:0.##} {product.Unit} of {product.Name} for *{hold.ContactName}*.\n\nWhen they arrive, say \"{hold.ContactName} came for her {product.Name.ToLower()}\" to convert to a sale, or \"Release {hold.ContactName}'s hold\" to cancel.";
+            return $"✅ Held {qty.Value:0.##} {UnitFormat.Plural(qty.Value, product.Unit)} of {product.Name} for *{hold.ContactName}*.\n\nWhen they arrive, say \"{hold.ContactName} came for her {product.Name.ToLower()}\" to convert to a sale, or \"Release {hold.ContactName}'s hold\" to cancel.";
         }
         catch (InvalidOperationException ex)
         {
@@ -2693,7 +2693,7 @@ public class WhatsAppService : IWhatsAppService
             try
             {
                 var sale = await _holds.ConvertToSaleAsync(businessId, match.Id);
-                return $"✅ Hold converted to sale!\n• {match.Quantity:0.##} {match.Unit} of {match.ProductName} sold to {match.ContactName}\n*Total: {_cs}{sale.TotalAmount:N0}*";
+                return $"✅ Hold converted to sale!\n• {match.Quantity:0.##} {UnitFormat.Plural(match.Quantity, match.Unit)} of {match.ProductName} sold to {match.ContactName}\n*Total: {_cs}{sale.TotalAmount:N0}*";
             }
             catch (Exception ex)
             {
@@ -2704,7 +2704,7 @@ public class WhatsAppService : IWhatsAppService
 
         // Just release
         await _holds.ReleaseHoldAsync(businessId, match.Id);
-        return $"✅ Released hold: {match.Quantity:0.##} {match.Unit} of {match.ProductName} for {match.ContactName}. Stock is now available again.";
+        return $"✅ Released hold: {match.Quantity:0.##} {UnitFormat.Plural(match.Quantity, match.Unit)} of {match.ProductName} for {match.ContactName}. Stock is now available again.";
     }
 
     private async Task<string> HandleGetActiveHoldsAsync(Guid businessId)
@@ -2713,7 +2713,7 @@ public class WhatsAppService : IWhatsAppService
         if (holds.Count == 0) return "No active holds right now.";
 
         var lines = holds.Select(h =>
-            $"• {h.Quantity:0.##} {h.Unit} of {h.ProductName} — for *{h.ContactName}* ({h.CreatedAtUtc:MMM d})");
+            $"• {h.Quantity:0.##} {UnitFormat.Plural(h.Quantity, h.Unit)} of {h.ProductName} — for *{h.ContactName}* ({h.CreatedAtUtc:MMM d})");
         return $"📋 *Active Holds* ({holds.Count})\n{string.Join("\n", lines)}\n\nSay \"release [name]'s hold\" or \"[name] came for [product]\" to resolve.";
     }
 
@@ -2840,7 +2840,7 @@ public class WhatsAppService : IWhatsAppService
         product.LowStockThreshold = threshold.Value;
         await _db.SaveChangesAsync();
 
-        return $"✅ Low stock alert for *{product.Name}* set to {threshold.Value:0.##} {product.Unit}. You'll be notified when stock drops below this.";
+        return $"✅ Low stock alert for *{product.Name}* set to {threshold.Value:0.##} {UnitFormat.Plural(threshold.Value, product.Unit)}. You'll be notified when stock drops below this.";
     }
 
     private async Task<string> HandleDeleteProductAsync(Guid businessId, JsonElement ba)
@@ -3641,16 +3641,16 @@ public class WhatsAppService : IWhatsAppService
                     product.CurrentStock -= tx.Quantity;
                     _db.InventoryTransactions.Remove(tx);
                     await _db.SaveChangesAsync();
-                    return $"✅ Undone: {tx.Quantity:0.##} {product.Unit} of {product.Name} removed. Stock: {product.CurrentStock:0.##}";
+                    return $"✅ Undone: {tx.Quantity:0.##} {UnitFormat.Plural(tx.Quantity, product.Unit)} of {product.Name} removed. Stock: {product.CurrentStock:0.##}";
                 }
-                return $"Can't undo — some of the {tx.Quantity:0.##} {product.Unit} has already been sold.";
+                return $"Can't undo — some of the {tx.Quantity:0.##} {UnitFormat.Plural(tx.Quantity, product.Unit)} has already been sold.";
             }
             else
             {
                 product.CurrentStock += tx.Quantity;
                 _db.InventoryTransactions.Remove(tx);
                 await _db.SaveChangesAsync();
-                return $"✅ Undone: {tx.Quantity:0.##} {product.Unit} of {product.Name} restored. Stock: {product.CurrentStock:0.##}";
+                return $"✅ Undone: {tx.Quantity:0.##} {UnitFormat.Plural(tx.Quantity, product.Unit)} of {product.Name} restored. Stock: {product.CurrentStock:0.##}";
             }
         }
 
@@ -3676,7 +3676,7 @@ public class WhatsAppService : IWhatsAppService
             if (product == null) { errors.Add($"{name} (not found)"); continue; }
 
             var diff = actualCount.Value - product.CurrentStock;
-            if (diff == 0) { results.Add($"• {product.Name}: ✓ matches ({product.CurrentStock:0.##} {product.Unit})"); continue; }
+            if (diff == 0) { results.Add($"• {product.Name}: ✓ matches ({product.CurrentStock:0.##} {UnitFormat.Plural(product.CurrentStock, product.Unit)})"); continue; }
 
             await _inventory.AdjustAsync(businessId, new DTOs.Inventory.AdjustmentRequest
             {
@@ -3686,7 +3686,7 @@ public class WhatsAppService : IWhatsAppService
             }, recordedBy?.Id, recordedBy?.FullName);
 
             var arrow = diff > 0 ? "↑" : "↓";
-            results.Add($"• {product.Name}: {product.CurrentStock:0.##} → {actualCount.Value:0.##} {product.Unit} ({arrow}{Math.Abs(diff):0.##})");
+            results.Add($"• {product.Name}: {product.CurrentStock:0.##} → {actualCount.Value:0.##} {UnitFormat.Plural(actualCount.Value, product.Unit)} ({arrow}{Math.Abs(diff):0.##})");
         }
 
         if (results.Count == 0 && errors.Count > 0) return $"❌ Couldn't match any products: {string.Join(", ", errors)}";
@@ -3768,7 +3768,7 @@ public class WhatsAppService : IWhatsAppService
         var totalQty = saleItems.Sum(i => i.Quantity);
 
         var emoji = profit > 0 ? "✅" : "❌";
-        return $"{emoji} *{product.Name} — 30 Day Profit*\n\nSold: {totalQty:0.##} {product.Unit}\nRevenue: {_cs}{revenue:N0}\nCost: {_cs}{cost:N0}\nProfit: {_cs}{profit:N0}\nMargin: {margin:0.#}%";
+        return $"{emoji} *{product.Name} — 30 Day Profit*\n\nSold: {totalQty:0.##} {UnitFormat.Plural(totalQty, product.Unit)}\nRevenue: {_cs}{revenue:N0}\nCost: {_cs}{cost:N0}\nProfit: {_cs}{profit:N0}\nMargin: {margin:0.#}%";
     }
 
     // ─── Plan Queries ───────────────────────────────────────────────────────────
@@ -4038,7 +4038,7 @@ public class WhatsAppService : IWhatsAppService
         {
             var product = await _db.Products.FindAsync(item.ProductId);
             if (product == null || !product.IsActive) { skipped.Add($"{item.Product.Name} (deleted)"); continue; }
-            if (product.CurrentStock < item.Quantity) { skipped.Add($"{product.Name} (only {product.CurrentStock:0.##} {product.Unit})"); continue; }
+            if (product.CurrentStock < item.Quantity) { skipped.Add($"{product.Name} (only {product.CurrentStock:0.##} {UnitFormat.Plural(product.CurrentStock, product.Unit)})"); continue; }
 
             saleItems.Add(new SaleItemRequest { ProductId = product.Id, Quantity = item.Quantity, UnitPrice = item.UnitPrice });
         }
@@ -4053,7 +4053,7 @@ public class WhatsAppService : IWhatsAppService
             PaymentMethod = lastSale.PaymentMethod
         }, _currentSource, recordedBy?.Id, recordedBy?.FullName);
 
-        var lines = sale.Items.Select(i => $"• {i.Quantity} {i.Unit} of {i.ProductName} @ {_cs}{i.UnitPrice:N0} = {_cs}{i.TotalPrice:N0}");
+        var lines = sale.Items.Select(i => $"• {i.Quantity} {UnitFormat.Plural(i.Quantity, i.Unit)} of {i.ProductName} @ {_cs}{i.UnitPrice:N0} = {_cs}{i.TotalPrice:N0}");
         var skippedNote = skipped.Count > 0 ? $"\n\n⚠️ Skipped: {string.Join(", ", skipped)}" : "";
         return $"✅ Sale repeated!\n{string.Join("\n", lines)}\n\n*Total: {_cs}{sale.TotalAmount:N0}* ({sale.PaymentStatus}){skippedNote}";
     }
@@ -4077,7 +4077,7 @@ public class WhatsAppService : IWhatsAppService
 
         var (product, err) = await FindProductAsync(businessId, productName);
         if (product == null) return err!;
-        if (product.CurrentStock < qty.Value) return $"❌ Not enough stock for {product.Name}. You have {product.CurrentStock} {product.Unit} available.";
+        if (product.CurrentStock < qty.Value) return $"❌ Not enough stock for {product.Name}. You have {product.CurrentStock} {UnitFormat.Plural(product.CurrentStock, product.Unit)} available.";
 
         var unitPrice = ba.GetDecimalOrNull("unitPrice") ?? product.SellingPrice ?? 0;
         if (unitPrice <= 0) return $"No selling price set for {product.Name}. Please specify a price.";
@@ -4118,7 +4118,7 @@ public class WhatsAppService : IWhatsAppService
             await _db.SaveChangesAsync();
             await tx.CommitAsync();
 
-            return $"✅ Added {qty.Value:0.##} {product.Unit} of {product.Name} @ {_cs}{unitPrice:N0} to last sale.\nNew total: {_cs}{lastSale.TotalAmount:N0}";
+            return $"✅ Added {qty.Value:0.##} {UnitFormat.Plural(qty.Value, product.Unit)} of {product.Name} @ {_cs}{unitPrice:N0} to last sale.\nNew total: {_cs}{lastSale.TotalAmount:N0}";
         }
         catch (DbUpdateConcurrencyException)
         {

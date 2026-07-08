@@ -70,7 +70,7 @@ public class PdfExportService : IPdfExportService
 
                 foreach (var s in sales)
                 {
-                    var items = string.Join(", ", s.Items.Select(i => $"{i.Quantity:0.##} {i.Product.Unit} {i.Product.Name}"));
+                    var items = string.Join(", ", s.Items.Select(i => $"{i.Quantity:0.##} {UnitFormat.Plural(i.Quantity, i.Product.Unit)} {i.Product.Name}"));
                     DataCell(table, s.CreatedAtUtc.ToString("dd MMM yyyy"));
                     DataCell(table, items);
                     DataCell(table, s.Contact?.Name ?? "—");
