@@ -318,6 +318,15 @@ function PODetailDialog({ id, canManage, onClose }: { id: string; canManage: boo
       await api.post(`/purchase-orders/${id}/${path}`, body ?? {});
       qc.invalidateQueries({ queryKey: ["purchase-orders"] });
       qc.invalidateQueries({ queryKey: ["purchase-order", id] });
+      if (path === "receive") {
+        // Receiving changes product stock + supplier payable — refresh the inventory + ledger views
+        // so the phone doesn't show stale numbers until the next background refetch.
+        qc.invalidateQueries({ queryKey: ["products"] });
+        qc.invalidateQueries({ queryKey: ["product-stock-stats"] });
+        qc.invalidateQueries({ queryKey: ["low-stock"] });
+        qc.invalidateQueries({ queryKey: ["contacts"] });
+        qc.invalidateQueries({ queryKey: ["ledger"] });
+      }
       toast.success(successMsg);
       if (path === "receive" || path === "cancel") onClose();
     } catch (err: unknown) {
