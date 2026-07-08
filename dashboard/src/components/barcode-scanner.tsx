@@ -72,8 +72,10 @@ export function BarcodeScanner({ open, onClose, onScan }: {
           <p className="text-sm text-rose-500 py-4">{error}</p>
         ) : (
           <div className="relative overflow-hidden rounded-lg bg-black aspect-[4/3]">
+            {/* autoPlay + muted + playsInline are REQUIRED for iOS Safari to show a camera stream
+                inline — without them the video stays black and never decodes. */}
             {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-            <video ref={videoRef} className="w-full h-full object-cover" />
+            <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
             <div className="pointer-events-none absolute inset-x-6 top-1/2 h-0.5 -translate-y-1/2 bg-rose-500/70" />
           </div>
         )}
