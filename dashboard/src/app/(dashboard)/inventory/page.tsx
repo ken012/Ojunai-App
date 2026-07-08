@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { Drawer, DrawerHeader, DrawerBody, DrawerFooter } from "@/components/ui/drawer";
 import { useToast } from "@/components/toast";
-import { AlertTriangle, Package, Pencil, Trash2, Minus, Plus, Lock, Unlock, ShoppingCart, Ban, Search, X, LayoutList, LayoutGrid, ScanLine, ClipboardCheck, Layers } from "lucide-react";
+import { AlertTriangle, Package, Pencil, Trash2, Minus, Plus, Lock, Unlock, ShoppingCart, Ban, Search, X, LayoutList, LayoutGrid, ScanLine, ClipboardCheck, Layers, CalendarClock } from "lucide-react";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import type { ContactDto, BundleDto } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
@@ -392,6 +392,7 @@ function EditProductDialog({
   const [isBundle, setIsBundle] = useState(false);
   const [bundleRows, setBundleRows] = useState<{ componentProductId: string; quantity: string }[]>([]);
   const [bundleSeededFor, setBundleSeededFor] = useState("");
+  const [tracksBatches, setTracksBatches] = useState(false);
 
   const { data: suppliers } = useQuery({
     queryKey: ["edit-product-suppliers"],
@@ -442,6 +443,7 @@ function EditProductDialog({
       supplierId: product.supplierId ?? "",
       leadTimeDays: product.leadTimeDays != null ? String(product.leadTimeDays) : "",
     });
+    setTracksBatches(product.tracksBatches ?? false);
     setLastProductId(productId);
   }
 
@@ -461,6 +463,7 @@ function EditProductDialog({
         barcode: form.barcode || null,
         supplierId: form.supplierId || null,
         leadTimeDays: form.leadTimeDays ? Number(form.leadTimeDays) : null,
+        tracksBatches,
       });
       // Save the bundle definition alongside the product. Sending isBundle=false clears it.
       const validComponents = bundleRows
@@ -491,6 +494,7 @@ function EditProductDialog({
     setIsBundle(false);
     setBundleRows([]);
     setBundleSeededFor("");
+    setTracksBatches(false);
     setError(null);
     onClose();
   }
@@ -594,6 +598,18 @@ function EditProductDialog({
                     </Button>
                   </div>
                 </div>
+                <label className="flex items-start gap-2.5 cursor-pointer mt-3">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
+                    checked={tracksBatches}
+                    onChange={(e) => setTracksBatches(e.target.checked)}
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Track batches &amp; expiry</p>
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500">Record an expiry date each time you restock; expiring lots show in the Expiry report.</p>
+                  </div>
+                </label>
               </div>
 
               {/* Bundle / kit (Tier 2) — selling this depletes its components, not its own stock */}
@@ -1016,6 +1032,8 @@ function RestockDialog({ product, open, onClose }: { product: ProductDto | null;
   const currencySymbol = biz?.currency ?? "\u20A6";
   const [qty, setQty] = useState("");
   const [unitCost, setUnitCost] = useState("");
+  const [expiryDate, setExpiryDate] = useState("");
+  const [lotNumber, setLotNumber] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1030,9 +1048,12 @@ function RestockDialog({ product, open, onClose }: { product: ProductDto | null;
         productId: product.id,
         quantity,
         unitCost: unitCost ? Number(unitCost) : undefined,
+        expiryDate: product.tracksBatches && expiryDate ? expiryDate : undefined,
+        lotNumber: product.tracksBatches && lotNumber ? lotNumber : undefined,
       });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["low-stock"] });
+      qc.invalidateQueries({ queryKey: ["expiring"] });
       handleClose();
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { errors?: string[] } } };
@@ -1045,6 +1066,8 @@ function RestockDialog({ product, open, onClose }: { product: ProductDto | null;
   function handleClose() {
     setQty("");
     setUnitCost("");
+    setExpiryDate("");
+    setLotNumber("");
     setError(null);
     onClose();
   }
@@ -1084,6 +1107,18 @@ function RestockDialog({ product, open, onClose }: { product: ProductDto | null;
               />
               <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Updates the product cost price if provided</p>
             </div>
+            {product.tracksBatches && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Expiry date</Label>
+                  <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+                </div>
+                <div>
+                  <Label>Lot # — optional</Label>
+                  <Input value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} placeholder="e.g. B-2291" />
+                </div>
+              </div>
+            )}
             {error && <p className="text-xs text-red-500">{error}</p>}
           </div>
         )}
@@ -1732,6 +1767,9 @@ export default function InventoryPage() {
             )}
             {hasPermission(Permission.ManageStock) && (
               <>
+                <Button variant="outline" onClick={() => router.push("/expiring")}>
+                  <CalendarClock size={14} className="mr-1" /> Expiry
+                </Button>
                 <Button variant="outline" onClick={() => router.push("/stocktake")}>
                   <ClipboardCheck size={14} className="mr-1" /> Stock count
                 </Button>

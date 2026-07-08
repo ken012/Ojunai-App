@@ -108,7 +108,21 @@ export interface ProductDto {
   supplierId?: string;
   leadTimeDays?: number;
   isBundle?: boolean;
+  tracksBatches?: boolean;
   createdAtUtc: string;
+}
+
+export interface ProductBatchDto {
+  id: string;
+  productId: string;
+  productName: string;
+  unit: string;
+  quantity: number;
+  expiryDate?: string;
+  lotNumber?: string;
+  daysToExpiry?: number | null;
+  isExpired: boolean;
+  receivedAtUtc: string;
 }
 
 export interface BundleComponentDto {
