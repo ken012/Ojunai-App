@@ -29,32 +29,51 @@ export function BarcodeScanner({ open, onClose, onScan }: {
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    let stream: MediaStream | null = null;
     setError(null);
     const reader = new BrowserMultiFormatReader();
     readerRef.current = reader;
+    const video = videoRef.current;
 
-    // Prefer the REAR/environment camera — on phones the default is often the selfie cam, which
-    // can't see a barcode the user is pointing at a product. "ideal" (not "exact") so laptops with
-    // only a front camera still work instead of erroring.
-    reader
-      .decodeFromConstraints(
-        { video: { facingMode: { ideal: "environment" } } },
-        videoRef.current!,
-        (result) => {
+    // Acquire the camera OURSELVES (rear-facing) and drive the <video> directly, then let ZXing
+    // decode from the playing element. Doing the getUserMedia + srcObject + play() by hand — rather
+    // than letting the library manage it — is what makes the feed actually render on mobile Safari/
+    // Chrome, where the library's own path left the video black.
+    (async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          setError("This browser can't access the camera. Type the barcode manually.");
+          return;
+        }
+        // Force the REAR camera on phones. `exact` guarantees it (front cam can't read a barcode
+        // the user points at a product). If the device has no rear camera (e.g. a laptop),
+        // getUserMedia throws OverconstrainedError → fall back to any available camera.
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { exact: "environment" } },
+            audio: false,
+          });
+        } catch (e: unknown) {
+          const n = (e as { name?: string })?.name;
+          if (n === "OverconstrainedError" || n === "NotFoundError") {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          } else {
+            throw e;
+          }
+        }
+        if (cancelled || !video) { stream.getTracks().forEach((t) => t.stop()); return; }
+
+        video.srcObject = stream;
+        video.setAttribute("playsinline", "true"); // belt-and-suspenders for older iOS
+        await video.play().catch(() => { /* autoplay policy; frames still flow */ });
+
+        reader.decodeContinuously(video, (result) => {
           if (result && !cancelled) {
             const text = result.getText();
-            if (text) {
-              onScanRef.current(text);
-              onCloseRef.current();
-            }
+            if (text) { onScanRef.current(text); onCloseRef.current(); }
           }
-        },
-      )
-      .then(() => {
-        // Some browsers (notably iOS Safari) don't auto-start playback; nudge it.
-        videoRef.current?.play?.().catch(() => { /* autoplay policy — the stream still renders */ });
-      })
-      .catch((e: unknown) => {
+        });
+      } catch (e: unknown) {
         if (cancelled) return;
         const name = (e as { name?: string })?.name;
         setError(
@@ -64,11 +83,15 @@ export function BarcodeScanner({ open, onClose, onScan }: {
               ? "No camera found on this device. Type the barcode manually."
               : "Couldn't start the camera. Type the barcode manually."
         );
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
+      try { reader.stopContinuousDecode(); } catch { /* no-op */ }
       try { reader.reset(); } catch { /* already stopped */ }
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      if (video) video.srcObject = null;
       readerRef.current = null;
     };
   }, [open]);
