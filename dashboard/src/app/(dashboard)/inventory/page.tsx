@@ -1382,7 +1382,7 @@ function ProductRow({
   return (
     <div
       onClick={onClickRow}
-      className={`group grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto_auto] sm:grid-cols-[auto_minmax(0,1.6fr)_auto_minmax(0,0.8fr)_auto_auto_auto_auto] items-center gap-3 px-3 py-2.5 border-b border-slate-100 dark:border-slate-800 transition-colors cursor-pointer ${
+      className={`group grid grid-cols-[auto_minmax(0,1fr)_auto_auto] sm:grid-cols-[auto_minmax(0,1.6fr)_auto_minmax(0,0.8fr)_auto_auto_auto_auto] items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2.5 border-b border-slate-100 dark:border-slate-800 transition-colors cursor-pointer ${
         selected ? "bg-cyan-50/60 dark:bg-cyan-950/20" : "hover:bg-slate-50 dark:hover:bg-slate-800/50"
       }`}
     >
@@ -1444,7 +1444,7 @@ function ProductRow({
       {/* Action icons — match the grid card's set so users get the same affordances in either
           view. Hover-to-show keeps the row clean while scanning; stopPropagation prevents the
           row's onClickRow (edit) from firing when an icon is clicked. */}
-      <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex items-center gap-0.5">
+      <div className="hidden sm:flex opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity items-center gap-0.5">
         {canEdit && (
           <>
             <button
@@ -2056,7 +2056,7 @@ export default function InventoryPage() {
         ) : viewMode === "list" ? (
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
             {/* List header with select-all */}
-            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto_auto] sm:grid-cols-[auto_minmax(0,1.6fr)_auto_minmax(0,0.8fr)_auto_auto_auto_auto] items-center gap-3 px-3 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50">
+            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] sm:grid-cols-[auto_minmax(0,1.6fr)_auto_minmax(0,0.8fr)_auto_auto_auto_auto] items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50">
               <input
                 type="checkbox"
                 checked={filteredProducts.length > 0 && filteredProducts.every((p) => selectedIds.has(p.id))}
@@ -2072,7 +2072,7 @@ export default function InventoryPage() {
               <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Price</div>
               <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Stock</div>
               <div className="hidden sm:block text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Threshold</div>
-              <div />
+              <div className="hidden sm:block" />
             </div>
             {filteredProducts.map((product) => (
               <ProductRow
