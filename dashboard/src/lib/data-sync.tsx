@@ -22,19 +22,24 @@ export function DataSyncProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserDto | null>(() => getStoredUser());
 
   const sync = useCallback(() => {
-    Promise.all([
+    // allSettled (not all): the two calls are independent, so a failure of one must
+    // NOT drop the other's result. This matters most for /auth/me — an installed PWA
+    // can evict localStorage while the auth cookie survives, leaving the app logged in
+    // but role-less; if /business happened to fail we'd otherwise never rewrite oj_user
+    // and every client-side permission check would fail closed (owner sees "no permission").
+    Promise.allSettled([
       api.get<{ data: BusinessDto }>("/business"),
       api.get<{ data: UserDto }>("/auth/me"),
     ]).then(([bizRes, userRes]) => {
-      if (bizRes.data.data) {
-        setBusiness(bizRes.data.data);
-        localStorage.setItem("oj_business", JSON.stringify(bizRes.data.data));
+      if (bizRes.status === "fulfilled" && bizRes.value.data.data) {
+        setBusiness(bizRes.value.data.data);
+        localStorage.setItem("oj_business", JSON.stringify(bizRes.value.data.data));
       }
-      if (userRes.data.data) {
+      if (userRes.status === "fulfilled" && userRes.value.data.data) {
         // Keep the FULL user (with phone + DOB) in memory so Settings can render
         // those fields, but only persist a PII-free subset to localStorage. See
         // lib/auth.ts:cacheableUser for the security rationale.
-        const fullUser = userRes.data.data;
+        const fullUser = userRes.value.data.data;
         setUser(fullUser);
         const safe = {
           id: fullUser.id,
@@ -45,7 +50,7 @@ export function DataSyncProvider({ children }: { children: React.ReactNode }) {
         };
         localStorage.setItem("oj_user", JSON.stringify(safe));
       }
-    }).catch(() => {});
+    });
   }, []);
 
   useEffect(() => { sync(); }, [sync]);

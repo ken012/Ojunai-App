@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { hasPermission, Permission } from "@/lib/permissions";
+import { roleHasPermission, Permission } from "@/lib/permissions";
+import { useDataSync } from "@/lib/data-sync";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { useToast } from "@/components/toast";
@@ -153,6 +154,11 @@ export default function ImportPage() {
   const previewPageSize = 50;
   const fileRef = useRef<HTMLInputElement>(null);
   const { data: planStatus } = usePlanStatus();
+  // Read the role from the live synced user (updates when /auth/me resolves) rather than a
+  // one-shot localStorage read — an installed PWA can evict oj_user while the session cookie
+  // survives, and a static read would leave the gate stuck denying even the owner.
+  const { user } = useDataSync();
+  const role = user?.role;
 
   const issues = useMemo(() =>
     allRows.length > 0 ? validateRows(headers, allRows, type) : [],
@@ -177,7 +183,8 @@ export default function ImportPage() {
     required: "ProductName (must already exist)",
     optional: "Any of SKU, Barcode, Category, Subcategory, Unit, CostPrice, SellingPrice, Threshold, Supplier, LeadTime — only provided values overwrite. No stock is added and no Date is needed. Ideal for editing an exported catalog.",
   } : baseFormat;
-  const canImport = hasPermission(format.permission);
+  const roleKnown = !!role;
+  const canImport = roleHasPermission(role, format.permission);
   const hasCsvImport = planStatus?.hasCsvImport ?? true;
 
   const { data: importHistory, refetch: refetchHistory } = useQuery({
@@ -484,7 +491,9 @@ export default function ImportPage() {
       ) : (
         <Card>
           <CardContent className="pt-4 text-center py-8 text-slate-400 dark:text-slate-500">
-            Your role does not have permission to import {type}.
+            {roleKnown
+              ? `Your role does not have permission to import ${type}.`
+              : "Checking your permissions…"}
           </CardContent>
         </Card>
       )}

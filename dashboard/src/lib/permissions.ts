@@ -31,11 +31,17 @@ const RolePermissions: Record<string, Set<string>> = {
   ]),
 };
 
+/** Pure role→permission check. Prefer this when you already hold the live user
+ *  (e.g. from useDataSync) so gating reacts to a synced role rather than a cache
+ *  that a PWA can evict out from under us. */
+export function roleHasPermission(role: string | null | undefined, permission: string): boolean {
+  if (!role) return false;
+  return RolePermissions[role]?.has(permission) ?? false;
+}
+
 export function hasPermission(permission: string): boolean {
   if (typeof window === "undefined") return true; // SSR — allow all, enforce on client
-  const user = getStoredUser();
-  if (!user?.role) return false;
-  return RolePermissions[user.role]?.has(permission) ?? false;
+  return roleHasPermission(getStoredUser()?.role, permission);
 }
 
 export function getUserRole(): string {
