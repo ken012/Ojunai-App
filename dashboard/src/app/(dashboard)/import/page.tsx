@@ -524,7 +524,7 @@ export default function ImportPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-xs w-10">#</TableHead>
-                    {headers.map((h) => <TableHead key={h} className="text-xs">{h}</TableHead>)}
+                    {headers.map((h) => <TableHead key={h} className="text-xs min-w-[8rem] whitespace-nowrap">{h}</TableHead>)}
                     <TableHead className="text-xs w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -544,9 +544,10 @@ export default function ImportPage() {
                         {row.map((cell, j) => {
                           const cellIssue = rowIssues.find(iss => iss.column === headers[j]);
                           return (
-                            <TableCell key={j} className="text-xs text-slate-600 dark:text-slate-400 p-0">
+                            <TableCell key={j} className="text-xs text-slate-600 dark:text-slate-400 p-0 min-w-[8rem]">
                               <input
-                                className="w-full border-0 bg-transparent text-xs px-2 py-1.5 focus:bg-white focus:ring-1 focus:ring-cyan-300 rounded outline-none"
+                                title={cell}
+                                className="w-full min-w-[8rem] border-0 bg-transparent text-xs px-2 py-1.5 focus:bg-white focus:ring-1 focus:ring-cyan-300 rounded outline-none"
                                 value={cell}
                                 onChange={(e) => {
                                   const newRows = [...allRows];
