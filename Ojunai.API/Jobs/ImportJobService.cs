@@ -916,8 +916,10 @@ public class ImportJobService
                       $"📊 Total rows: {job.TotalRows}\n\n" +
                       $"View details: app.ojunai.com/import";
 
-            // Phase 6 — channel-aware delivery (Telegram or WhatsApp per User.AlertChannel).
-            await _dispatcher.SendToUserAsync(owner.Id, new Ojunai.API.Models.Messaging.ReplyComposition { Text = msg });
+            // Fan out to every channel the owner is connected on (WhatsApp + Telegram + Messenger),
+            // not just their single preferred AlertChannel — an import summary is high-signal and the
+            // owner should see it wherever they are. Best-effort per channel.
+            await _dispatcher.SendToAllUserChannelsAsync(owner.Id, new Ojunai.API.Models.Messaging.ReplyComposition { Text = msg });
         }
         catch (Exception ex)
         {

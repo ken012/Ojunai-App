@@ -122,6 +122,61 @@ public sealed class NotificationDispatcher : INotificationDispatcher
         }
     }
 
+    public async Task<IReadOnlyList<Channel>> SendToAllUserChannelsAsync(Guid userId, ReplyComposition reply, CancellationToken ct = default)
+    {
+        var sent = new List<Channel>();
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId && u.IsActive, ct);
+        if (user is null)
+        {
+            _logger.LogWarning("NotificationDispatcher: user {UserId} not found or inactive", userId);
+            return sent;
+        }
+
+        // Bot channels — send to each bound identity (skip any the user hasn't connected).
+        foreach (var channel in new[] { Channel.Telegram, Channel.Messenger })
+        {
+            var identity = await _db.ContactIdentities
+                .Where(x => x.UserId == userId && x.Channel == channel)
+                .OrderByDescending(x => x.LastSeenAtUtc ?? x.LinkedAtUtc)
+                .FirstOrDefaultAsync(ct);
+            if (identity is null || !_channels.TryGet(channel, out var adapter)) continue;
+
+            // Same 24h-window guard as SendToUserAsync — default Messenger alerts to AccountUpdate.
+            var outboundReply = channel == Channel.Messenger && reply.MessageTag == MessageTag.None
+                ? reply with { MessageTag = MessageTag.AccountUpdate }
+                : reply;
+            try
+            {
+                var result = await adapter.SendAsync(identity.ChannelIdentityValue, outboundReply, ct);
+                if (result.Success) sent.Add(channel);
+                else _logger.LogWarning("{Channel} send failed for user {UserId}: {Reason}", channel, userId, result.FailureReason);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "{Channel} send threw for user {UserId}", channel, userId);
+            }
+        }
+
+        // WhatsApp — the baseline channel; send whenever we have a phone on record.
+        if (!string.IsNullOrEmpty(user.PhoneNumber))
+        {
+            try
+            {
+                await _whatsAppLegacy.SendMessageAsync("whatsapp:" + user.PhoneNumber, reply.Text, user.BusinessId, userId);
+                sent.Add(Channel.Whatsapp);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "WhatsApp send failed for user {UserId}", userId);
+            }
+        }
+
+        if (sent.Count == 0)
+            _logger.LogWarning("SendToAllUserChannels: no reachable channel for user {UserId}", userId);
+
+        return sent;
+    }
+
     private static Channel ParseChannel(string? raw) => raw?.ToLowerInvariant() switch
     {
         "telegram" => Channel.Telegram,

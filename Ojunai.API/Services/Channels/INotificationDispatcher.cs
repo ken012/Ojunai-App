@@ -28,4 +28,14 @@ public interface INotificationDispatcher
     /// e.g. some legacy job services). Looks up the User, then delegates.
     /// </summary>
     Task<Channel> SendToPhoneAsync(string phone, ReplyComposition reply, CancellationToken ct = default);
+
+    /// <summary>
+    /// Fan-out variant: sends to EVERY channel the user is reachable on — WhatsApp (whenever a
+    /// phone is on record) plus any bound Telegram/Messenger identities — instead of only their
+    /// single preferred <c>AlertChannel</c>. Best-effort per channel; one channel failing never
+    /// blocks the others. Returns the channels a send actually succeeded on (empty if none).
+    /// Use for high-signal notices (e.g. a bulk import finishing) where the owner should hear
+    /// about it wherever they are.
+    /// </summary>
+    Task<IReadOnlyList<Channel>> SendToAllUserChannelsAsync(Guid userId, ReplyComposition reply, CancellationToken ct = default);
 }

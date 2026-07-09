@@ -796,7 +796,7 @@ export default function ImportPage() {
                 <p className="text-xs text-slate-400 dark:text-slate-500">
                   {job.status === "RolledBack"
                     ? "All imported records were deleted."
-                    : "A WhatsApp message has been sent to the business owner with a summary."}
+                    : "A summary has been sent to the business owner on all connected channels."}
                 </p>
                 <div className="flex items-center gap-2">
                   {job.status === "Completed" && job.successCount > 0 && (
