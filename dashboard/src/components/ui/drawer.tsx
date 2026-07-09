@@ -59,6 +59,15 @@ export function Drawer({
           "animate-in slide-in-from-right duration-200",
           widthClass
         )}
+        style={{
+          // In the installed PWA (standalone) on notched phones the status bar / dynamic
+          // island overlays the top of the viewport, and the home indicator the bottom.
+          // Pad the panel by the safe-area insets so the header isn't hidden behind the
+          // status bar and the footer isn't under the home indicator. No-ops on desktop
+          // (insets resolve to 0).
+          paddingTop: "env(safe-area-inset-top)",
+          paddingBottom: "env(safe-area-inset-bottom)",
+        }}
       >
         {children}
       </div>
