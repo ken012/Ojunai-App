@@ -8,7 +8,7 @@ import { useStickyState } from "@/lib/sticky-state";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, fetchAllPaged } from "@/lib/api";
 import { formatNaira, pluralUnit } from "@/lib/format";
-import type { PaginatedResult, ProductDto, StockHoldDto } from "@/lib/types";
+import type { PaginatedResult, ProductDto, StockHoldDto, VariantGroupDto } from "@/lib/types";
 import { CATEGORIES, CATEGORY_NAMES } from "@/lib/categories";
 import { useBusiness } from "@/lib/data-sync";
 import { hasPermission, Permission } from "@/lib/permissions";
@@ -1582,6 +1582,29 @@ export default function InventoryPage() {
     },
   });
 
+  // Variant styles surface as their own collective rows here (a style isn't a plain product,
+  // so it has no row in the products query). Keeps the flat list from listing every variant
+  // while still making the style visible/searchable alongside products.
+  const { data: variantGroups } = useQuery({
+    queryKey: ["variant-groups"],
+    queryFn: async () => {
+      const { data } = await api.get<{ data: VariantGroupDto[] }>("/variant-groups");
+      return data.data ?? [];
+    },
+    staleTime: 30_000,
+  });
+
+  const filteredGroups = useMemo(() => {
+    if (stockFilter === "wastage") return [];
+    let groups = variantGroups ?? [];
+    const q = debouncedSearch.trim().toLowerCase();
+    if (q) groups = groups.filter(g => g.name.toLowerCase().includes(q) || (g.category ?? "").toLowerCase().includes(q));
+    if (categoryFilter) groups = groups.filter(g => g.category === categoryFilter);
+    // When the user is filtering to low / out of stock, only show styles that have a low variant.
+    if (stockFilter === "low" || stockFilter === "out") groups = groups.filter(g => g.lowStockCount > 0);
+    return groups;
+  }, [variantGroups, debouncedSearch, categoryFilter, stockFilter]);
+
   // Filter-chip count source. Honors the same search + category as the products list so the
   // chip numbers stay in sync with what the user is searching. Stock-level filter is NOT
   // applied here — we want the count of OTHER stock levels too, not just the current one.
@@ -2016,6 +2039,67 @@ export default function InventoryPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Variant styles — collective rows for variant groups (a style isn't a plain product, so
+          it has no row in the products query). Clicking opens the Variants page to manage it. */}
+      {filteredGroups.length > 0 && (
+        <div className="mb-4">
+          <div className="flex items-center gap-2 mb-2 px-1">
+            <Layers size={14} className="text-slate-400 dark:text-slate-500" />
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Variant styles · {filteredGroups.length}
+            </p>
+          </div>
+          <div className={viewMode === "grid"
+            ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+            : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden"}>
+            {filteredGroups.map((g) => {
+              const priceLabel = g.minPrice != null
+                ? (g.maxPrice != null && g.maxPrice !== g.minPrice
+                    ? `${formatNaira(g.minPrice)}–${formatNaira(g.maxPrice)}`
+                    : formatNaira(g.minPrice))
+                : "—";
+              const content = (
+                <>
+                  <div className="min-w-0 flex-1 text-left">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">{g.name}</p>
+                      <span className="inline-flex items-center gap-1 shrink-0 rounded-full bg-violet-50 dark:bg-violet-950/30 text-violet-600 dark:text-violet-400 text-[10px] font-medium px-1.5 py-0.5">
+                        <Layers size={10} /> {g.variantCount} variant{g.variantCount === 1 ? "" : "s"}
+                      </span>
+                      {g.lowStockCount > 0 && (
+                        <span className="shrink-0 rounded-full bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 text-[10px] font-medium px-1.5 py-0.5">
+                          {g.lowStockCount} low
+                        </span>
+                      )}
+                    </div>
+                    {g.category && <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">{g.category}</p>}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider">Total stock</p>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-50 tabular-nums">{g.totalStock}</p>
+                  </div>
+                  <div className="text-right shrink-0 hidden sm:block">
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider">Price</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 tabular-nums">{priceLabel}</p>
+                  </div>
+                </>
+              );
+              return viewMode === "grid" ? (
+                <button key={g.id} onClick={() => router.push("/variants")}
+                  className="flex items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 hover:border-violet-300 dark:hover:border-violet-800 transition-colors">
+                  {content}
+                </button>
+              ) : (
+                <button key={g.id} onClick={() => router.push("/variants")}
+                  className="w-full flex items-center gap-3 px-2 sm:px-3 py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                  {content}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       {/* Product list / grid */}

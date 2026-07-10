@@ -166,6 +166,7 @@ export interface VariantGroupDto {
   axes: VariantAxisDto[];
   variantCount: number;
   totalStock: number;
+  lowStockCount: number;
   minPrice?: number;
   maxPrice?: number;
   createdAtUtc: string;

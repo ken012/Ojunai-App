@@ -61,6 +61,9 @@ public class VariantGroupDto
     public List<VariantAxisDto> Axes { get; set; } = new();
     public int VariantCount { get; set; }
     public decimal TotalStock { get; set; }
+    /// <summary>How many variants in this group are at or below their low-stock threshold.
+    /// Lets the inventory list flag a style as low without shipping every variant row.</summary>
+    public int LowStockCount { get; set; }
     public decimal? MinPrice { get; set; }
     public decimal? MaxPrice { get; set; }
     public DateTime CreatedAtUtc { get; set; }

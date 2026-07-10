@@ -192,6 +192,7 @@ public class VariantGroupService : IVariantGroupService
             Axes = axes,
             VariantCount = variants.Count,
             TotalStock = variants.Sum(v => v.CurrentStock),
+            LowStockCount = variants.Count(v => v.CurrentStock <= v.LowStockThreshold),
             MinPrice = prices.Count > 0 ? prices.Min() : null,
             MaxPrice = prices.Count > 0 ? prices.Max() : null,
             CreatedAtUtc = g.CreatedAtUtc,
