@@ -74,10 +74,28 @@ sudo /usr/local/bin/ojunai-backup-db.sh
 - **Object lock / versioning** if available — protects against an attacker (or bad script) deleting backups.
 - A **separate** credential scoped to only this bucket — not your main cloud account keys.
 
-## Monitoring (you have Grafana now)
-The script writes `/var/backups/ojunai-db/.last-success` on every success. Alert if that file is
-older than ~26h (cron is daily). Cheapest: a tiny exporter or a node-exporter textfile metric; or
-just a weekly manual check of `/var/log/ojunai-backup.log` until that's wired.
+## Monitoring + automated test-restore (installed)
+
+Two extra cron jobs guard the backups (installed via `scripts/install-backup-monitoring.sh` →
+`/etc/cron.d/ojunai-backup-monitor`, log `/var/log/ojunai-backup-monitor.log`):
+
+1. **Freshness check — every 6h** (`/usr/local/bin/ojunai-check-backups.sh`). Alerts if the
+   nightly backup heartbeat `.last-success` is older than **26h**, or the test-restore heartbeat
+   `.last-restore-success` is older than **40d**.
+2. **Test-restore — monthly** (1st, 02:15 UTC, `/usr/local/bin/ojunai-test-restore.sh`). Restores
+   the newest dump into a throwaway DB, checks row counts, drops it, and writes
+   `.last-restore-success` on pass. Never touches prod.
+
+**Wire the alert delivery (the check detects; you choose how it pages):**
+- **Grafana/Prometheus:** the check writes `ojunai_backup_last_success_age_seconds` (and
+  `..._restore_test_...`) to `/var/lib/node_exporter/textfile_collector/ojunai_backup.prom` when
+  that collector dir exists. Alert when it exceeds `93600` (26h) or goes absent.
+- **Slack/Discord:** set `ALERT_WEBHOOK=<incoming-webhook-url>` in `/etc/ojunai/backup.env` — the
+  check POSTs the failure there.
+- Either way the check exits non-zero, so a cron `MAILTO` also catches it if mail is configured.
+
+To reinstall/update after editing the scripts: `scp` the three `scripts/*.sh` to `/tmp` and re-run
+`sudo bash /tmp/install-backup-monitoring.sh`.
 
 ## Restore procedure
 
