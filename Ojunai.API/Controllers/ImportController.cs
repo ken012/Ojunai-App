@@ -157,6 +157,37 @@ public class ImportController : OjunaiBaseController
         var (csvText, rowCount, parseError) = ReadAndValidateFile(file);
         if (parseError != null) return BadRequest(ApiResponse<ImportJobDto>.Fail(parseError));
 
+        var sanitizedName = SanitizeFileName(file.FileName);
+        var recentCutoff = DateTime.UtcNow.AddMinutes(-10);
+
+        // Idempotency guard: reject an obvious duplicate of an in-flight or very recent import so an
+        // accidental double-submit or a client retry can't double-count sales / expenses / ledger rows
+        // (those are appended, not deduped, by the worker). Matches on the content-identifying fields;
+        // a genuinely different file (renamed or edited so the row count changes) still goes through.
+        //
+        // The check + insert run under a transaction-scoped Postgres advisory lock keyed on the dedup
+        // identity, so two concurrent identical submissions serialize: the second blocks until the first
+        // commits, then its AnyAsync sees the committed row and is rejected. Without this, both requests
+        // (separate DbContexts, Read Committed) passed the check before either committed and both
+        // enqueued — reproducing the double-count the guard exists to prevent.
+        var lockKey = AdvisoryLockKey(BusinessId, (int)type, sanitizedName, rowCount, mode);
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({lockKey})");
+
+        var isDuplicate = await _db.ImportJobs.AnyAsync(j =>
+            j.BusinessId == BusinessId
+            && j.Type == type
+            && j.FileName == sanitizedName
+            && j.TotalRows == rowCount
+            && j.ImportMode == mode
+            && (j.Status == ImportJobStatus.Queued
+                || j.Status == ImportJobStatus.Running
+                || (j.Status == ImportJobStatus.Completed && j.CreatedAtUtc >= recentCutoff)));
+        if (isDuplicate)
+            return Conflict(ApiResponse<ImportJobDto>.Fail(
+                "This looks like a duplicate of an import you just submitted. If that's intentional, wait a few minutes and try again."));
+
         var job = new ImportJob
         {
             BusinessId = BusinessId,
@@ -164,13 +195,14 @@ public class ImportController : OjunaiBaseController
             Type = type,
             Status = ImportJobStatus.Queued,
             RawCsvText = csvText,
-            FileName = SanitizeFileName(file.FileName),
+            FileName = sanitizedName,
             TotalRows = rowCount,
             ImportMode = mode,
             SkipExpenses = mode == "existing_stock" || mode == "price_update" || mode == "update_details"
         };
         _db.ImportJobs.Add(job);
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();   // release the advisory lock and make the row visible before enqueue
 
         // Queue the Hangfire job — processing starts as soon as a worker picks it up.
         _jobs.Enqueue<ImportJobService>(svc => svc.RunAsync(job.Id));
@@ -180,6 +212,18 @@ public class ImportController : OjunaiBaseController
 
         return Accepted(ApiResponse<ImportJobDto>.Ok(MapToDto(job),
             $"{rowCount} rows queued. You'll get a WhatsApp message when the import finishes."));
+    }
+
+    /// <summary>
+    /// Deterministic 64-bit key for the per-(business, type, file, rowcount, mode) advisory lock that
+    /// serializes concurrent duplicate import submissions. Must be stable across processes, so it uses
+    /// SHA-256 (not String.GetHashCode, which is randomized per run).
+    /// </summary>
+    private static long AdvisoryLockKey(Guid businessId, int type, string fileName, int rowCount, string mode)
+    {
+        var s = $"import|{businessId:N}|{type}|{fileName}|{rowCount}|{mode}";
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(s));
+        return BitConverter.ToInt64(hash, 0);
     }
 
     /// <summary>

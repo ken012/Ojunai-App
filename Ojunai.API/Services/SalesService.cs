@@ -129,6 +129,18 @@ public class SalesService : ISalesService
             grossUnitByIndex[idx] = grossUnit;
         }
 
+        // Validate the contact belongs to THIS business before attaching it. Without this, a caller could
+        // pass a foreign tenant's contact GUID and (a) leak that contact's name back via the returned
+        // SaleDto.CustomerName and (b) create a sale/receivable referencing another tenant's contact.
+        // Mirrors LedgerService.EnsureContactExistsAsync. (Contact has no ambient tenant query filter.)
+        if (request.ContactId.HasValue)
+        {
+            var contactOwned = await _db.Contacts
+                .AnyAsync(c => c.Id == request.ContactId.Value && c.BusinessId == businessId);
+            if (!contactOwned)
+                throw new KeyNotFoundException("Contact not found.");
+        }
+
         var sale = new Sale
         {
             BusinessId = businessId,

@@ -343,6 +343,24 @@ app.UseExceptionHandler(errApp =>
         ctx.Response.ContentType = "application/json";
         var error = ctx.Features.Get<IExceptionHandlerFeature>();
 
+        // Genericize only recognizable FRAMEWORK-internal messages. The app deliberately throws these
+        // broad .NET types (InvalidOperationException/KeyNotFoundException/ArgumentException) with
+        // user-facing domain messages ("Contact not found.", plan-limit text, etc.) that MUST reach the
+        // client — so we can't blanket-genericize without breaking UX. But the same types are also thrown
+        // by the framework (LINQ .First(), Dictionary indexer, model binding, Npgsql) with
+        // implementation-detail messages; those are suppressed.
+        static bool IsFrameworkLeak(Exception ex)
+        {
+            var m = ex.Message ?? "";
+            return m.Contains("Sequence contains", StringComparison.OrdinalIgnoreCase)
+                || m.Contains("was not present in the dictionary", StringComparison.OrdinalIgnoreCase)
+                || m.Contains("Parameter name", StringComparison.OrdinalIgnoreCase)
+                || m.Contains("(Parameter '", StringComparison.OrdinalIgnoreCase)
+                || m.Contains("Object reference not set", StringComparison.OrdinalIgnoreCase)
+                || m.Contains("Npgsql", StringComparison.OrdinalIgnoreCase)
+                || m.Contains("relation \"", StringComparison.OrdinalIgnoreCase);
+        }
+
         string resultJson;
         if (error?.Error is UnauthorizedAccessException)
         {
@@ -352,7 +370,13 @@ app.UseExceptionHandler(errApp =>
         else if (error?.Error is InvalidOperationException or KeyNotFoundException or ArgumentException)
         {
             ctx.Response.StatusCode = 400;
-            resultJson = JsonSerializer.Serialize(ApiResponse<object>.Fail(error.Error.Message));
+            // Log server-side (this branch previously logged nothing, so 400-mapped failures were invisible).
+            ctx.RequestServices.GetRequiredService<ILogger<Program>>()
+                .LogWarning(error.Error, "Handled {Type} mapped to 400", error.Error.GetType().Name);
+            var safeMessage = IsFrameworkLeak(error.Error)
+                ? "The request could not be completed. Please check your input and try again."
+                : error.Error.Message;
+            resultJson = JsonSerializer.Serialize(ApiResponse<object>.Fail(safeMessage));
         }
         else
         {

@@ -141,9 +141,12 @@ public class ImportJobService
             _logger.LogError(ex, "Import job {JobId} failed", jobId);
             job.Status = ImportJobStatus.Failed;
             // Safe user-facing failure reason. Full exception is already logged above for diagnosis.
+            // IMPORTANT: rows are committed in batches during processing, so a mid-import failure does
+            // NOT roll back already-imported rows. Be honest about that (the old message claimed a
+            // rollback that never happened) and point the user at the count + rollback option.
             var safeMessage = ex is InvalidOperationException or KeyNotFoundException or ArgumentException
                 ? ex.Message
-                : "Unexpected error. The import was rolled back — please contact support.";
+                : $"Import failed partway through — {job.SuccessCount} of {job.TotalRows} row(s) were already imported and were NOT rolled back. Review the import and use rollback if the partial data is wrong, or contact support.";
             job.FailureReason = safeMessage.Length > 500 ? safeMessage[..500] : safeMessage;
             job.CompletedAtUtc = DateTime.UtcNow;
             job.RawCsvText = null;

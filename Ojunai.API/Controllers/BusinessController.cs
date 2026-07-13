@@ -287,7 +287,15 @@ public class BusinessController : OjunaiBaseController
             MessageLogs = messageLogs
         };
 
-        var filename = $"ojunai-export-{business.Name.Replace(" ", "-").ToLowerInvariant()}-{DateTime.UtcNow:yyyyMMdd}.json";
+        // Sanitize the business name before placing it in the Content-Disposition header. The name is
+        // user-controlled (registration / chat onboarding / AI correction) and is not character-limited,
+        // so a stray quote would break out of the quoted filename token and a CR/LF would make Kestrel
+        // reject the header. Keep only a safe filename alphabet; collapse everything else to '-'.
+        var safeName = System.Text.RegularExpressions.Regex.Replace(
+            business.Name.Replace(" ", "-").ToLowerInvariant(), "[^a-z0-9._-]", "-").Trim('-');
+        if (string.IsNullOrEmpty(safeName)) safeName = "business";
+        if (safeName.Length > 60) safeName = safeName[..60];
+        var filename = $"ojunai-export-{safeName}-{DateTime.UtcNow:yyyyMMdd}.json";
         Response.Headers["Content-Disposition"] = $"attachment; filename=\"{filename}\"";
         return Ok(export);
     }
@@ -776,7 +784,9 @@ public class BusinessController : OjunaiBaseController
         try
         {
             var client = _httpFactory.CreateClient("VoiceAI");
-            var qs = $"?status={status ?? "all"}&limit={Math.Clamp(limit, 1, 200)}";
+            // URL-encode status (parity with `since` below) so a value like "all%26limit%3D999999" can't
+            // inject extra query parameters into the internal admin request carrying the X-Admin-Key.
+            var qs = $"?status={Uri.EscapeDataString(status ?? "all")}&limit={Math.Clamp(limit, 1, 200)}";
             if (!string.IsNullOrEmpty(since)) qs += $"&since={Uri.EscapeDataString(since)}";
 
             var request = new HttpRequestMessage(HttpMethod.Get,
@@ -851,6 +861,49 @@ public class BusinessController : OjunaiBaseController
         }
     }
 
+    /// <summary>
+    /// Confirms a reservation belongs to the caller's Voice-AI business before a mutation is relayed to
+    /// the GLOBAL, non-business-scoped admin mutation route. Returns true when the id is found in the
+    /// caller's own (business-scoped) reservation list; false when the caller's COMPLETE list definitively
+    /// does not contain it; and null when we can't tell — the list may be truncated at the 200 cap, or the
+    /// lookup errored — in which case callers must NOT block (fail open) to avoid breaking legitimate
+    /// mutations. This makes the common case (a leaked foreign GUID) reject while never blocking a real one.
+    /// </summary>
+    private async Task<bool?> VoiceReservationOwnedAsync(string adminKey, Guid voiceBizId, Guid reservationId)
+    {
+        try
+        {
+            var client = _httpFactory.CreateClient("VoiceAI");
+            var req = new HttpRequestMessage(HttpMethod.Get,
+                $"/api/admin/businesses/{voiceBizId}/reservations?status=all&limit=200");
+            req.Headers.Add("X-Admin-Key", adminKey);
+            var resp = await client.SendAsync(req);
+            if (!resp.IsSuccessStatusCode) return null;
+
+            var body = await resp.Content.ReadAsStringAsync();
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            if (!doc.RootElement.TryGetProperty("reservations", out var arr)
+                || arr.ValueKind != System.Text.Json.JsonValueKind.Array)
+                return null;
+
+            var count = 0;
+            foreach (var r in arr.EnumerateArray())
+            {
+                count++;
+                if (r.TryGetProperty("id", out var idEl)
+                    && idEl.ValueKind == System.Text.Json.JsonValueKind.String
+                    && Guid.TryParse(idEl.GetString(), out var g) && g == reservationId)
+                    return true;
+            }
+            // Not found: only trust a NEGATIVE when the list is definitely complete (below the cap).
+            return count >= 200 ? (bool?)null : false;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     [HttpPatch("voice-ai-reservations/{reservationId:guid}/status")]
     [RequirePermission(Permission.ManageStock)]
     public async Task<IActionResult> UpdateVoiceAIReservationStatus(
@@ -873,6 +926,13 @@ public class BusinessController : OjunaiBaseController
         var adminKey = _config["VoiceAI:VoiceAdminKey"];
         if (string.IsNullOrEmpty(adminKey))
             return StatusCode(503, ApiResponse<object>.Fail("Voice AI not configured."));
+
+        // Ownership check: the mutation route below (/api/admin/reservations/{id}) is NOT business-scoped,
+        // so verify this reservation actually belongs to the caller's Voice-AI business first — otherwise
+        // a merchant with a leaked foreign reservation GUID could cancel/fulfil/expire another tenant's
+        // reservation. Null (indeterminate) does not block, so legitimate mutations are never broken.
+        if (await VoiceReservationOwnedAsync(adminKey, business.VoiceAIBusinessId.Value, reservationId) == false)
+            return NotFound(ApiResponse<object>.Fail("Reservation not found."));
 
         try
         {
@@ -935,6 +995,12 @@ public class BusinessController : OjunaiBaseController
         var adminKey = _config["VoiceAI:VoiceAdminKey"];
         if (!string.IsNullOrEmpty(adminKey))
         {
+            // Cross-tenant guard: don't fulfil (and then sell against) a reservation that isn't the
+            // caller's. The downstream mutation route is not business-scoped. Indeterminate does not block.
+            if (business.VoiceAIBusinessId.HasValue
+                && await VoiceReservationOwnedAsync(adminKey, business.VoiceAIBusinessId.Value, reservationId) == false)
+                return NotFound(ApiResponse<object>.Fail("Reservation not found."));
+
             try
             {
                 var client = _httpFactory.CreateClient("VoiceAI");
