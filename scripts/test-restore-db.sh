@@ -52,4 +52,7 @@ sudo -u postgres psql "$SCRATCH" -c 'SELECT
   (SELECT count(*) FROM "Sales")      AS sales,
   (SELECT count(*) FROM "Products")   AS products;' || fail "could not query restored DB"
 
+# Heartbeat on PASS so the monitor (check-backups.sh) can alert if test-restores stop passing.
+date -u +%FT%TZ > "$BACKUP_DIR/.last-restore-success" 2>/dev/null || true
+
 echo ">> PASS — backup restores cleanly. Scratch DB + temp file cleaned up on exit."
