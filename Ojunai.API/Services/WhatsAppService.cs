@@ -532,7 +532,7 @@ public class WhatsAppService : IWhatsAppService
                     log.ParsedIntent = $"{pending.Intent}_confirmed";
 
                     // Fire proactive alerts after stock-affecting confirmed intents
-                    if (pending.Intent == "confirm_large_sale")
+                    if (pending.Intent == "confirm_large_sale" || pending.Intent == "confirm_destructive")
                         await CheckAndSendAlertsAsync(from, user);
                 }
                 catch (Exception ex)
@@ -612,6 +612,31 @@ public class WhatsAppService : IWhatsAppService
                     message);
             }
 
+            await _db.SaveChangesAsync();
+            return;
+        }
+
+        // Destructive / irreversible / bulk / account-impacting intents require an explicit confirmation
+        // before executing — the AI must never silently delete a catalogue, zero all stock, clear all
+        // debts, or provision staff off a single (possibly misread or injected) message. Stash the parsed
+        // intent as a pending confirmation; the user's "yes" replays it via ExecuteConfirmedActionAsync.
+        // Everyday non-destructive intents skip this entirely, so normal flows are unchanged.
+        var destructiveDesc = DestructiveIntentGuard.DescribeIfDestructive(parsed.Intent, parsed.BusinessAction);
+        if (destructiveDesc != null)
+        {
+            var confirmPayload = JsonSerializer.Serialize(new
+            {
+                intent = parsed.Intent,
+                payload = parsed.BusinessAction,
+            });
+            await SetPendingActionAsync(
+                user.BusinessId, user.Id,
+                "confirm_destructive", confirmPayload, "confirmation",
+                $"This will {destructiveDesc}.");
+            await SendMessageAsync(from,
+                $"⚠️ This will *{destructiveDesc}*.\nThis can't be undone.\n\nReply *YES* to confirm or *NO* to cancel.",
+                user.BusinessId, user.Id);
+            log.ProcessingStatus = MessageProcessingStatus.NeedsClarification;
             await _db.SaveChangesAsync();
             return;
         }
@@ -945,8 +970,27 @@ public class WhatsAppService : IWhatsAppService
         {
             "confirm_large_sale" => await ExecuteConfirmedSaleAsync(user.BusinessId, pending.PartialPayloadJson, user),
             "confirm_overpayment" => await ExecuteConfirmedOverpaymentAsync(user.BusinessId, pending.PartialPayloadJson, user),
+            "confirm_destructive" => await ExecuteConfirmedDestructiveAsync(user, pending.PartialPayloadJson),
             _ => "Sorry, I don't know how to process that confirmation."
         };
+    }
+
+    /// <summary>
+    /// Replays a destructive intent the user just confirmed. The parsed intent + payload were stashed
+    /// verbatim when the confirmation gate fired; we re-dispatch through the normal executor, which
+    /// re-checks the caller's role permission at execution time.
+    /// </summary>
+    private async Task<string> ExecuteConfirmedDestructiveAsync(User user, string payloadJson)
+    {
+        var payload = JsonSerializer.Deserialize<JsonElement>(payloadJson);
+        var intent = payload.GetProperty("intent").GetString()!;
+        var ba = payload.GetProperty("payload");
+        return await ExecuteIntentAsync(user, new ParsedMessage
+        {
+            Intent = intent,
+            BusinessAction = ba,
+            Confidence = 1.0,
+        });
     }
 
     private async Task<string> ExecuteConfirmedOverpaymentAsync(Guid businessId, string payloadJson, User recordedBy)
@@ -2071,8 +2115,16 @@ public class WhatsAppService : IWhatsAppService
             return $"The number {normalizedPhone} is already registered in Ojunai.";
 
         var roleStr = ba.GetStringOrNull("role") ?? "Sales";
-        if (!Enum.TryParse<UserRole>(roleStr, true, out var role) || role == UserRole.Owner)
+        // Privileged roles (Owner/Admin) can NOT be granted from a chat message: the role is parsed by
+        // the AI from free text, and a misparse or prompt-injection must never be able to mint an
+        // admin/owner. Fall back to Sales; promoting to Admin is a deliberate, authenticated action in
+        // the dashboard.
+        var privilegedRoleBlocked = false;
+        if (!Enum.TryParse<UserRole>(roleStr, true, out var role) || role is UserRole.Owner or UserRole.Admin)
+        {
+            privilegedRoleBlocked = Enum.TryParse<UserRole>(roleStr, true, out var r) && r is UserRole.Owner or UserRole.Admin;
             role = UserRole.Sales;
+        }
 
         var setupCode = System.Security.Cryptography.RandomNumberGenerator.GetInt32(100000, 999999).ToString();
         var business = await _db.Businesses.FindAsync(businessId);
@@ -2144,11 +2196,16 @@ public class WhatsAppService : IWhatsAppService
             catch { /* best effort */ }
         });
 
+        var roleNote = privilegedRoleBlocked
+            ? "\n\n⚠️ Owner/Admin can't be assigned from chat — added as *Sales*. Promote them from the dashboard if you meant to give admin access."
+            : "";
+
         return $"✅ *Staff added!*\n\n" +
             $"👤 {user.FullName}\n" +
             $"📞 {user.PhoneNumber}\n" +
             $"🏷️ Role: {user.Role}\n\n" +
-            $"A welcome message with a setup link has been sent to their WhatsApp. They can set their dashboard password using the forgot-password flow.";
+            $"A welcome message with a setup link has been sent to their WhatsApp. They can set their dashboard password using the forgot-password flow." +
+            roleNote;
     }
 
     private async Task<string> HandleGetStaffListAsync(Guid businessId)

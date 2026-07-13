@@ -64,7 +64,11 @@ public class WebhooksController : ControllerBase
             return Content("<Response/>", "text/xml");
         }
 
-        _logger.LogInformation("Inbound WhatsApp from {From}: {Body}", form.From, form.Body);
+        // Do NOT log the full sender number or the raw message body at Information level — the body
+        // routinely carries customer PII / financial detail and is attacker-controlled (newlines could
+        // forge log lines). Log only the redacted sender; a sanitized short preview goes to Debug.
+        _logger.LogInformation("Inbound WhatsApp from {From}", RedactSender(form.From));
+        _logger.LogDebug("Inbound WhatsApp body preview: {Preview}", SanitizeLogPreview(form.Body));
 
         // Enqueue via Hangfire so the message is durable and retried on failure
         BackgroundJob.Enqueue<IWhatsAppService>(svc =>
@@ -104,7 +108,8 @@ public class WebhooksController : ControllerBase
             return Content("<Response/>", "text/xml");
         }
 
-        _logger.LogInformation("Inbound WhatsApp (V1) from {From}: {Body}", message.SenderIdentity, message.Text);
+        _logger.LogInformation("Inbound WhatsApp (V1) from {From}", RedactSender(message.SenderIdentity));
+        _logger.LogDebug("Inbound WhatsApp (V1) body preview: {Preview}", SanitizeLogPreview(message.Text));
 
         // Hangfire ensures the orchestrator call is durable and retried on transient failure,
         // matching the legacy path's reliability semantics.
@@ -206,38 +211,61 @@ public class WebhooksController : ControllerBase
         await db.SaveChangesAsync();
         Request.Body.Position = 0;
 
-        var message = await adapter.ParseInboundAsync(Request);
-        if (message is null)
+        // Meta can batch multiple messaging events into one delivery; parse ALL of them so a second
+        // quick message or a message+referral pair isn't silently dropped (the single 200 ack below
+        // covers the whole batch, so dropped events are never re-delivered). Falls back to the single
+        // interface method for any non-Messenger adapter.
+        List<ConversationMessage> messages;
+        if (adapter is Ojunai.API.Services.Channels.Messenger.MessengerAdapter mAdapter)
+        {
+            messages = await mAdapter.ParseAllInboundAsync(Request);
+        }
+        else
+        {
+            var single = await adapter.ParseInboundAsync(Request);
+            messages = single is null ? new List<ConversationMessage>() : new List<ConversationMessage> { single };
+        }
+        if (messages.Count == 0)
         {
             // Non-message event (delivery receipt, read receipt, etc.) — already logged, ignore.
             return Ok();
         }
 
-        // Idempotency — Meta retries on 5xx or slow 2xx responses, which means the same mid can
-        // arrive multiple times. Without this check we'd Claude-parse twice and (worse) potentially
-        // record a duplicate sale. Match the same dedup pattern WhatsApp uses (WhatsAppService.cs:297).
-        if (!string.IsNullOrEmpty(message.ProviderMessageId))
+        var first = true;
+        foreach (var message in messages)
         {
-            var seenBefore = await db.MessageLogs.AnyAsync(l =>
-                l.Channel == "Messenger"
-                && l.Direction == MessageDirection.Inbound
-                && l.WhatsAppMessageId == message.ProviderMessageId
-                && l.Id != auditLog.Id);
-            if (seenBefore)
+            // Idempotency — Meta retries on 5xx or slow 2xx responses, which means the same mid can
+            // arrive multiple times. Without this check we'd Claude-parse twice and (worse) potentially
+            // record a duplicate sale. Match the same dedup pattern WhatsApp uses (WhatsAppService.cs:297).
+            if (!string.IsNullOrEmpty(message.ProviderMessageId))
             {
-                _logger.LogInformation("Dropping duplicate Messenger webhook for mid {Mid}", message.ProviderMessageId);
-                return Ok();
+                var seenBefore = await db.MessageLogs.AnyAsync(l =>
+                    l.Channel == "Messenger"
+                    && l.Direction == MessageDirection.Inbound
+                    && l.WhatsAppMessageId == message.ProviderMessageId
+                    && l.Id != auditLog.Id);
+                if (seenBefore)
+                {
+                    _logger.LogInformation("Dropping duplicate Messenger webhook for mid {Mid}", message.ProviderMessageId);
+                    continue;
+                }
+
+                // Persist the FIRST event's mid on the shared audit log so the next retry's check finds
+                // it; additional events in the batch are deduped by their own mid via their orchestrator
+                // audit trail. (One audit row per delivery is retained.)
+                if (first)
+                {
+                    auditLog.WhatsAppMessageId = message.ProviderMessageId;
+                    await db.SaveChangesAsync();
+                }
             }
 
-            // Persist the mid on the audit log so the next retry's check finds it.
-            auditLog.WhatsAppMessageId = message.ProviderMessageId;
-            await db.SaveChangesAsync();
+            // Hangfire enqueue for durability and async handling — Meta wants a 200 within 5s.
+            var msg = message;
+            BackgroundJob.Enqueue<IConversationOrchestrator>(o =>
+                o.ProcessInboundAsync(msg, CancellationToken.None));
+            first = false;
         }
-
-        // Hangfire enqueue for durability and async handling — Meta wants a 200 within 5s.
-        var msg = message;
-        BackgroundJob.Enqueue<IConversationOrchestrator>(o =>
-            o.ProcessInboundAsync(msg, CancellationToken.None));
 
         return Ok();
     }
@@ -331,6 +359,24 @@ public class WebhooksController : ControllerBase
     }
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max];
+
+    // Redact an inbound sender identity (phone / MSISDN / chat id) to its last 4 digits for logging,
+    // so customer phone numbers don't land in plaintext logs.
+    private static string RedactSender(string? s)
+    {
+        if (string.IsNullOrEmpty(s)) return "****";
+        var digits = new string(s.Where(char.IsDigit).ToArray());
+        return digits.Length >= 4 ? $"***{digits[^4..]}" : "****";
+    }
+
+    // Sanitize a user-controlled message body for a Debug-only preview: strip CR/LF (prevents log-line
+    // forgery) and cap the length so a huge/hostile body can't flood or spoof the log.
+    private static string SanitizeLogPreview(string? body, int max = 120)
+    {
+        if (string.IsNullOrEmpty(body)) return "";
+        var oneLine = body.Replace('\r', ' ').Replace('\n', ' ');
+        return oneLine.Length <= max ? oneLine : oneLine[..max];
+    }
 
     private async Task<bool> ValidateTwilioSignatureAsync()
     {

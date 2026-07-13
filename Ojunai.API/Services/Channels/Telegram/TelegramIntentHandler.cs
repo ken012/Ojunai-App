@@ -193,6 +193,19 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
             return;
         }
 
+        // ── 0b. Per-sender rate limit (denial-of-wallet guard) ───────────────────
+        // Each fresh message triggers a PAID Claude parse, so an unthrottled linked sender could flood
+        // messages and run up the AI bill. Cap at 15/min/sender (parity with WhatsApp). Button-tap
+        // callbacks (handled above) are exempt so a user can still confirm/cancel after hitting the cap.
+        if (Common.ChannelRateLimiter.IsLimited(message.SenderIdentity))
+        {
+            _logger.LogWarning("Telegram rate limit hit for chat {Chat}", message.SenderIdentity);
+            await Reply(message, "⏳ You're sending messages too fast. Please wait a minute and try again.", ct);
+            return;
+        }
+        // Bound the input sent to the model so one huge message can't inflate token spend.
+        rawText = Common.ChannelRateLimiter.CapLength(rawText);
+
         // ── 1. Load context Claude needs (business, products, contacts) ──────────
         var context = await BuildBusinessContextAsync(businessId, ct);
         if (context is null)
@@ -229,6 +242,27 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         if (parsed.NeedsClarification && !string.IsNullOrEmpty(parsed.ClarificationQuestion))
         {
             await Reply(message, parsed.ClarificationQuestion, ct);
+            return;
+        }
+
+        // ── 3b. Destructive/bulk/account-impacting intents need explicit confirmation ────────────
+        // A single misread or an injected instruction must not delete a catalogue, zero all stock,
+        // clear all debts, or provision staff. Stash the parsed intent and ask via Yes/No buttons;
+        // "Yes" replays it through the shared dispatcher. Non-destructive intents are unaffected.
+        var destructiveDesc = Common.DestructiveIntentGuard.DescribeIfDestructive(parsed.Intent, parsed.BusinessAction);
+        if (destructiveDesc != null)
+        {
+            var confirmPayload = JsonSerializer.Serialize(new { intent = parsed.Intent, payload = parsed.BusinessAction });
+            var confirmToken = await _pending.CreateAsync(businessId, userId, message.SenderIdentity, "confirm_destructive", confirmPayload, ct);
+            await _telegram.SendAsync(message.SenderIdentity, new ReplyComposition
+            {
+                Text = $"⚠️ This will {destructiveDesc}. This can't be undone. Continue?",
+                QuickReplies = new List<QuickReply>
+                {
+                    new("Yes, do it", $"pa:yes:{confirmToken}"),
+                    new("No, cancel", $"pa:no:{confirmToken}"),
+                },
+            }, ct);
             return;
         }
 
@@ -577,6 +611,19 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         };
 
         await ExecuteSaleAndReplyAsync(consumed.BusinessId, consumed.UserId, request, contactId, customerName, inbound, ct);
+    }
+
+    /// <summary>
+    /// Resumes a destructive intent after the user taps "Yes": rebuilds the stashed parsed intent and
+    /// replays it through the shared dispatcher (which re-checks the caller's role permission).
+    /// </summary>
+    private async Task ResumeConfirmDestructiveAsync(PendingActionConsumeResult consumed, ConversationMessage inbound, CancellationToken ct)
+    {
+        var payload = JsonSerializer.Deserialize<JsonElement>(consumed.PayloadJson);
+        var intent = payload.GetProperty("intent").GetString()!;
+        var ba = payload.GetProperty("payload");
+        var parsed = new ParsedMessage { Intent = intent, BusinessAction = ba, Confidence = 1.0 };
+        await DelegateToWhatsAppDispatcherAsync(parsed, consumed.UserId, inbound, ct);
     }
 
     /// <summary>
@@ -1086,6 +1133,10 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
 
             case "confirm_large_sale":
                 await ResumeConfirmLargeSaleAsync(consumed, inbound, ct);
+                break;
+
+            case "confirm_destructive":
+                await ResumeConfirmDestructiveAsync(consumed, inbound, ct);
                 break;
 
             default:

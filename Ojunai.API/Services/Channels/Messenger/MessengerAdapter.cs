@@ -110,8 +110,20 @@ public sealed class MessengerAdapter : IChannelAdapter
             Encoding.UTF8.GetBytes(computedHex));
     }
 
+    // Interface entry point: returns the FIRST parsed event (kept for compatibility). The Messenger
+    // webhook controller uses ParseAllInboundAsync so it doesn't drop batched events.
     public async Task<ConversationMessage?> ParseInboundAsync(HttpRequest request)
+        => (await ParseAllInboundAsync(request)).FirstOrDefault();
+
+    /// <summary>
+    /// Parses ALL user events in a Messenger webhook delivery. Meta may batch multiple messaging events
+    /// (two quick messages, or a message + referral) in one POST; returning only the first silently
+    /// dropped the rest, and Meta's single 200 ack covers the whole batch so they are never re-delivered.
+    /// The controller enqueues one job per returned message (dedup already guards double-processing).
+    /// </summary>
+    public async Task<List<ConversationMessage>> ParseAllInboundAsync(HttpRequest request)
     {
+        var results = new List<ConversationMessage>();
         request.Body.Position = 0;
         MessengerWebhookPayload? payload;
         try
@@ -121,15 +133,12 @@ public sealed class MessengerAdapter : IChannelAdapter
         catch (JsonException ex)
         {
             _logger.LogWarning(ex, "Failed to deserialize Messenger webhook body");
-            return null;
+            return results;
         }
 
         if (payload?.Object != "page" || payload.Entry is null || payload.Entry.Count == 0)
-            return null;
+            return results;
 
-        // Meta can batch multiple events in one delivery; for Phase 3 we surface the first
-        // user-message-or-postback event. If we ever need to handle batches, the controller
-        // would loop and call orchestrator multiple times.
         foreach (var entry in payload.Entry)
         {
             if (entry.Messaging is null) continue;
@@ -147,20 +156,21 @@ public sealed class MessengerAdapter : IChannelAdapter
                     // convention. We surface the payload as Text so the orchestrator's callback dispatcher
                     // sees it the same way as Telegram callback_query data.
                     var text = msg.QuickReply?.Payload ?? msg.Text;
-                    return new ConversationMessage
+                    results.Add(new ConversationMessage
                     {
                         Channel = Channel.Messenger,
                         ProviderMessageId = msg.Mid,
                         SenderIdentity = senderPsid,
                         Text = text,
                         ReceivedAtUtc = DateTimeOffset.FromUnixTimeMilliseconds(ev.Timestamp).UtcDateTime,
-                    };
+                    });
+                    continue;
                 }
 
                 // 2. Postback (tap on a structured-template button or Get Started)
                 if (ev.Postback is { } pb)
                 {
-                    return new ConversationMessage
+                    results.Add(new ConversationMessage
                     {
                         Channel = Channel.Messenger,
                         ProviderMessageId = $"pb_{ev.Timestamp}_{senderPsid}",
@@ -169,23 +179,24 @@ public sealed class MessengerAdapter : IChannelAdapter
                         // m.me/page?ref=<X> referrals come through here too via pb.Referral.Ref — we
                         // pack that into a "pa:link:<ref>" pseudo-callback the linking service handles.
                         Text = pb.Payload ?? (pb.Referral?.Ref is { } r ? $"mref:{r}" : null),
-                    };
+                    });
+                    continue;
                 }
 
                 // 3. Referral standalone (user reaches the bot via m.me/page?ref=X without sending a message)
                 if (ev.Referral?.Ref is { } refValue)
                 {
-                    return new ConversationMessage
+                    results.Add(new ConversationMessage
                     {
                         Channel = Channel.Messenger,
                         ProviderMessageId = $"ref_{ev.Timestamp}_{senderPsid}",
                         SenderIdentity = senderPsid,
                         Text = $"mref:{refValue}",
-                    };
+                    });
                 }
             }
         }
-        return null;
+        return results;
     }
 
     public async Task<SendResult> SendAsync(string recipientIdentity, ReplyComposition reply, CancellationToken ct = default)

@@ -301,7 +301,7 @@ public class ClaudeParsingService : IClaudeParsingService
         return doc.RootElement.Clone();
     }
 
-    private static string SanitizeForPrompt(string? input)
+    internal static string SanitizeForPrompt(string? input)
     {
         if (string.IsNullOrEmpty(input)) return "";
         var sb = new System.Text.StringBuilder(Math.Min(input.Length, 100));
@@ -310,6 +310,12 @@ public class ClaudeParsingService : IClaudeParsingService
             if (char.IsControl(c)
                 || c is '\u2028' or '\u2029' or '\u0085'
                 || c is '\u200B' or '\uFEFF')
+                continue;
+            // Drop the characters an attacker would need to forge the prompt's data fence
+            // ([DATA_START]/[DATA_END]) or spoof the \u2550\u2550\u2550 section headers. Product/contact names
+            // effectively never need square brackets or box-drawing glyphs, so removing them is a
+            // safe, allow-list-friendly defense against indirect prompt injection via stored names.
+            if (c is '[' or ']' || (c >= '\u2500' && c <= '\u257F'))
                 continue;
             sb.Append(c);
             if (sb.Length >= 100) break;
