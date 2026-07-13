@@ -114,7 +114,9 @@ public class AccountRecoveryService : IAccountRecoveryService
         await _db.SaveChangesAsync();
 
         var dashboardUrl = (_config["Urls:Dashboard"] ?? "https://app.ojunai.com").TrimEnd('/');
-        var link = $"{dashboardUrl}/recover?token={rawToken}";
+        // Emit "{rowId:N}.{secret}" so validation can load exactly one row by its indexed PK instead of
+        // scanning the newest-50 tokens globally (which fails closed once the pending pool exceeds 50).
+        var link = $"{dashboardUrl}/recover?token={row.Id:N}.{rawToken}";
         var maskedPhone = MaskPhone(user.PhoneNumber);
 
         var html = $@"
@@ -273,6 +275,23 @@ public class AccountRecoveryService : IAccountRecoveryService
             throw new UnauthorizedAccessException("Recovery token missing or invalid.");
 
         var now = DateTime.UtcNow;
+
+        // Fast path: new tokens are "{rowId:N}.{secret}". Load exactly one row by its indexed PK and
+        // BCrypt-verify only its hash — no global scan, so it can't fail closed under a large pending
+        // pool. A malformed/foreign id simply misses here and drops to the legacy scan below.
+        var dot = rawToken.IndexOf('.');
+        if (dot > 0 && Guid.TryParse(rawToken[..dot], out var rowId))
+        {
+            var secret = rawToken[(dot + 1)..];
+            var byId = await _db.AccountRecoveryTokens
+                .Include(t => t.User).ThenInclude(u => u.Business)
+                .FirstOrDefaultAsync(t => t.Id == rowId && t.UsedAtUtc == null && t.ExpiresAtUtc > now);
+            if (byId != null && byId.User.IsActive && BCrypt.Net.BCrypt.Verify(secret, byId.HashedToken))
+                return (byId, byId.User);
+        }
+
+        // Legacy fallback: tokens issued before the selector format (whole-token hash, no '.'). Bounded
+        // scan preserved so in-flight old links keep working.
         var candidates = await _db.AccountRecoveryTokens
             .Include(t => t.User).ThenInclude(u => u.Business)
             .Where(t => t.UsedAtUtc == null && t.ExpiresAtUtc > now)

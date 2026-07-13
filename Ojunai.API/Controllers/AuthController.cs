@@ -54,14 +54,17 @@ public class AuthController : OjunaiBaseController
         _logger = logger;
     }
 
+    // The direct register endpoint bypassed the mandatory phone-OTP signup gate that the dashboard
+    // (and verify-phone-and-register) enforce — allowing unverified-phone account creation and phone
+    // number squatting. Owner signup MUST prove phone ownership first, so this legacy path is closed.
+    // Clients use request-phone-verification → verify-phone-and-register.
     [AllowAnonymous]
     [AuthRateLimit]
     [HttpPost("register")]
-    public async Task<ActionResult<ApiResponse<AuthResponse>>> Register([FromBody] RegisterOwnerRequest request)
+    public ActionResult<ApiResponse<AuthResponse>> Register([FromBody] RegisterOwnerRequest request)
     {
-        var result = await _auth.RegisterOwnerAsync(request);
-        SetAuthCookie(result.Token, result.ExpiresAt);
-        return Ok(ApiResponse<AuthResponse>.Ok(result, "Business registered successfully."));
+        return StatusCode(StatusCodes.Status410Gone, ApiResponse<AuthResponse>.Fail(
+            "Direct registration is disabled. Verify your phone via /api/auth/request-phone-verification, then complete signup at /api/auth/verify-phone-and-register."));
     }
 
     [AllowAnonymous]

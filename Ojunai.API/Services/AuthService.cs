@@ -251,9 +251,15 @@ public class AuthService : IAuthService
         if (user is null)
             return string.Empty;
 
+        // Staff self-reset by WhatsApp is deliberately not offered. Silently no-op — same generic
+        // controller response as the unknown-number case — so we don't leak that the number is
+        // registered AND is a lower-privilege staff account (a targeting oracle). Staff passwords are
+        // reset from the dashboard by an owner/admin.
         if (user.Role != UserRole.Owner && user.Role != UserRole.Admin)
-            throw new InvalidOperationException(
-                "Staff accounts can't self-reset by WhatsApp. Ask your owner or admin to reset your password from the dashboard.");
+        {
+            _logger.LogInformation("Password-reset ignored for staff account {UserId} (staff self-reset disabled)", user.Id);
+            return string.Empty;
+        }
 
         await _phoneVerify.RequestCodeAsync(normalizedPhone, PhoneVerificationPurpose.PasswordReset);
 
@@ -265,12 +271,13 @@ public class AuthService : IAuthService
     public async Task VerifyResetAndChangePasswordAsync(string phoneNumber, string code, string newPassword)
     {
         var normalizedPhone = WhatsAppService.NormalizePhone(phoneNumber);
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == normalizedPhone && u.IsActive)
-            ?? throw new KeyNotFoundException("No account found.");
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.PhoneNumber == normalizedPhone && u.IsActive);
 
-        if (user.Role != UserRole.Owner && user.Role != UserRole.Admin)
-            throw new InvalidOperationException(
-                "Staff accounts can't self-reset by WhatsApp. Ask your owner or admin to reset your password from the dashboard.");
+        // Use one generic failure for both "no such account" and "staff role" so verify-reset is not an
+        // existence/role oracle. A legitimate owner/admin who received a code never hits these branches;
+        // staff never receive a code (request-reset silently no-ops for them), so they can't reach here.
+        if (user is null || (user.Role != UserRole.Owner && user.Role != UserRole.Admin))
+            throw new InvalidOperationException("Invalid or expired reset code.");
 
         var (pwOk, pwReason) = PasswordPolicy.Validate(newPassword);
         if (!pwOk)
@@ -309,8 +316,15 @@ public class AuthService : IAuthService
     //
     // Why a separate flow vs. the existing RegisterOwnerAsync:
     //  - No password collected on-screen — set after signup on /post-signup
-    //  - Phone proven via Telegram's verified contact-share, not a 6-digit OTP
     //  - Business name + owner name captured in the chat, not on the web form
+    //
+    // ⚠️ SECURITY (finding F05): the phone is currently the USER-TYPED text from chat — it is NOT
+    // proven. (An earlier comment here claimed "verified contact-share"; no request_contact / OTP check
+    // exists.) An unverified phone lets an attacker squat a victim's number and, because WhatsAppService
+    // resolves inbound senders by PhoneNumber + IsActive, intercept that victim's future WhatsApp data.
+    // Before enabling channel signup in production, gate account creation on phone-ownership proof:
+    // either a WhatsApp OTP (as the web path does) or Telegram request_contact with contact.user_id ==
+    // sender. See security-audit for the exact remediation.
     //
     // This path is purely additive — RegisterOwnerAsync still backs the web phone-OTP path.
 
@@ -580,7 +594,10 @@ public class AuthService : IAuthService
 
     private string GeneratePostSignupJwt(User user, Business business)
     {
-        var key = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:SecretKey"]!));
+        // Use the same signing key name (Jwt:Secret) as every other JWT path. Previously this read
+        // a non-existent "Jwt:SecretKey" — null in prod config — which crashed the channel-signup
+        // completion flow and created an inconsistent, easy-to-misconfigure second key surface.
+        var key = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Secret"]!));
         var creds = new Microsoft.IdentityModel.Tokens.SigningCredentials(key, Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256);
         var claims = new List<System.Security.Claims.Claim>
         {
@@ -600,7 +617,7 @@ public class AuthService : IAuthService
 
     private (Guid userId, Guid businessId) ValidatePostSignupJwt(string token)
     {
-        var key = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:SecretKey"]!));
+        var key = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Secret"]!));
         var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
         var principal = handler.ValidateToken(token,
             new Microsoft.IdentityModel.Tokens.TokenValidationParameters
