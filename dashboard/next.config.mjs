@@ -1,7 +1,30 @@
 import withPWAInit from "@ducanh2912/next-pwa";
 
 /** @type {import('next').NextConfig} */
-const nextConfig = {};
+const nextConfig = {
+  // Security headers for the dashboard HTML origin. Conservative on purpose: it adds
+  // clickjacking (frame-ancestors), base-tag-injection (base-uri) and plugin (object-src)
+  // protection plus the standard hardening headers, WITHOUT constraining script-src/connect-src.
+  // A full nonce-based script-src CSP is a follow-up that must be validated against the running
+  // app (Next.js inline hydration + the inline theme-boot script would otherwise break).
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'",
+          },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "geolocation=(), microphone=(), camera=()" },
+        ],
+      },
+    ];
+  },
+};
 
 // ─── Service Worker security model ─────────────────────────────────────────
 // Three categories of requests, three strategies. Anything not matched by a
