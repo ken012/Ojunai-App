@@ -88,7 +88,10 @@ public class EmailVerificationService : IEmailVerificationService
         await _db.SaveChangesAsync();
 
         var dashboardUrl = (_config["Urls:Dashboard"] ?? "https://app.ojunai.com").TrimEnd('/');
-        var link = $"{dashboardUrl}/verify-email?token={rawToken}";
+        // Emit "{rowId:N}.{secret}" so ConsumeTokenAsync can load exactly one row by its indexed PK
+        // instead of scanning the newest-50 tokens globally (which fails closed once the pending pool
+        // exceeds 50 — realistic at scale given 24h token lifetime).
+        var link = $"{dashboardUrl}/verify-email?token={row.Id:N}.{rawToken}";
 
         var html = $@"
 <!doctype html><html><body style=""font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: #0F172A; max-width: 560px; margin: 0 auto; padding: 24px;"">
@@ -125,17 +128,34 @@ public class EmailVerificationService : IEmailVerificationService
 
         var now = DateTime.UtcNow;
 
-        // We have to scan candidates by expiry — BCrypt hashes can't be looked up by hash equality
-        // since each one has its own salt. The candidate set is small (one user typically has one
-        // pending token at a time) so this is fine.
-        var candidates = await _db.EmailVerificationTokens
-            .Include(t => t.User)
-            .Where(t => t.UsedAtUtc == null && t.ExpiresAtUtc > now)
-            .OrderByDescending(t => t.CreatedAtUtc)
-            .Take(50)
-            .ToListAsync();
+        // Fast path: new tokens are "{rowId:N}.{secret}". Load exactly one row by its indexed PK and
+        // BCrypt-verify only its hash — no global scan, so it can't fail closed once the pending pool
+        // exceeds the scan cap. A malformed/foreign id misses here and drops to the legacy scan.
+        EmailVerificationToken? match = null;
+        var dot = rawToken.IndexOf('.');
+        if (dot > 0 && Guid.TryParse(rawToken[..dot], out var rowId))
+        {
+            var secret = rawToken[(dot + 1)..];
+            var byId = await _db.EmailVerificationTokens
+                .Include(t => t.User)
+                .FirstOrDefaultAsync(t => t.Id == rowId && t.UsedAtUtc == null && t.ExpiresAtUtc > now);
+            if (byId != null && BCrypt.Net.BCrypt.Verify(secret, byId.HashedToken))
+                match = byId;
+        }
 
-        var match = candidates.FirstOrDefault(t => BCrypt.Net.BCrypt.Verify(rawToken, t.HashedToken));
+        // Legacy fallback: pre-selector tokens (whole-token hash, no '.'). BCrypt hashes can't be looked
+        // up by equality (per-salt), so scan the newest unused/unexpired rows and compare.
+        if (match == null)
+        {
+            var candidates = await _db.EmailVerificationTokens
+                .Include(t => t.User)
+                .Where(t => t.UsedAtUtc == null && t.ExpiresAtUtc > now)
+                .OrderByDescending(t => t.CreatedAtUtc)
+                .Take(50)
+                .ToListAsync();
+            match = candidates.FirstOrDefault(t => BCrypt.Net.BCrypt.Verify(rawToken, t.HashedToken));
+        }
+
         if (match == null)
             throw new UnauthorizedAccessException("This verification link is invalid or has expired. Please request a new one.");
 

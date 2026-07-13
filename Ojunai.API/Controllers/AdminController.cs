@@ -21,11 +21,12 @@ public class AdminController : ControllerBase
     [HttpGet("onboarding-analytics")]
     public async Task<IActionResult> GetOnboardingAnalytics([FromQuery] string key)
     {
-        var secret = _config["Admin:AnalyticsKey"];
-        if (string.IsNullOrEmpty(secret) || secret.Length < 32) return StatusCode(503, "Admin endpoint not configured.");
-        if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-            System.Text.Encoding.UTF8.GetBytes((key ?? "").ToLowerInvariant()),
-            System.Text.Encoding.UTF8.GetBytes(secret.ToLowerInvariant()))) return Unauthorized();
+        // Route through the shared validator so this endpoint gets the same hardening as every other
+        // admin endpoint: case-SENSITIVE constant-time compare (the old inline check lowercased both
+        // sides, halving key entropy) and a mandatory AdminAuditEntry (the old path wrote none, so
+        // probes here were invisible to the failures-by-IP alerting).
+        var authFailure = ValidateAdminKey(key);
+        if (authFailure != null) return authFailure;
 
         var logs = await _db.MessageLogs
             .Where(m => m.ParsedIntent != null && m.ParsedIntent.StartsWith("onboarding:"))
@@ -114,12 +115,25 @@ public class AdminController : ControllerBase
     /// </summary>
     private IActionResult? ValidateAdminKey(string? key)
     {
-        var result = ValidateAdminKeyInner(key, out var success, out var statusCode);
+        var effectiveKey = ResolveAdminKey(key);
+        var result = ValidateAdminKeyInner(effectiveKey, out var success, out var statusCode);
         // Fire-and-forget audit write so a DB hiccup on the audit table never blocks the admin
         // endpoint itself. The audit is best-effort; a real implementation could surface failures
         // to a metric, but for our scale this is fine.
-        try { WriteAuditEntry(key, success, statusCode); } catch { /* swallow */ }
+        try { WriteAuditEntry(effectiveKey, success, statusCode); } catch { /* swallow */ }
         return result;
+    }
+
+    /// <summary>
+    /// Resolves the admin key, PREFERRING the X-Admin-Key request header over the ?key= query
+    /// parameter. The header keeps the secret out of reverse-proxy access logs, browser history, and
+    /// Referer headers. The query parameter is still accepted as a deprecated fallback so existing
+    /// operator tooling keeps working; migrate callers to the header, then query support can be removed.
+    /// </summary>
+    private string? ResolveAdminKey(string? queryKey)
+    {
+        var headerKey = Request.Headers["X-Admin-Key"].ToString();
+        return !string.IsNullOrEmpty(headerKey) ? headerKey : queryKey;
     }
 
     private IActionResult? ValidateAdminKeyInner(string? key, out bool success, out int statusCode)
@@ -131,9 +145,11 @@ public class AdminController : ControllerBase
             statusCode = 503;
             return StatusCode(503, "Admin endpoint not configured.");
         }
+        // Case-SENSITIVE constant-time compare. The previous lowercasing of both sides roughly halved
+        // the effective entropy of the admin key for no functional benefit (the key is used verbatim).
         if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-            System.Text.Encoding.UTF8.GetBytes((key ?? "").ToLowerInvariant()),
-            System.Text.Encoding.UTF8.GetBytes(secret.ToLowerInvariant())))
+            System.Text.Encoding.UTF8.GetBytes(key ?? ""),
+            System.Text.Encoding.UTF8.GetBytes(secret)))
         {
             statusCode = 401;
             return Unauthorized();
@@ -224,11 +240,17 @@ public class AdminController : ControllerBase
     // DATA WIPE
     // ═════════════════════════════════════════════════════════════════════════════
 
-    [HttpGet("wipe-inventory-expenses")]
-    public async Task<IActionResult> WipeInventoryExpenses([FromQuery] string key, [FromQuery] Guid businessId)
+    // POST, not GET: destructive. A GET could be triggered by a browser prefetch, crawler, or a
+    // logged/shared URL, and the URL (with ?key=) sits in reverse-proxy access logs. Requiring POST
+    // plus an explicit confirm=<businessId> makes accidental/replayed invocation far less likely.
+    [HttpPost("wipe-inventory-expenses")]
+    public async Task<IActionResult> WipeInventoryExpenses([FromQuery] string key, [FromQuery] Guid businessId, [FromQuery] Guid? confirm)
     {
         var auth = ValidateAdminKey(key);
         if (auth != null) return auth;
+
+        if (confirm != businessId)
+            return BadRequest(new { error = "Confirmation required: pass confirm=<businessId> to authorize this destructive wipe." });
 
         var biz = await _db.Businesses.FindAsync(businessId);
         if (biz == null) return NotFound(new { error = "Business not found" });
@@ -267,11 +289,15 @@ public class AdminController : ControllerBase
         });
     }
 
-    [HttpGet("wipe-all-data")]
-    public async Task<IActionResult> WipeAllData([FromQuery] string key, [FromQuery] Guid businessId)
+    // POST, not GET: irreversible full-tenant data wipe. See note on WipeInventoryExpenses.
+    [HttpPost("wipe-all-data")]
+    public async Task<IActionResult> WipeAllData([FromQuery] string key, [FromQuery] Guid businessId, [FromQuery] Guid? confirm)
     {
         var auth = ValidateAdminKey(key);
         if (auth != null) return auth;
+
+        if (confirm != businessId)
+            return BadRequest(new { error = "Confirmation required: pass confirm=<businessId> to authorize this destructive wipe." });
 
         var biz = await _db.Businesses.FindAsync(businessId);
         if (biz == null) return NotFound(new { error = "Business not found" });

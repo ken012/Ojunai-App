@@ -135,6 +135,16 @@ public class PlanGuard
         if (trial is TrialStatus.Active or TrialStatus.GracePeriod)
             return (false, "You already have an active trial. Wait until it ends before starting a new one.");
 
+        // One trial per tier, ever. GetTrialStatus only knows about the CURRENT trial window — once a
+        // trial expires and the revert job clears TrialEndsAt, it reports None again, which let a
+        // merchant restart the SAME premium trial indefinitely (perpetual Pro while paying the cheapest
+        // tier). A persisted trial.started BillingEvent is the durable "already used" record, so a tier
+        // can be trialed only once. (No schema change — reuses the existing billing-events table.)
+        var alreadyTrialed = await _db.BillingEvents.AnyAsync(e =>
+            e.BusinessId == businessId && e.EventType == "trial.started" && e.Plan == targetPlan);
+        if (alreadyTrialed)
+            return (false, $"You've already used your free {targetPlan} trial. Subscribe to {targetPlan} to keep those features.");
+
         var targetRank = PlanRank(targetPlan);
 
         if (targetRank <= PlanRank("starter"))
@@ -157,6 +167,17 @@ public class PlanGuard
         var business = (await _db.Businesses.FindAsync(businessId))!;
         business.Plan = targetPlan;
         business.TrialEndsAt = DateTime.UtcNow.AddDays(TrialDurationDays);
+        // Durable record that this tier's trial has been consumed — enforced by CanStartTrialAsync so it
+        // can't be restarted after expiry. Persisted here in the same transaction as the trial start.
+        _db.BillingEvents.Add(new BillingEvent
+        {
+            BusinessId = businessId,
+            EventType = "trial.started",
+            Provider = "system",
+            Plan = targetPlan,
+            Status = "trial",
+            CreatedAtUtc = DateTime.UtcNow
+        });
         await _db.SaveChangesAsync();
         return null;
     }

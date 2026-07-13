@@ -78,8 +78,12 @@ public class ActiveUserMiddleware
                 // Token version check — whenever a user changes their password or completes a reset, we increment
                 // User.TokenVersion. Old tokens still have the old version and are rejected here.
                 // This gives us a way to invalidate all sessions for a user after a credential change.
+                // Fail CLOSED: reject when the claim is missing/unparseable OR does not match. Every
+                // legitimately-minted token carries tokenVersion (AuthService.GenerateJwt always adds
+                // it), so a token without a parseable claim is malformed/forged and must not slip past
+                // revocation — the old `TryParse && !=` form silently allowed it.
                 var tokenVersionClaim = context.User.FindFirst("tokenVersion")?.Value;
-                if (int.TryParse(tokenVersionClaim, out var tokenVersion) && tokenVersion != user.TokenVersion)
+                if (!int.TryParse(tokenVersionClaim, out var tokenVersion) || tokenVersion != user.TokenVersion)
                 {
                     // Proactively clear the stale cookie. Without this, every subsequent request
                     // (including the user's next login attempt if they don't manually clear cookies)

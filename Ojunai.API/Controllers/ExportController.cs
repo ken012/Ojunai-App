@@ -39,8 +39,24 @@ public class ExportController : ControllerBase
         return Content(PinPage(token, null), "text/html");
     }
 
+    // Per-token PIN attempt lockout. The download PIN is only 4 digits (~10k space), so without a
+    // hard lockout an attacker holding a leaked link (query-string tokens leak via proxy logs / chat
+    // forwards / Referer) could brute-force it. The per-IP [AuthRateLimit] alone is bypassable by IP
+    // rotation; this per-token counter is the decisive control. Keyed by a hash of the token so raw
+    // tokens never sit in memory as dictionary keys.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int Count, DateTime WindowStart)> _pinAttempts = new();
+    private const int MaxPinAttempts = 5;
+    private static readonly TimeSpan PinLockWindow = TimeSpan.FromMinutes(15);
+
+    private static string TokenKey(string token)
+    {
+        var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(token));
+        return Convert.ToHexString(bytes);
+    }
+
     [HttpPost("download")]
     [AllowAnonymous]
+    [AuthRateLimit]
     public async Task<IActionResult> DownloadWithPin([FromForm] string? token, [FromForm] string? pin)
     {
         if (string.IsNullOrWhiteSpace(token))
@@ -51,6 +67,22 @@ public class ExportController : ControllerBase
         if (payload == null)
             return Content(PinPage(token!, "This download link is invalid or has expired."), "text/html");
 
+        var tkey = TokenKey(token);
+        var now = DateTime.UtcNow;
+
+        // Atomically RESERVE an attempt slot BEFORE comparing the PIN. Incrementing first — via
+        // AddOrUpdate, whose update delegate re-runs under contention so no increment is lost — closes
+        // the check-then-increment TOCTOU that previously let a concurrent burst test far more than
+        // MaxPinAttempts PINs (each request read the same stale count and the counter advanced by ~1
+        // per burst). Now every concurrent request gets a distinct post-increment count, so only the
+        // first MaxPinAttempts proceed to the compare. The window resets once PinLockWindow elapses.
+        var attempts = _pinAttempts.AddOrUpdate(
+            tkey,
+            _ => (1, now),
+            (_, cur) => (now - cur.WindowStart > PinLockWindow) ? (1, now) : (cur.Count + 1, cur.WindowStart));
+        if (attempts.Count > MaxPinAttempts)
+            return Content(PinPage(token!, "Too many incorrect attempts. Please request a new download link."), "text/html");
+
         var user = await _db.Users
             .Include(u => u.Business)
             .FirstOrDefaultAsync(u => u.Id == payload.UserId && u.IsActive);
@@ -60,9 +92,15 @@ public class ExportController : ControllerBase
 
         var expectedPin = DerivePin(user.Business.AccountNumber, user.DateOfBirth);
 
-        if (string.IsNullOrWhiteSpace(pin) || pin.Trim() != expectedPin)
+        // Constant-time compare so a wrong PIN can't be narrowed by response-timing.
+        var pinOk = !string.IsNullOrWhiteSpace(pin)
+            && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                System.Text.Encoding.UTF8.GetBytes(pin.Trim()),
+                System.Text.Encoding.UTF8.GetBytes(expectedPin));
+        if (!pinOk)
             return Content(PinPage(token!, "Incorrect PIN. Please try again."), "text/html");
 
+        _pinAttempts.TryRemove(tkey, out _);   // success — clear the counter
         return await ServePdf(payload);
     }
 

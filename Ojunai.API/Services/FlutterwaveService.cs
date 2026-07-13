@@ -99,6 +99,58 @@ public class FlutterwaveService
     }
 
     /// <summary>
+    /// Fail-closed amount check: true ONLY when both expected and paid amounts are known and within
+    /// tolerance. A null expected price (e.g. an unsupported/attacker-chosen currency) or a missing paid
+    /// amount returns false, so callers REJECT rather than activate a subscription for an unverifiable sum.
+    /// </summary>
+    internal static bool IsPaidAmountAcceptable(decimal? expected, decimal? paid, decimal tolerance)
+        => expected.HasValue && paid.HasValue && Math.Abs(paid.Value - expected.Value) <= tolerance;
+
+    /// <summary>
+    /// Server-to-server confirmation of a Flutterwave transaction. The webhook body is authenticated
+    /// only by a STATIC shared secret (verif-hash) — not an HMAC over the payload — so if that secret
+    /// leaks (it is sent in plaintext on every delivery), an attacker can forge a "charge.completed"
+    /// with any businessId/plan/amount. Payment state must therefore never be trusted from the payload
+    /// alone: this re-fetches the transaction from Flutterwave's API using the secret key and returns
+    /// the authoritative status/amount/currency. Returns Verified=false on ANY failure so callers fail
+    /// closed (a forged transaction id will not resolve, and the reconciliation job retries real ones).
+    /// </summary>
+    private async Task<(bool Verified, string? Status, decimal? Amount, string? Currency)> VerifyChargeWithApiAsync(string? flwId)
+    {
+        if (string.IsNullOrEmpty(flwId)) return (false, null, null, null);
+        var secretKey = _config["Flutterwave:SecretKey"];
+        if (string.IsNullOrEmpty(secretKey))
+        {
+            _logger.LogError("Flutterwave SecretKey not configured — cannot server-verify webhook transaction {FlwId}", flwId);
+            return (false, null, null, null);
+        }
+        try
+        {
+            var httpClient = _httpFactory.CreateClient("Flutterwave");
+            httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {secretKey}");
+            var response = await httpClient.GetAsync(
+                $"https://api.flutterwave.com/v3/transactions/{Uri.EscapeDataString(flwId)}/verify");
+            var body = await response.Content.ReadAsStringAsync();
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Flutterwave verify API returned {Status} for transaction {FlwId}", response.StatusCode, flwId);
+                return (false, null, null, null);
+            }
+            using var doc = JsonDocument.Parse(body);
+            if (!doc.RootElement.TryGetProperty("data", out var vd)) return (false, null, null, null);
+            var vStatus = vd.TryGetProperty("status", out var vs) ? vs.GetString() : null;
+            decimal? vAmount = vd.TryGetProperty("amount", out var va) ? va.GetDecimal() : (decimal?)null;
+            var vCurrency = vd.TryGetProperty("currency", out var vc) ? vc.GetString() : null;
+            return (true, vStatus, vAmount, vCurrency);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Flutterwave verify API threw for transaction {FlwId}", flwId);
+            return (false, null, null, null);
+        }
+    }
+
+    /// <summary>
     /// Verify a Flutterwave Inline checkout payment and activate the subscription.
     /// Called after the frontend JS SDK callback fires with the transaction details.
     /// </summary>
@@ -189,6 +241,16 @@ public class FlutterwaveService
             if (parts.Length == 5 && parts[0] == "ojunai" && parts[1].Length == 32
                 && validPlans.Contains(parts[2]) && validCycles.Contains(parts[3]))
             {
+                // The tx_ref embeds the businessId that INITIATED checkout (SubscriptionController sets it
+                // at /initialize). Require it to match the authenticated caller so a user can't claim
+                // another tenant's completed transaction to activate their own plan (and consume the
+                // victim's single-use tx_ref in the process).
+                if (!string.Equals(parts[1], businessId.ToString("N"), StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning("Flutterwave verify: tx_ref businessId {TxBiz} does not match caller {Caller}; rejecting.",
+                        parts[1], businessId.ToString("N"));
+                    return "This transaction belongs to a different account.";
+                }
                 plan = parts[2];
                 billingCycle = parts[3];
             }
@@ -202,14 +264,15 @@ public class FlutterwaveService
             bc = BillingConfig.BillingCycle.Monthly;
         var expectedAmount = BillingConfig.GetPrice(plan, bc, currency);
         decimal? paidAmount = chargeData.TryGetProperty("amount", out var amountEl) ? amountEl.GetDecimal() : null;
-        if (expectedAmount.HasValue && paidAmount.HasValue)
+        // FAIL CLOSED: reject when the expected price can't be computed or the paid amount is missing
+        // or mismatched, rather than silently activating. (Previously a null expected price bypassed it.)
+        if (!IsPaidAmountAcceptable(expectedAmount, paidAmount, 1m))
         {
-            if (Math.Abs(paidAmount.Value - expectedAmount.Value) > 1)
-            {
-                _logger.LogWarning("Flutterwave amount mismatch: paid {Paid}, expected {Expected} for {Plan}/{Currency}",
-                    paidAmount.Value, expectedAmount.Value, plan, currency);
-                return $"Amount mismatch. Expected {BillingConfig.FormatPrice(expectedAmount.Value, currency)}, received {BillingConfig.FormatPrice(paidAmount.Value, currency)}.";
-            }
+            _logger.LogWarning("Flutterwave amount not acceptable: paid {Paid}, expected {Expected} for {Plan}/{Currency}; rejecting.",
+                paidAmount, expectedAmount, plan, currency);
+            return expectedAmount.HasValue && paidAmount.HasValue
+                ? $"Amount mismatch. Expected {BillingConfig.FormatPrice(expectedAmount.Value, currency)}, received {BillingConfig.FormatPrice(paidAmount.Value, currency)}."
+                : "Could not confirm the payment amount. Please contact support if you were charged.";
         }
 
         // Sanitize payment method
@@ -575,6 +638,21 @@ public class FlutterwaveService
         }
         if (status != "successful") return;
 
+        // ── Server-side confirmation (do NOT trust the webhook payload) ──────────────────────────
+        // The webhook is authenticated only by a static shared secret, so re-verify the transaction
+        // against Flutterwave's API before mutating ANY subscription/add-on state. Fail closed: if the
+        // transaction can't be independently confirmed as successful, skip activation — a forged event
+        // names a transaction id the API won't confirm, and the daily reconciliation job retries genuine
+        // ones. The verified amount/currency below are the authoritative values used for price checks.
+        var verified = await VerifyChargeWithApiAsync(flwId);
+        if (!verified.Verified || (verified.Status != "successful" && verified.Status != "completed"))
+        {
+            _logger.LogWarning(
+                "Flutterwave charge {TxRef} (flwId {FlwId}) could not be server-confirmed (status {Status}); skipping activation.",
+                txRef, flwId, verified.Status);
+            return;
+        }
+
         // Extract metadata
         if (!data.TryGetProperty("meta", out var meta))
         {
@@ -615,6 +693,34 @@ public class FlutterwaveService
             var vaTier = meta.TryGetProperty("tier", out var vaTierEl) ? vaTierEl.GetString()?.ToLower() : null;
             if (string.IsNullOrEmpty(vaTier) || !BillingConfig.VoiceAITierCodes.Contains(vaTier))
                 vaTier = vaBiz.VoiceAITier;
+
+            // FAIL CLOSED on amount, mirroring the plan branch. Use the SERVER-VERIFIED amount/currency
+            // (never the webhook payload) and reject unless it matches the expected tier price. Without
+            // this, a genuine-but-underpaid charge — or a meta.tier set higher than what was actually
+            // paid — activated the Voice AI tier regardless of amount.
+            var vaCycle = vaIsAnnual ? BillingConfig.BillingCycle.Annual : BillingConfig.BillingCycle.Monthly;
+            var vaCurrency = verified.Currency ?? currency ?? vaBiz.BillingCurrency ?? vaBiz.Currency;
+            var vaExpected = BillingConfig.GetVoiceAITierPrice(vaTier ?? "", vaCycle, vaCurrency);
+            if (!IsPaidAmountAcceptable(vaExpected, verified.Amount, 0.5m))
+            {
+                _logger.LogWarning("Flutterwave Voice AI amount rejected: paid {Paid}, expected {Expected} for tier {Tier}/{Currency}",
+                    verified.Amount, vaExpected, vaTier, vaCurrency);
+                _db.BillingEvents.Add(new BillingEvent
+                {
+                    BusinessId = businessId,
+                    EventType = "payment.rejected",
+                    Provider = "flutterwave",
+                    Plan = $"voice_ai.{vaTier ?? "unknown"}",
+                    Amount = verified.Amount,
+                    Currency = vaCurrency,
+                    TransactionRef = txRef,
+                    Status = "rejected",
+                    ErrorDetails = $"Voice AI amount mismatch: paid {verified.Amount}, expected {vaExpected}",
+                    CreatedAtUtc = DateTime.UtcNow
+                });
+                await _db.SaveChangesAsync();
+                return;
+            }
 
             vaBiz.VoiceAIEnabled = true;
             vaBiz.VoiceAIPlanStatus = "active";
@@ -679,11 +785,12 @@ public class FlutterwaveService
         var isDeltaUpgrade = txRef?.Contains("-delta-", StringComparison.Ordinal) == true;
         var priorPlan = business.SubscribedPlan; // plan we're upgrading FROM (captured before we overwrite it below)
 
-        // Verify amount matches expected price
-        var chargeAmount = data.TryGetProperty("amount", out var chgAmtEl) ? chgAmtEl.GetDecimal() : (decimal?)null;
+        // Verify amount matches expected price. Amount + currency come from the SERVER-VERIFIED
+        // transaction (see VerifyChargeWithApiAsync), never from the webhook payload / meta.
+        var chargeAmount = verified.Amount;
         if (!Enum.TryParse<BillingConfig.BillingCycle>(billingCycle ?? "monthly", true, out var verifyBc))
             verifyBc = BillingConfig.BillingCycle.Monthly;
-        var verifyCurrency = currency ?? business.Currency;
+        var verifyCurrency = verified.Currency ?? business.Currency;
         var fullPrice = BillingConfig.GetPrice(plan ?? "starter", verifyBc, verifyCurrency);
         // For a delta upgrade, recompute the expected difference server-side and validate against THAT,
         // so a tampered request can't under-pay by faking the delta marker.
@@ -695,12 +802,13 @@ public class FlutterwaveService
                 : 0;
             expectedCharge = Math.Max(0, fullPrice.Value - priorPrice);
         }
-        // Tightened tolerance (was 1.0 — wide enough to silently allow ~$0.99 undercharges). Prices are
-        // fixed 2-dp values Flutterwave echoes exactly, so 0.5 is a guard, not a real gap.
-        if (expectedCharge.HasValue && chargeAmount.HasValue && Math.Abs(chargeAmount.Value - expectedCharge.Value) > 0.5m)
+        // FAIL CLOSED: reject unless we can compute an expected price AND the verified amount matches it.
+        // Previously a null expected price (e.g. an unsupported currency) silently bypassed this check
+        // and activated the plan for any amount. Tolerance 0.5 guards float/rounding echo only.
+        if (!IsPaidAmountAcceptable(expectedCharge, chargeAmount, 0.5m))
         {
-            _logger.LogWarning("Flutterwave webhook amount mismatch: paid {Paid}, expected {Expected} for {Plan}/{Currency}",
-                chargeAmount.Value, expectedCharge.Value, plan, currency);
+            _logger.LogWarning("Flutterwave webhook amount rejected: paid {Paid}, expected {Expected} for {Plan}/{Currency}",
+                chargeAmount, expectedCharge, plan, currency);
             _db.BillingEvents.Add(new BillingEvent
             {
                 BusinessId = businessId,
@@ -874,6 +982,17 @@ public class FlutterwaveService
         var packCode = parts[2].ToLowerInvariant();
         if (!BillingConfig.WhatsAppPackCodes.Contains(packCode))
             return $"Unknown WhatsApp pack code: {packCode}.";
+
+        // The tx_ref embeds the businessId that INITIATED checkout (parts[3]). Require it to match the
+        // authenticated caller so a user can't claim another tenant's completed pack transaction to
+        // activate a pack on their own account (and consume the victim's single-use tx_ref, denying
+        // them the pack they paid for). Mirrors the tier-path guard in VerifyAndActivateAsync.
+        if (!string.Equals(parts[3], businessId.ToString("N"), StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogWarning("Flutterwave pack verify: tx_ref businessId {TxBiz} does not match caller {Caller}; rejecting.",
+                parts[3], businessId.ToString("N"));
+            return "This transaction belongs to a different account.";
+        }
 
         var currency = business.BillingCurrency ?? business.Currency ?? "USD";
         var cycle = (business.BillingCycle ?? "monthly").Equals("annual", StringComparison.OrdinalIgnoreCase)

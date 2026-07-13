@@ -692,7 +692,14 @@ public class PaystackService
             // (no Paystack sub backs this charge — user must re-subscribe at expiry).
             bool isDeltaUpgrade = string.Equals(metaMode, "upgrade_delta", StringComparison.OrdinalIgnoreCase);
 
-            var expectedPrice = PlanLimits.Get(plan).PricePerMonth;
+            // Use the CYCLE-CORRECT expected price. An annual charge equals the annual price (~12x the
+            // monthly figure), so validating against PlanLimits.PricePerMonth rejected legitimate annual
+            // renewals — the subscription then silently lapsed. Fall back to the monthly figure only if
+            // the cycle-aware lookup can't resolve a price (unknown currency/plan).
+            var payIsAnnual = (business.BillingCycle ?? "monthly").Equals("annual", StringComparison.OrdinalIgnoreCase);
+            var payBc = payIsAnnual ? BillingConfig.BillingCycle.Annual : BillingConfig.BillingCycle.Monthly;
+            var expectedPrice = BillingConfig.GetPrice(plan, payBc, business.Currency ?? "NGN")
+                ?? PlanLimits.Get(plan).PricePerMonth;
             decimal? chargedNaira = null;
             if (data.TryGetProperty("amount", out var amountEl))
             {
@@ -765,11 +772,13 @@ public class PaystackService
             else
             {
                 business.IsAutoRenew = true;
-                // Scenario B: full-price flow always anchors EndsAt to now + 1 month.
-                // Earlier behavior used max(EndsAt, now) which gave a small bonus window when
-                // upgrading in the last week of an existing cycle. New rule: pay full price = full
-                // 30 days from this moment, simpler and what users expect.
-                business.SubscriptionEndsAt = DateTime.UtcNow.AddMonths(1);
+                // Scenario B: full-price flow anchors EndsAt to now + one billing cycle. Annual charges
+                // must extend a full year (previously always +1 month, which under-credited annual
+                // subscribers). Earlier behavior used max(EndsAt, now) which gave a small bonus window
+                // when upgrading in the last week of an existing cycle; the new rule is full cycle from now.
+                business.SubscriptionEndsAt = payIsAnnual
+                    ? DateTime.UtcNow.AddYears(1)
+                    : DateTime.UtcNow.AddMonths(1);
             }
 
             // Store customer code if not yet stored

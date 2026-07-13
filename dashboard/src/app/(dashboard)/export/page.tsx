@@ -54,6 +54,22 @@ function escapeCsvCell(raw: unknown): string {
   return safe;
 }
 
+/**
+ * HTML-injection defense (CWE-79) for the print/PDF path. The print helpers build an HTML document
+ * by string interpolation and write it into a same-origin popup via document.write, where injected
+ * markup/scripts DO execute. Report fields can carry untrusted, cross-user data (customer/contact
+ * names, product names, expense notes) sourced from WhatsApp/Telegram/CSV import, so every
+ * interpolated value on this path MUST be HTML-escaped. React's auto-escaping does not apply here.
+ */
+function escapeHtml(raw: unknown): string {
+  return String(raw ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function downloadCsv(filename: string, headers: string[], rows: string[][]) {
   const csvContent = [
     headers.map(escapeCsvCell).join(","),
@@ -105,7 +121,7 @@ function printReport(title: string, headers: string[], rows: string[][], busines
 
   const html = `<!DOCTYPE html>
 <html><head>
-<title>${title} — ${businessName}</title>
+<title>${escapeHtml(title)} — ${escapeHtml(businessName)}</title>
 <style>
   body { font-family: Arial, sans-serif; margin: 20px; font-size: 12px; }
   h1 { font-size: 18px; margin-bottom: 4px; }
@@ -118,11 +134,11 @@ function printReport(title: string, headers: string[], rows: string[][], busines
   @media print { body { margin: 0; } }
 </style>
 </head><body>
-<h1>${title}</h1>
-<p class="meta">${businessName} — Generated ${new Date().toLocaleDateString()}</p>
+<h1>${escapeHtml(title)}</h1>
+<p class="meta">${escapeHtml(businessName)} — Generated ${new Date().toLocaleDateString()}</p>
 <table>
-<thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead>
-<tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${cell ?? ""}</td>`).join("")}</tr>`).join("")}</tbody>
+<thead><tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>
+<tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")}</tbody>
 </table>
 <script>window.print();</script>
 </body></html>`;
@@ -139,7 +155,7 @@ function printRichReport(title: string, sections: { heading: string; content: st
 
   const html = `<!DOCTYPE html>
 <html><head>
-<title>${title} — ${businessName}</title>
+<title>${escapeHtml(title)} — ${escapeHtml(businessName)}</title>
 <style>
   body { font-family: Arial, sans-serif; margin: 24px; font-size: 12px; color: #1e293b; }
   h1 { font-size: 20px; margin-bottom: 4px; border-bottom: 2px solid #06b6d4; padding-bottom: 8px; }
@@ -156,9 +172,9 @@ function printRichReport(title: string, sections: { heading: string; content: st
   @media print { body { margin: 0; } }
 </style>
 </head><body>
-<h1>${title}</h1>
-<p class="meta">${businessName} — Generated ${new Date().toLocaleDateString()}</p>
-${sections.map(s => `<h2>${s.heading}</h2>${s.content}`).join("")}
+<h1>${escapeHtml(title)}</h1>
+<p class="meta">${escapeHtml(businessName)} — Generated ${new Date().toLocaleDateString()}</p>
+${sections.map(s => `<h2>${escapeHtml(s.heading)}</h2>${s.content}`).join("")}
 <script>window.print();</script>
 </body></html>`;
 
@@ -562,7 +578,7 @@ export default function ExportPage() {
             <tbody>${receivables
               .filter(r => r.totalReceivable > 0)
               .sort((a, b) => b.totalReceivable - a.totalReceivable)
-              .map(r => `<tr><td>${r.contactName}</td><td>${r.contactType}</td><td>${cs}${fmtNum(r.totalReceivable)}</td></tr>`)
+              .map(r => `<tr><td>${escapeHtml(r.contactName)}</td><td>${escapeHtml(r.contactType)}</td><td>${cs}${fmtNum(r.totalReceivable)}</td></tr>`)
               .join("")}
             </tbody>
           </table>`,
@@ -576,7 +592,7 @@ export default function ExportPage() {
           content: `<table>
             <thead><tr><th>Product</th><th>Current Stock</th><th>Threshold</th><th>Unit</th></tr></thead>
             <tbody>${lowStock
-              .map(p => `<tr><td>${p.name}</td><td>${p.currentStock}</td><td>${p.lowStockThreshold}</td><td>${p.unit}</td></tr>`)
+              .map(p => `<tr><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.currentStock)}</td><td>${escapeHtml(p.lowStockThreshold)}</td><td>${escapeHtml(p.unit)}</td></tr>`)
               .join("")}
             </tbody>
           </table>`,

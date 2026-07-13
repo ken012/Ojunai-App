@@ -139,6 +139,17 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
             return;
         }
 
+        // Per-sender rate limit (denial-of-wallet guard). Each fresh message triggers a PAID Claude
+        // parse; cap at 15/min/sender (parity with WhatsApp). Quick-reply/postback taps (handled above)
+        // are exempt so a user can still confirm/cancel after hitting the cap.
+        if (Common.ChannelRateLimiter.IsLimited(message.SenderIdentity))
+        {
+            _logger.LogWarning("Messenger rate limit hit for PSID {Psid}", message.SenderIdentity);
+            await Reply(message, "⏳ You're sending messages too fast. Please wait a minute and try again.", ct);
+            return;
+        }
+        rawText = Common.ChannelRateLimiter.CapLength(rawText);
+
         var context = await BuildBusinessContextAsync(businessId, ct);
         if (context is null)
         {
@@ -161,6 +172,26 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         if (parsed.NeedsClarification && !string.IsNullOrEmpty(parsed.ClarificationQuestion))
         {
             await Reply(message, parsed.ClarificationQuestion, ct);
+            return;
+        }
+
+        // Destructive/bulk/account-impacting intents need explicit confirmation — a misread or injected
+        // instruction must not delete a catalogue, zero all stock, clear all debts, or add staff. Stash
+        // the parsed intent and ask via Yes/No quick replies; "Yes" replays it. Non-destructive unaffected.
+        var destructiveDesc = Common.DestructiveIntentGuard.DescribeIfDestructive(parsed.Intent, parsed.BusinessAction);
+        if (destructiveDesc != null)
+        {
+            var confirmPayload = JsonSerializer.Serialize(new { intent = parsed.Intent, payload = parsed.BusinessAction });
+            var confirmToken = await _pending.CreateAsync(businessId, userId, message.SenderIdentity, "confirm_destructive", confirmPayload, ct);
+            await _messenger.SendAsync(message.SenderIdentity, new ReplyComposition
+            {
+                Text = $"⚠️ This will {destructiveDesc}. This can't be undone. Continue?",
+                QuickReplies = new List<QuickReply>
+                {
+                    new("Yes, do it", $"pa:yes:{confirmToken}"),
+                    new("No, cancel", $"pa:no:{confirmToken}"),
+                },
+            }, ct);
             return;
         }
 
@@ -777,11 +808,28 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
                 await ResumeConfirmLargeSaleAsync(consumed, inbound, ct);
                 break;
 
+            case "confirm_destructive":
+                await ResumeConfirmDestructiveAsync(consumed, inbound, ct);
+                break;
+
             default:
                 _logger.LogWarning("Unknown pending action type: {Type}", consumed.ActionType);
                 await Reply(inbound, "I forgot what this was about. Try again.", ct);
                 break;
         }
+    }
+
+    /// <summary>
+    /// Resumes a destructive intent after the user taps "Yes": rebuilds the stashed parsed intent and
+    /// replays it through the shared dispatcher (which re-checks the caller's role permission).
+    /// </summary>
+    private async Task ResumeConfirmDestructiveAsync(PendingActionConsumeResult consumed, ConversationMessage inbound, CancellationToken ct)
+    {
+        var payload = JsonSerializer.Deserialize<JsonElement>(consumed.PayloadJson);
+        var intent = payload.GetProperty("intent").GetString()!;
+        var ba = payload.GetProperty("payload");
+        var parsed = new ParsedMessage { Intent = intent, BusinessAction = ba, Confidence = 1.0 };
+        await DelegateToWhatsAppDispatcherAsync(parsed, consumed.UserId, inbound, ct);
     }
 
     private async Task ResumeAddProductAndSellAsync(PendingActionConsumeResult consumed, ConversationMessage inbound, CancellationToken ct)

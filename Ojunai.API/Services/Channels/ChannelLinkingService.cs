@@ -75,6 +75,27 @@ public sealed class ChannelLinkingService : IChannelLinkingService
             return null;
         }
 
+        // Atomically CLAIM the token AND bind the identity in one transaction. The conditional UPDATE
+        // marks the token consumed only if still unconsumed and unexpired; if 0 rows are affected another
+        // concurrent consume won the race — roll back and bail, so a single-use link token binds at most
+        // one identity even under two concurrent webhook jobs. Wrapping the claim + binding together means
+        // a failure mid-way rolls both back (token stays usable) rather than burning the token without a
+        // binding. Mirrors PendingTelegramActionService's atomic consume; the previous read-check-write
+        // let both racers pass the null check.
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
+
+        var claimed = await _db.ChannelLinkTokens
+            .Where(t => t.Id == row.Id && t.ConsumedAtUtc == null && t.ExpiresAtUtc >= now)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(t => t.ConsumedAtUtc, now)
+                .SetProperty(t => t.BoundToIdentity, channelIdentity), ct);
+        if (claimed == 0)
+        {
+            await tx.RollbackAsync(ct);
+            _logger.LogWarning("ConsumeAsync: token already consumed (lost race) ({Channel})", channel);
+            return null;
+        }
+
         // Bind the identity. Find existing row by (channel, value) — could pre-exist if the user
         // had messaged the bot before clicking the dashboard link, in which case it has UserId=null.
         var identity = await _db.ContactIdentities
@@ -98,11 +119,10 @@ public sealed class ChannelLinkingService : IChannelLinkingService
         identity.LinkedAtUtc = now;
         identity.LastSeenAtUtc = now;
 
-        // Mark the token consumed so the same value can't be replayed by a different chat_id.
-        row.ConsumedAtUtc = now;
-        row.BoundToIdentity = channelIdentity;
-
+        // Token was already marked consumed atomically above; persist the identity binding and commit
+        // both together.
         await _db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
         return (row.UserId, row.BusinessId);
     }
 

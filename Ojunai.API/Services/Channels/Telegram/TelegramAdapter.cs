@@ -131,7 +131,12 @@ public sealed class TelegramAdapter : IChannelAdapter
         return new ConversationMessage
         {
             Channel = Channel.Telegram,
-            ProviderMessageId = msg.MessageId.ToString(),
+            // Telegram's message_id is unique only WITHIN a chat (a small per-chat counter that resets
+            // per chat), and every tenant shares one global bot token — so a bare message_id collides
+            // across chats and would silently drop other users' messages as "duplicates". Scope the
+            // dedup identity by chat id to make it globally unique. (The callback path already uses the
+            // globally-unique update_id.)
+            ProviderMessageId = $"{msg.Chat.Id}:{msg.MessageId}",
             SenderIdentity = msg.Chat.Id.ToString(),
             SenderDisplayName = string.IsNullOrEmpty(displayName) ? msg.Chat.Username : displayName,
             Text = msg.Text,

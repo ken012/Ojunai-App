@@ -192,6 +192,20 @@ public class SubscriptionController : OjunaiBaseController
         [FromBody] ActivateWhatsAppPackRequest request,
         CancellationToken ct)
     {
+        // This endpoint activates a PAID pack WITHOUT charging (admin/dev bypass). The normal flow is
+        // the payment-provider webhook. Guard it with the admin key so a business owner (who holds
+        // ManageSettings) cannot grant themselves a free paid pack. Header X-Admin-Key preferred; a
+        // ?key= query fallback matches the existing admin toolkit convention.
+        var adminKey = Request.Headers["X-Admin-Key"].FirstOrDefault() ?? Request.Query["key"].FirstOrDefault();
+        var adminSecret = _config["Admin:AnalyticsKey"];
+        if (string.IsNullOrEmpty(adminSecret) || adminSecret.Length < 32
+            || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                System.Text.Encoding.UTF8.GetBytes(adminKey ?? ""),
+                System.Text.Encoding.UTF8.GetBytes(adminSecret)))
+        {
+            return StatusCode(403, ApiResponse<object>.Fail("This action requires administrator authorization."));
+        }
+
         var code = (request.Code ?? "").ToLowerInvariant().Trim();
         if (string.IsNullOrEmpty(code) || !BillingConfig.WhatsAppPackCodes.Contains(code))
             return BadRequest(ApiResponse<object>.Fail("Unknown WhatsApp pack code."));
@@ -410,7 +424,12 @@ public class SubscriptionController : OjunaiBaseController
         if (planConfig.PricePerMonth <= 0 && targetPlan != "starter")
             return BadRequest(ApiResponse<object>.Fail("Invalid plan. Choose: starter, shop, pro, or business."));
 
-        var currentRank = PlanGuard.PlanRank(business.Plan);
+        // Rank the change against the actually-PAID tier (SubscribedPlan), NOT the effective Plan. A
+        // trial elevates business.Plan above SubscribedPlan, so keying the "downgrades only" guard off
+        // Plan let a merchant on a Pro trial "downgrade" into a paid tier ABOVE what they actually pay
+        // for — a free upgrade. Fall back to Plan only when no paid tier is recorded.
+        var paidPlan = string.IsNullOrEmpty(business.SubscribedPlan) ? business.Plan : business.SubscribedPlan;
+        var currentRank = PlanGuard.PlanRank(paidPlan);
         var targetRank = PlanGuard.PlanRank(targetPlan);
 
         if (targetRank == currentRank)
