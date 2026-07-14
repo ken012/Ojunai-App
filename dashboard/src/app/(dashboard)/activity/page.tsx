@@ -20,6 +20,7 @@ import {
   Search, X, ChevronLeft, ChevronRight, Download, Copy as CopyIcon, ExternalLink,
   Activity as ActivityIcon, Calendar,
   ShoppingCart, Receipt as ReceiptIcon, Package, CheckCircle, AlertTriangle, Wallet,
+  Pencil,
 } from "lucide-react";
 
 // ─── Type taxonomy ──────────────────────────────────────────────────────────
@@ -48,6 +49,7 @@ const TYPE_META: Record<string, TypeMeta> = {
   payment_received: { icon: CheckCircle,    dotColor: "bg-emerald-500", text: "text-emerald-600 dark:text-emerald-400", label: "Payment in",     filterGroup: "payment" },
   payment_made:     { icon: CheckCircle,    dotColor: "bg-orange-500",  text: "text-orange-600 dark:text-orange-400",   label: "Payment out",    filterGroup: "payment" },
   adjustment:       { icon: ActivityIcon,   dotColor: "bg-amber-500",   text: "text-amber-600 dark:text-amber-400",     label: "Adjustment",     filterGroup: "adjustment" },
+  action:           { icon: Pencil,         dotColor: "bg-slate-500",   text: "text-slate-600 dark:text-slate-300",     label: "Action",         filterGroup: "action" },
 };
 function metaFor(type: string): TypeMeta {
   return TYPE_META[type] ?? { icon: ActivityIcon, dotColor: "bg-slate-400", text: "text-slate-500 dark:text-slate-400", label: type, filterGroup: "other" };
@@ -60,6 +62,7 @@ const FILTER_TABS: { id: string; label: string }[] = [
   { id: "inventory",  label: "Inventory" },
   { id: "payment",    label: "Payments" },
   { id: "adjustment", label: "Adjustments" },
+  { id: "action",     label: "Actions" },
 ];
 
 const PAGE_SIZE = 50;

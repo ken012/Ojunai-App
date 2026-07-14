@@ -62,6 +62,9 @@ public class AppDbContext : DbContext
     public DbSet<AdminAuditEntry> AdminAuditEntries => Set<AdminAuditEntry>();
     public DbSet<AdminMetricSnapshot> AdminMetricSnapshots => Set<AdminMetricSnapshot>();
 
+    // Append-only user/bot action audit log (create/update/delete across modules).
+    public DbSet<ActivityLogEntry> ActivityLogEntries => Set<ActivityLogEntry>();
+
     // ── Email deliverability ──
     // Suppression list populated by SES bounce/complaint SNS notifications. EmailService
     // checks this on every send so we never re-hit a known-bad address.
@@ -70,6 +73,17 @@ public class AppDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder mb)
     {
         base.OnModelCreating(mb);
+
+        mb.Entity<ActivityLogEntry>(e =>
+        {
+            e.HasIndex(x => new { x.BusinessId, x.CreatedAtUtc });
+            e.Property(x => x.ActorName).HasMaxLength(200);
+            e.Property(x => x.ActorChannel).HasMaxLength(20);
+            e.Property(x => x.Action).HasMaxLength(60);
+            e.Property(x => x.EntityType).HasMaxLength(40);
+            e.Property(x => x.EntityName).HasMaxLength(300);
+            e.Property(x => x.Summary).HasMaxLength(500);
+        });
 
         mb.Entity<Business>(e =>
         {
