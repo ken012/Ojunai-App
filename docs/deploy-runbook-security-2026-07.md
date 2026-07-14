@@ -13,10 +13,13 @@ Server: `bizpilot@46.225.108.35` · API systemd `ojunai-api` (:5000) · dashboar
 
 ## A. Pre-deploy (5 min)
 
-1. **Fresh DB backup** (restore point):
+1. **Fresh DB backup** (restore point). `backup-db.sh` runs **on the prod box**, not the Mac
+   (it needs `/etc/ojunai/backup.env` + Postgres). Run the installed copy as root:
    ```bash
-   ./scripts/backup-db.sh
+   ssh -t bizpilot@46.225.108.35 'sudo /usr/local/bin/ojunai-backup-db.sh'
    ```
+   (Optional for this release — it's code-only/no-migration, so last night's auto-backup is
+   already a valid restore point.)
 2. **⚠️ Confirm `Flutterwave:SecretKey` is set correctly in prod env.** The Flutterwave webhook
    now does a **server-to-server verify and fails closed** — if this key is missing/wrong,
    legitimate payments won't activate. This is the release's only functional dependency.
