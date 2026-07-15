@@ -46,6 +46,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
     private readonly IWhatsAppService _whatsappDispatch;
     private readonly IAlertService _alerts;
     private readonly IUsageService _usage;
+    private readonly ICurrentActor _currentActor;
     private readonly ILogger<MessengerIntentHandler> _logger;
 
     public MessengerIntentHandler(
@@ -61,6 +62,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         IWhatsAppService whatsappDispatch,
         IAlertService alerts,
         IUsageService usage,
+        ICurrentActor currentActor,
         ILogger<MessengerIntentHandler> logger)
     {
         _db = db;
@@ -75,6 +77,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         _whatsappDispatch = whatsappDispatch;
         _alerts = alerts;
         _usage = usage;
+        _currentActor = currentActor;
         _logger = logger;
     }
 
@@ -124,6 +127,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
 
         var businessId = boundIdentity.BusinessId.Value;
         var userId = boundIdentity.UserId.Value;
+        _currentActor.Set(userId, boundIdentity.DisplayName ?? "Messenger user", "messenger");
         var rawText = message.Text ?? string.Empty;
 
         // Count this against the business's Telegram+Messenger quota. Both fresh messages and

@@ -43,6 +43,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
     private readonly IAlertService _alerts;
     private readonly IPdfExportService _pdfExports;
     private readonly IUsageService _usage;
+    private readonly ICurrentActor _currentActor;
     private readonly ILogger<TelegramIntentHandler> _logger;
 
     public TelegramIntentHandler(
@@ -60,6 +61,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         IAlertService alerts,
         IPdfExportService pdfExports,
         IUsageService usage,
+        ICurrentActor currentActor,
         ILogger<TelegramIntentHandler> logger)
     {
         _db = db;
@@ -76,6 +78,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         _alerts = alerts;
         _pdfExports = pdfExports;
         _usage = usage;
+        _currentActor = currentActor;
         _logger = logger;
     }
 
@@ -174,6 +177,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
 
         var businessId = boundIdentity.BusinessId.Value;
         var userId = boundIdentity.UserId.Value;
+        _currentActor.Set(userId, boundIdentity.DisplayName ?? "Telegram user", "telegram");
         var rawText = message.Text ?? string.Empty;
 
         // Count this against the business's Telegram+Messenger quota. Both fresh messages and

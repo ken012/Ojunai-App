@@ -1,5 +1,6 @@
 using Ojunai.API.Data;
 using Ojunai.API.Models;
+using Ojunai.API.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ojunai.API.Common;
@@ -59,7 +60,13 @@ public class PlanGuard
         ["scale"] = "Scale",
     };
 
-    public PlanGuard(AppDbContext db) => _db = db;
+    private readonly IActivityLogger _activity;
+
+    public PlanGuard(AppDbContext db, IActivityLogger activity)
+    {
+        _db = db;
+        _activity = activity;
+    }
 
     public async Task<Business?> GetBusinessAsync(Guid businessId)
         => await _db.Businesses.FindAsync(businessId);
@@ -178,6 +185,7 @@ public class PlanGuard
             Status = "trial",
             CreatedAtUtc = DateTime.UtcNow
         });
+        await _activity.LogAsync(businessId, "plan.trial_started", "Billing", null, targetPlan, "started free trial");
         await _db.SaveChangesAsync();
         return null;
     }

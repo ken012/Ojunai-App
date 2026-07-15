@@ -20,6 +20,7 @@ public class AuthService : IAuthService
     private readonly Services.Interfaces.IAlertService _alerts;
     private readonly IEmailService _email;
     private readonly IBackgroundJobClient _jobs;
+    private readonly Services.Interfaces.IActivityLogger _activity;
     private readonly ILogger<AuthService> _logger;
 
     public AuthService(
@@ -29,6 +30,7 @@ public class AuthService : IAuthService
         Services.Interfaces.IAlertService alerts,
         IEmailService email,
         IBackgroundJobClient jobs,
+        Services.Interfaces.IActivityLogger activity,
         ILogger<AuthService> logger)
     {
         _db = db;
@@ -37,6 +39,7 @@ public class AuthService : IAuthService
         _alerts = alerts;
         _email = email;
         _jobs = jobs;
+        _activity = activity;
         _logger = logger;
     }
 
@@ -207,6 +210,8 @@ public class AuthService : IAuthService
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
         user.MustChangePassword = false;
         user.TokenVersion++; // Invalidate all existing JWTs
+        await _activity.LogAsync(user.BusinessId, "account.password_changed", "User", user.Id, user.FullName,
+            "changed their own password");
         await _db.SaveChangesAsync();
 
         await _alerts.CreateAsync(

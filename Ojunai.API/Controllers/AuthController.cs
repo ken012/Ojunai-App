@@ -26,6 +26,7 @@ public class AuthController : OjunaiBaseController
     private readonly IConfiguration _config;
     private readonly ILogger<AuthController> _logger;
     private readonly IAlertService _alerts;
+    private readonly IActivityLogger _activity;
 
     public AuthController(
         IAuthService auth,
@@ -38,6 +39,7 @@ public class AuthController : OjunaiBaseController
         IBackgroundJobClient jobs,
         IConfiguration config,
         IAlertService alerts,
+        IActivityLogger activity,
         ILogger<AuthController> logger)
     {
         _auth = auth;
@@ -51,6 +53,7 @@ public class AuthController : OjunaiBaseController
         _jobs = jobs;
         _config = config;
         _alerts = alerts;
+        _activity = activity;
         _logger = logger;
     }
 
@@ -148,6 +151,7 @@ public class AuthController : OjunaiBaseController
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == UserId && u.IsActive)
             ?? throw new KeyNotFoundException("User not found.");
         user.AlertChannel = normalized;
+        await _activity.LogAsync(BusinessId, "settings.alert_channel_changed", "User", UserId, user.FullName, $"alert channel set to {normalized}");
         await _db.SaveChangesAsync();
         var msg = normalized == AlertChannels.None
             ? "Business alerts turned off — pick a channel to start receiving them."
@@ -191,6 +195,7 @@ public class AuthController : OjunaiBaseController
         {
             user.EmailVerified = false;
             user.EmailVerifiedAtUtc = null;
+            await _activity.LogAsync(BusinessId, "account.email_changed", "User", UserId, user.FullName, "changed account email");
         }
         await _db.SaveChangesAsync();
 

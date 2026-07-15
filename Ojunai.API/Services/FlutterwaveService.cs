@@ -21,19 +21,22 @@ public class FlutterwaveService
     private readonly IHttpClientFactory _httpFactory;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<FlutterwaveService> _logger;
+    private readonly IActivityLogger _activity;
 
     public FlutterwaveService(
         AppDbContext db,
         IConfiguration config,
         IHttpClientFactory httpFactory,
         IServiceProvider serviceProvider,
-        ILogger<FlutterwaveService> logger)
+        ILogger<FlutterwaveService> logger,
+        IActivityLogger activity)
     {
         _db = db;
         _config = config;
         _httpFactory = httpFactory;
         _serviceProvider = serviceProvider;
         _logger = logger;
+        _activity = activity;
     }
 
     /// <summary>
@@ -418,6 +421,7 @@ public class FlutterwaveService
             CreatedAtUtc = DateTime.UtcNow
         });
 
+        var cancelledPlan = business.Plan;   // snapshot before the revert-to-starter block below
         if (business.SubscriptionEndsAt == null || business.SubscriptionEndsAt <= DateTime.UtcNow)
         {
             business.Plan = "starter";
@@ -426,6 +430,9 @@ public class FlutterwaveService
             business.SubscriptionEndsAt = null;
             business.TrialEndsAt = null;
         }
+
+        await _activity.LogAsync(businessId, "subscription.cancelled", "Billing", null, cancelledPlan,
+            "cancelled subscription");
 
         await _db.SaveChangesAsync();
     }

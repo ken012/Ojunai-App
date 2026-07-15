@@ -260,6 +260,8 @@ public class WhatsAppService : IWhatsAppService
     private readonly IConfiguration _config;
     private readonly IUsageService _usage;
     private readonly IInboundDedupService _dedup;
+    private readonly IActivityLogger _activity;
+    private readonly ICurrentActor _currentActor;
     private readonly ILogger<WhatsAppService> _logger;
 
     public WhatsAppService(
@@ -276,6 +278,8 @@ public class WhatsAppService : IWhatsAppService
         IConfiguration config,
         IUsageService usage,
         IInboundDedupService dedup,
+        IActivityLogger activity,
+        ICurrentActor currentActor,
         ILogger<WhatsAppService> logger)
     {
         _db = db;
@@ -291,6 +295,8 @@ public class WhatsAppService : IWhatsAppService
         _config = config;
         _usage = usage;
         _dedup = dedup;
+        _activity = activity;
+        _currentActor = currentActor;
         _logger = logger;
     }
 
@@ -363,6 +369,10 @@ public class WhatsAppService : IWhatsAppService
             await _db.SaveChangesAsync();
             return;
         }
+
+        // Attribute any auditable action taken in this bot scope to the sender, via WhatsApp.
+        // (Telegram/Messenger set their own actor before delegating to this service.)
+        _currentActor.Set(user.Id, user.FullName, "whatsapp");
 
         // ── WhatsApp paywall gate ─────────────────────────────────────────────
         // Phase 2.5 introduced WhatsApp packs as a paid add-on. This gate enforces the
@@ -1839,6 +1849,8 @@ public class WhatsAppService : IWhatsAppService
             RecordedByName = recordedBy?.FullName
         };
         _db.Products.Add(product);
+        await _activity.LogAsync(businessId, "product.created", "Product", product.Id, product.Name,
+            $"added product “{product.Name}”");
         await _db.SaveChangesAsync();
 
         var priceInfo = sellingPrice.HasValue ? $" at {_cs}{sellingPrice.Value:N0}/{unit}" : "";
@@ -1867,8 +1879,17 @@ public class WhatsAppService : IWhatsAppService
         if (!sellingPrice.HasValue && !costPrice.HasValue)
             return "Please specify the new selling price or cost price.";
 
+        var oldSelling = product.SellingPrice;
+        var oldCost = product.CostPrice;
         if (sellingPrice.HasValue) product.SellingPrice = Math.Max(0, sellingPrice.Value);
         if (costPrice.HasValue) product.CostPrice = Math.Max(0, costPrice.Value);
+
+        var priceParts = new List<string>();
+        if (product.SellingPrice != oldSelling) priceParts.Add($"price {oldSelling:0.##} → {product.SellingPrice:0.##}");
+        if (product.CostPrice != oldCost) priceParts.Add($"cost {oldCost:0.##} → {product.CostPrice:0.##}");
+        if (priceParts.Count > 0)
+            await _activity.LogAsync(businessId, "product.price_updated", "Product", product.Id, product.Name,
+                $"{product.Name}: {string.Join(", ", priceParts)}");
         await _db.SaveChangesAsync();
 
         var parts = new List<string>();
@@ -2172,6 +2193,8 @@ public class WhatsAppService : IWhatsAppService
             _db.Users.Add(user);
         }
 
+        await _activity.LogAsync(businessId, "staff.added", "Staff", user.Id, user.FullName,
+            $"added {user.Role} “{user.FullName}” via bot");
         await _db.SaveChangesAsync();
 
         // Send welcome message to the new staff member
@@ -2894,7 +2917,10 @@ public class WhatsAppService : IWhatsAppService
         var (product, error) = await FindProductAsync(businessId, productName);
         if (product == null) return error!;
 
+        var oldThreshold = product.LowStockThreshold;
         product.LowStockThreshold = threshold.Value;
+        await _activity.LogAsync(businessId, "product.updated", "Product", product.Id, product.Name,
+            $"low-stock alert for “{product.Name}” {oldThreshold:0.##} → {threshold.Value:0.##}");
         await _db.SaveChangesAsync();
 
         return $"✅ Low stock alert for *{product.Name}* set to {threshold.Value:0.##} {UnitFormat.Plural(threshold.Value, product.Unit)}. You'll be notified when stock drops below this.";
@@ -2916,6 +2942,8 @@ public class WhatsAppService : IWhatsAppService
             if (catProducts.Count == 0) return $"No active products found in the \"{deleteCategory}\" category.";
 
             foreach (var p in catProducts) p.IsActive = false;
+            await _activity.LogAsync(businessId, "product.deleted", "Product", null, deleteCategory,
+                $"bulk-deleted {catProducts.Count} products in category “{deleteCategory}” via bot");
             await _db.SaveChangesAsync();
 
             return $"✅ Deleted {catProducts.Count} products in *{deleteCategory}*: {string.Join(", ", catProducts.Select(p => p.Name))}.\n\nPast sales are still in reports.";
@@ -2931,6 +2959,8 @@ public class WhatsAppService : IWhatsAppService
             if (allProducts.Count == 0) return "You have no active products to delete.";
 
             foreach (var p in allProducts) p.IsActive = false;
+            await _activity.LogAsync(businessId, "product.deleted", "Product", null, null,
+                $"bulk-deleted ALL {allProducts.Count} products via bot");
             await _db.SaveChangesAsync();
 
             return $"✅ Deleted all {allProducts.Count} products: {string.Join(", ", allProducts.Select(p => p.Name))}.\n\nPast sales are still in reports. To undo, edit products on the dashboard.";
@@ -2942,6 +2972,8 @@ public class WhatsAppService : IWhatsAppService
         if (product == null) return error!;
 
         product.IsActive = false;
+        await _activity.LogAsync(businessId, "product.deleted", "Product", product.Id, product.Name,
+            $"deleted product “{product.Name}” via bot");
         await _db.SaveChangesAsync();
 
         return $"✅ *{product.Name}* has been removed from your products. Past sales are still in reports.\n\nTo undo, edit the product on the dashboard.";
@@ -3326,6 +3358,8 @@ public class WhatsAppService : IWhatsAppService
 
             if (updates.Count > 0)
             {
+                await _activity.LogAsync(businessId, "contact.updated", "Contact", existing.Id, existing.Name,
+                    $"updated contact “{existing.Name}” via bot");
                 await _db.SaveChangesAsync();
                 return $"Contact *{existing.Name}* already exists — updated {string.Join(", ", updates)}.";
             }
@@ -3341,6 +3375,8 @@ public class WhatsAppService : IWhatsAppService
             Source = _currentSource
         };
         _db.Contacts.Add(contact);
+        await _activity.LogAsync(businessId, "contact.created", "Contact", contact.Id, contact.Name,
+            $"added contact “{contact.Name}” via bot");
         await _db.SaveChangesAsync();
 
         var phoneNote = !string.IsNullOrEmpty(phone) ? $"\n📞 {phone}" : "";
@@ -3948,6 +3984,8 @@ public class WhatsAppService : IWhatsAppService
             }
 
             business.PendingPlanChange = plan.ToLower();
+            await _activity.LogAsync(businessId, "plan.downgrade_scheduled", "Billing", null, planLabel,
+                $"scheduled downgrade to {planLabel} at cycle end via bot");
             await _db.SaveChangesAsync();
 
             var switchDate = business.SubscriptionEndsAt?.ToString("dd MMM yyyy") ?? "end of your billing period";
@@ -4037,6 +4075,8 @@ public class WhatsAppService : IWhatsAppService
 
         var was = business.PendingPlanChange[0..1].ToUpper() + business.PendingPlanChange[1..];
         business.PendingPlanChange = null;
+        await _activity.LogAsync(businessId, "plan.downgrade_scheduled_cancelled", "Billing", null, was,
+            $"cancelled scheduled plan change (was switching to {was}) via bot");
         await _db.SaveChangesAsync();
 
         return $"✅ Plan change cancelled. You'll stay on your current *{business.Plan[0..1].ToUpper() + business.Plan[1..]}* plan. The scheduled switch to {was} has been removed.";

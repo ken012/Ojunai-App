@@ -232,6 +232,8 @@ public class StaffController : OjunaiBaseController
         staff.MustChangePassword = true;
         // Invalidate all existing tokens for this user — they'll need to log in fresh with the new password.
         staff.TokenVersion++;
+        await _activity.LogAsync(BusinessId, "staff.password_reset", "Staff", staff.Id, staff.FullName,
+            $"reset the password for “{staff.FullName}”");
         await _db.SaveChangesAsync();
 
         return Ok(ApiResponse<object>.Ok(null!, $"Password reset for {staff.FullName}. They will be asked to set a new password on next login."));

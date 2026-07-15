@@ -385,6 +385,7 @@ public class ProductService : IProductService
             .ToListAsync();
         _db.BundleComponents.RemoveRange(existing);
 
+        var componentCount = 0;
         if (request.IsBundle)
         {
             var comps = (request.Components ?? new List<SetBundleComponentInput>())
@@ -410,12 +411,17 @@ public class ProductService : IProductService
                 });
             }
             product.IsBundle = true;
+            componentCount = comps.Count;
         }
         else
         {
             product.IsBundle = false;
         }
 
+        var bundleSummary = product.IsBundle
+            ? $"set “{product.Name}” as a bundle ({componentCount} components)"
+            : $"removed bundle from “{product.Name}”";
+        await _activity.LogAsync(businessId, "product.bundle_updated", "Product", product.Id, product.Name, bundleSummary);
         await _db.SaveChangesAsync();
         return await GetBundleAsync(businessId, productId);
     }

@@ -32,6 +32,7 @@ public class BackgroundImageService : IBackgroundImageService
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
     private readonly ILogger<BackgroundImageService> _logger;
+    private readonly IActivityLogger _activity;
 
     private const long MaxFileSizeBytes = 5L * 1024 * 1024; // 5MB
     private const int MaxOutputWidth = 1920;
@@ -50,11 +51,13 @@ public class BackgroundImageService : IBackgroundImageService
     public BackgroundImageService(
         AppDbContext db,
         IConfiguration config,
-        ILogger<BackgroundImageService> logger)
+        ILogger<BackgroundImageService> logger,
+        IActivityLogger activity)
     {
         _db = db;
         _config = config;
         _logger = logger;
+        _activity = activity;
     }
 
     public async Task<string> SaveAsync(Guid businessId, IFormFile file)
@@ -145,6 +148,7 @@ public class BackgroundImageService : IBackgroundImageService
 
         var oldFilename = business.BackgroundImageFileName;
         business.BackgroundImageFileName = newFilename;
+        await _activity.LogAsync(businessId, "settings.branding_updated", "Business", businessId, business.Name, "uploaded a dashboard background image");
         await _db.SaveChangesAsync();
 
         if (!string.IsNullOrEmpty(oldFilename))
@@ -163,6 +167,7 @@ public class BackgroundImageService : IBackgroundImageService
 
         var filename = business.BackgroundImageFileName;
         business.BackgroundImageFileName = null;
+        await _activity.LogAsync(businessId, "settings.branding_removed", "Business", businessId, business.Name, "removed the dashboard background image");
         await _db.SaveChangesAsync();
 
         TryDeleteFile(businessId, filename);

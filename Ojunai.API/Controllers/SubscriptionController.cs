@@ -6,6 +6,7 @@ using Ojunai.API.Common;
 using Ojunai.API.Data;
 using Ojunai.API.Models;
 using Ojunai.API.Services;
+using Ojunai.API.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -22,6 +23,7 @@ public class SubscriptionController : OjunaiBaseController
     private readonly IConfiguration _config;
     private readonly IUsageService _usage;
     private readonly ILogger<SubscriptionController> _logger;
+    private readonly IActivityLogger _activity;
 
     public SubscriptionController(
         PaystackService paystack,
@@ -29,7 +31,8 @@ public class SubscriptionController : OjunaiBaseController
         AppDbContext db,
         IConfiguration config,
         IUsageService usage,
-        ILogger<SubscriptionController> logger)
+        ILogger<SubscriptionController> logger,
+        IActivityLogger activity)
     {
         _paystack = paystack;
         _flutterwave = flutterwave;
@@ -37,6 +40,7 @@ public class SubscriptionController : OjunaiBaseController
         _config = config;
         _usage = usage;
         _logger = logger;
+        _activity = activity;
     }
 
     /// <summary>
@@ -443,6 +447,8 @@ public class SubscriptionController : OjunaiBaseController
         if (business.SubscriptionEndsAt.HasValue && business.SubscriptionEndsAt > DateTime.UtcNow)
         {
             business.PendingPlanChange = targetPlan;
+            await _activity.LogAsync(BusinessId, "plan.downgrade_scheduled", "Billing", null, targetLabel,
+                $"scheduled downgrade to {targetPlan}");
             await _db.SaveChangesAsync();
             return Ok(ApiResponse<object>.Ok(null!,
                 $"Plan change scheduled. You'll keep your current features until {business.SubscriptionEndsAt.Value:dd MMM yyyy}, then switch to {targetLabel}."));
@@ -452,6 +458,8 @@ public class SubscriptionController : OjunaiBaseController
         business.SubscribedPlan = targetPlan;
         business.PendingPlanChange = null;
         business.TrialEndsAt = null;
+        await _activity.LogAsync(BusinessId, "plan.changed", "Billing", null, targetLabel,
+            $"changed plan to {targetPlan}");
         await _db.SaveChangesAsync();
 
         return Ok(ApiResponse<object>.Ok(null!, $"Plan changed to {targetLabel}."));
@@ -469,6 +477,8 @@ public class SubscriptionController : OjunaiBaseController
 
         var was = business.PendingPlanChange;
         business.PendingPlanChange = null;
+        await _activity.LogAsync(BusinessId, "plan.downgrade_scheduled_cancelled", "Billing", null, was,
+            "cancelled scheduled downgrade");
         await _db.SaveChangesAsync();
 
         var currentLabel = business.Plan[0..1].ToUpper() + business.Plan[1..];
@@ -654,6 +664,8 @@ public class SubscriptionController : OjunaiBaseController
             Status = "cancelled"
         });
 
+        await _activity.LogAsync(BusinessId, "voice_ai.cancelled", "Billing", null, "Voice AI",
+            "disabled Voice AI");
         await _db.SaveChangesAsync();
         return Ok(ApiResponse<object>.Ok(null!, "Voice AI subscription cancelled."));
     }

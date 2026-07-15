@@ -15,14 +15,16 @@ public class PaystackService
     private readonly HttpClient _http;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<PaystackService> _logger;
+    private readonly IActivityLogger _activity;
 
-    public PaystackService(AppDbContext db, IConfiguration config, IHttpClientFactory httpFactory, IServiceProvider serviceProvider, ILogger<PaystackService> logger)
+    public PaystackService(AppDbContext db, IConfiguration config, IHttpClientFactory httpFactory, IServiceProvider serviceProvider, ILogger<PaystackService> logger, IActivityLogger activity)
     {
         _db = db;
         _config = config;
         _http = httpFactory.CreateClient("Paystack");
         _serviceProvider = serviceProvider;
         _logger = logger;
+        _activity = activity;
     }
 
     public async Task<string> InitializeSubscriptionAsync(Guid businessId, string plan, string email)
@@ -490,6 +492,7 @@ public class PaystackService
             CreatedAtUtc = DateTime.UtcNow
         });
 
+        var cancelledPlan = business.Plan;   // snapshot before the revert-to-starter block below
         // If there's no future billing end date, revert to starter immediately.
         // If there IS a future end date, keep access until then (the TrialRevertJobService
         // handles the eventual downgrade when SubscriptionEndsAt passes).
@@ -504,6 +507,9 @@ public class PaystackService
             business.SubscriptionEndsAt = null;
             business.TrialEndsAt = null;
         }
+
+        await _activity.LogAsync(businessId, "subscription.cancelled", "Billing", null, cancelledPlan,
+            "cancelled subscription");
 
         await _db.SaveChangesAsync();
     }
@@ -997,6 +1003,9 @@ public class PaystackService
             Currency = addon.BilledCurrency,
             Status = "cancelled",
         });
+
+        await _activity.LogAsync(businessId, "whatsapp_pack.auto_renew_cancelled", "BusinessAddOn", addon.Id, addon.AddOnCode,
+            "turned off WhatsApp pack auto-renew");
 
         await _db.SaveChangesAsync();
     }
