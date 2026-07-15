@@ -15,7 +15,13 @@ namespace Ojunai.API.Services;
 public class VariantGroupService : IVariantGroupService
 {
     private readonly AppDbContext _db;
-    public VariantGroupService(AppDbContext db) => _db = db;
+    private readonly IActivityLogger _activity;
+
+    public VariantGroupService(AppDbContext db, IActivityLogger activity)
+    {
+        _db = db;
+        _activity = activity;
+    }
 
     public async Task<VariantGroupDto> CreateAsync(Guid businessId, CreateVariantGroupRequest request)
     {
@@ -66,6 +72,9 @@ public class VariantGroupService : IVariantGroupService
                 Source = "Manual",
             });
         }
+
+        await _activity.LogAsync(businessId, "variantgroup.created", "VariantGroup", group.Id, group.Name,
+            $"created variant style “{group.Name}”");
 
         await _db.SaveChangesAsync();
         return await GetAsync(businessId, group.Id);
@@ -131,6 +140,9 @@ public class VariantGroupService : IVariantGroupService
             Source = "Manual",
         };
         _db.Products.Add(product);
+        await _activity.LogAsync(businessId, "variant.added", "VariantGroup", groupId, group.Name,
+            $"added a variant to “{group.Name}”");
+
         await _db.SaveChangesAsync();
         return await GetAsync(businessId, groupId);
     }
@@ -142,8 +154,12 @@ public class VariantGroupService : IVariantGroupService
         var members = await _db.Products
             .Where(p => p.BusinessId == businessId && p.VariantGroupId == groupId)
             .ToListAsync();
+        var groupName = group.Name;
         foreach (var p in members) { p.VariantGroupId = null; p.VariantOptions = null; } // become standalone, kept
         _db.VariantGroups.Remove(group);
+        await _activity.LogAsync(businessId, "variantgroup.ungrouped", "VariantGroup", groupId, groupName,
+            $"ungrouped variant style “{groupName}”");
+
         await _db.SaveChangesAsync();
     }
 

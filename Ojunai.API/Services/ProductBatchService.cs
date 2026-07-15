@@ -16,11 +16,13 @@ public class ProductBatchService : IProductBatchService
 {
     private readonly AppDbContext _db;
     private readonly IInventoryService _inventory;
+    private readonly IActivityLogger _activity;
 
-    public ProductBatchService(AppDbContext db, IInventoryService inventory)
+    public ProductBatchService(AppDbContext db, IInventoryService inventory, IActivityLogger activity)
     {
         _db = db;
         _inventory = inventory;
+        _activity = activity;
     }
 
     public async Task<List<ProductBatchDto>> ListAsync(Guid businessId, Guid productId)
@@ -62,6 +64,8 @@ public class ProductBatchService : IProductBatchService
 
         batch.Quantity -= amount;
         if (batch.Quantity <= 0) batch.WrittenOffAtUtc = DateTime.UtcNow;
+        await _activity.LogAsync(businessId, "batch.written_off", "ProductBatch", batchId, product.Name,
+            $"wrote off {amount:0.##} of \"{product.Name}\" (expired/damaged)");
         await _db.SaveChangesAsync();
 
         return await ListAsync(businessId, productId);

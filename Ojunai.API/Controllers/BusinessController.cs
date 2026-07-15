@@ -22,6 +22,7 @@ public class BusinessController : OjunaiBaseController
     private readonly IHttpClientFactory _httpFactory;
     private readonly Services.Interfaces.IBackgroundImageService _backgroundImage;
     private readonly IReceiptService _receipts;
+    private readonly IActivityLogger _activity;
 
     public BusinessController(
         IBusinessService business,
@@ -32,7 +33,8 @@ public class BusinessController : OjunaiBaseController
         IConfiguration config,
         IHttpClientFactory httpFactory,
         Services.Interfaces.IBackgroundImageService backgroundImage,
-        IReceiptService receipts)
+        IReceiptService receipts,
+        IActivityLogger activity)
     {
         _business = business;
         _planGuard = planGuard;
@@ -43,6 +45,7 @@ public class BusinessController : OjunaiBaseController
         _httpFactory = httpFactory;
         _backgroundImage = backgroundImage;
         _receipts = receipts;
+        _activity = activity;
     }
 
     /// <summary>
@@ -148,6 +151,8 @@ public class BusinessController : OjunaiBaseController
     {
         var error = await _planGuard.StartTrialAsync(BusinessId, request.Plan);
         if (error != null) return BadRequest(ApiResponse<object>.Fail(error));
+        // Note: the plan.trial_started audit row is written inside StartTrialAsync so it commits
+        // atomically with the trial mutation (which PlanGuard persists internally).
 
         return Ok(ApiResponse<object>.Ok(null!, $"Your {request.Plan} free trial has started! You have {PlanGuard.TrialDurationDays} days to try it out."));
     }
@@ -338,6 +343,11 @@ public class BusinessController : OjunaiBaseController
             catch (Exception ex) { _logger.LogError(ex, "Paystack cancel failed during account closure for {BusinessId}", BusinessId); }
         }
 
+        // Capture the real business name for the audit entry BEFORE it is overwritten below with the
+        // "Closed Account…" placeholder — otherwise the audit log would record the placeholder, not
+        // the name the owner actually closed.
+        var originalBusinessName = business.Name;
+
         await using var tx = await _db.Database.BeginTransactionAsync();
         try
         {
@@ -375,6 +385,7 @@ public class BusinessController : OjunaiBaseController
             business.PaystackPlanCode = null;
             business.IsActive = false;
 
+            await _activity.LogAsync(BusinessId, "account.closed", "Business", BusinessId, originalBusinessName, "closed the business account");
             await _db.SaveChangesAsync();
             await tx.CommitAsync();
         }

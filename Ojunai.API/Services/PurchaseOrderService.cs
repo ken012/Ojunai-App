@@ -16,8 +16,13 @@ namespace Ojunai.API.Services;
 public class PurchaseOrderService : IPurchaseOrderService
 {
     private readonly AppDbContext _db;
+    private readonly IActivityLogger _activity;
 
-    public PurchaseOrderService(AppDbContext db) => _db = db;
+    public PurchaseOrderService(AppDbContext db, IActivityLogger activity)
+    {
+        _db = db;
+        _activity = activity;
+    }
 
     public async Task<PurchaseOrderDto> CreateAsync(Guid businessId, CreatePurchaseOrderRequest request, Guid? userId, string? userName)
     {
@@ -54,6 +59,9 @@ public class PurchaseOrderService : IPurchaseOrderService
         po.TotalAmount = po.Items.Sum(i => i.LineTotal);
 
         _db.PurchaseOrders.Add(po);
+        await _activity.LogAsync(businessId, "po.created", "PurchaseOrder", po.Id,
+            supplierName ?? po.PoNumber,
+            $"created purchase order for “{supplierName ?? po.PoNumber}”");
         await _db.SaveChangesAsync();
         return ToDto(po);
     }
@@ -114,6 +122,9 @@ public class PurchaseOrderService : IPurchaseOrderService
             po.TotalAmount = po.Items.Sum(i => i.LineTotal);
         }
 
+        await _activity.LogAsync(businessId, "po.updated", "PurchaseOrder", po.Id,
+            po.SupplierName ?? po.PoNumber,
+            $"edited purchase order");
         await _db.SaveChangesAsync();
         return ToDto(po);
     }
@@ -214,6 +225,9 @@ public class PurchaseOrderService : IPurchaseOrderService
             }
         }
 
+        await _activity.LogAsync(businessId, "po.received", "PurchaseOrder", po.Id,
+            po.SupplierName ?? po.PoNumber,
+            $"received stock on purchase order");
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
         return ToDto(po);
@@ -228,6 +242,9 @@ public class PurchaseOrderService : IPurchaseOrderService
             return ToDto(po);
         po.Status = PurchaseOrderStatus.Cancelled;
         po.CancelledAtUtc = DateTime.UtcNow;
+        await _activity.LogAsync(businessId, "po.cancelled", "PurchaseOrder", po.Id,
+            po.SupplierName ?? po.PoNumber,
+            $"cancelled purchase order");
         await _db.SaveChangesAsync();
         return ToDto(po);
     }

@@ -33,6 +33,7 @@ public class AccountRecoveryService : IAccountRecoveryService
     private readonly IConfiguration _config;
     private readonly IBackgroundJobClient _jobs;
     private readonly ILogger<AccountRecoveryService> _logger;
+    private readonly IActivityLogger _activity;
 
     private static readonly TimeSpan TokenLifetime = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan RequestCooldown = TimeSpan.FromMinutes(5);
@@ -46,7 +47,8 @@ public class AccountRecoveryService : IAccountRecoveryService
         IAlertService alerts,
         IConfiguration config,
         IBackgroundJobClient jobs,
-        ILogger<AccountRecoveryService> logger)
+        ILogger<AccountRecoveryService> logger,
+        IActivityLogger activity)
     {
         _db = db;
         _email = email;
@@ -56,6 +58,7 @@ public class AccountRecoveryService : IAccountRecoveryService
         _config = config;
         _jobs = jobs;
         _logger = logger;
+        _activity = activity;
     }
 
     public async Task RequestRecoveryAsync(string email, string? ipAddress)
@@ -243,6 +246,7 @@ public class AccountRecoveryService : IAccountRecoveryService
         user.LockoutEndsAtUtc = null;
 
         row.UsedAtUtc = DateTime.UtcNow;
+        await _activity.LogAsync(user.BusinessId, "account.phone_changed", "User", user.Id, user.FullName, "changed account phone number via recovery", actor: new ActivityActor(user.Id, user.FullName, "account"));
         await _db.SaveChangesAsync();
 
         _logger.LogInformation("Account recovery: phone changed for user {UserId} to {Phone}", user.Id, MaskPhone(newPhone));

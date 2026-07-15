@@ -10,8 +10,13 @@ namespace Ojunai.API.Services;
 public class ProductService : IProductService
 {
     private readonly AppDbContext _db;
+    private readonly IActivityLogger _activity;
 
-    public ProductService(AppDbContext db) => _db = db;
+    public ProductService(AppDbContext db, IActivityLogger activity)
+    {
+        _db = db;
+        _activity = activity;
+    }
 
     public async Task<PaginatedResult<ProductDto>> GetAllAsync(
         Guid businessId, int page, int pageSize,
@@ -157,6 +162,9 @@ public class ProductService : IProductService
             });
         }
 
+        await _activity.LogAsync(businessId, "product.created", "Product", product.Id, product.Name,
+            $"added product “{product.Name}”");
+
         await _db.SaveChangesAsync();
         return ToDto(product);
     }
@@ -166,6 +174,13 @@ public class ProductService : IProductService
         var product = await _db.Products
             .FirstOrDefaultAsync(p => p.Id == productId && p.BusinessId == businessId)
             ?? throw new KeyNotFoundException("Product not found.");
+
+        // Snapshot for the audit diff before we mutate.
+        var oldName = product.Name;
+        var oldSelling = product.SellingPrice;
+        var oldCost = product.CostPrice;
+        var oldThreshold = product.LowStockThreshold;
+        var wasActive = product.IsActive;
 
         if (request.Name != null) product.Name = request.Name;
         if (request.SKU != null) product.SKU = string.IsNullOrWhiteSpace(request.SKU) ? null : request.SKU.Trim();
@@ -183,6 +198,17 @@ public class ProductService : IProductService
         if (request.LeadTimeDays.HasValue) product.LeadTimeDays = request.LeadTimeDays.Value;
         if (request.TracksBatches.HasValue) product.TracksBatches = request.TracksBatches.Value;
         if (recordedByUserId.HasValue) { product.RecordedByUserId = recordedByUserId; product.RecordedByName = recordedByName; }
+
+        var changes = new List<string>();
+        if (product.Name != oldName) changes.Add($"name “{oldName}” → “{product.Name}”");
+        if (product.SellingPrice != oldSelling) changes.Add($"price {oldSelling:0.##} → {product.SellingPrice:0.##}");
+        if (product.CostPrice != oldCost) changes.Add($"cost {oldCost:0.##} → {product.CostPrice:0.##}");
+        if (product.LowStockThreshold != oldThreshold) changes.Add($"threshold {oldThreshold:0.##} → {product.LowStockThreshold:0.##}");
+        if (product.IsActive != wasActive) changes.Add(product.IsActive ? "restored" : "archived");
+        var summary = changes.Count > 0
+            ? $"edited “{product.Name}”: {string.Join(", ", changes)}"
+            : $"edited product “{product.Name}”";
+        await _activity.LogAsync(businessId, "product.updated", "Product", product.Id, product.Name, summary);
 
         await _db.SaveChangesAsync();
         return ToDto(product);
@@ -205,8 +231,17 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync(p => p.Id == productId && p.BusinessId == businessId)
             ?? throw new KeyNotFoundException("Product not found.");
 
+        var oldSelling = product.SellingPrice;
+        var oldCost = product.CostPrice;
         if (request.SellingPrice.HasValue) product.SellingPrice = request.SellingPrice;
         if (request.CostPrice.HasValue) product.CostPrice = request.CostPrice;
+
+        var parts = new List<string>();
+        if (product.SellingPrice != oldSelling) parts.Add($"price {oldSelling:0.##} → {product.SellingPrice:0.##}");
+        if (product.CostPrice != oldCost) parts.Add($"cost {oldCost:0.##} → {product.CostPrice:0.##}");
+        if (parts.Count > 0)
+            await _activity.LogAsync(businessId, "product.price_updated", "Product", product.Id, product.Name,
+                $"{product.Name}: {string.Join(", ", parts)}");
 
         await _db.SaveChangesAsync();
         return ToDto(product);
@@ -219,6 +254,8 @@ public class ProductService : IProductService
             ?? throw new KeyNotFoundException("Product not found.");
 
         product.IsActive = false;
+        await _activity.LogAsync(businessId, "product.deleted", "Product", product.Id, product.Name,
+            $"deleted product “{product.Name}”");
         await _db.SaveChangesAsync();
     }
 
@@ -348,6 +385,7 @@ public class ProductService : IProductService
             .ToListAsync();
         _db.BundleComponents.RemoveRange(existing);
 
+        var componentCount = 0;
         if (request.IsBundle)
         {
             var comps = (request.Components ?? new List<SetBundleComponentInput>())
@@ -373,12 +411,17 @@ public class ProductService : IProductService
                 });
             }
             product.IsBundle = true;
+            componentCount = comps.Count;
         }
         else
         {
             product.IsBundle = false;
         }
 
+        var bundleSummary = product.IsBundle
+            ? $"set “{product.Name}” as a bundle ({componentCount} components)"
+            : $"removed bundle from “{product.Name}”";
+        await _activity.LogAsync(businessId, "product.bundle_updated", "Product", product.Id, product.Name, bundleSummary);
         await _db.SaveChangesAsync();
         return await GetBundleAsync(businessId, productId);
     }

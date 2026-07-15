@@ -10,8 +10,13 @@ namespace Ojunai.API.Services;
 public class ContactService : IContactService
 {
     private readonly AppDbContext _db;
+    private readonly IActivityLogger _activity;
 
-    public ContactService(AppDbContext db) => _db = db;
+    public ContactService(AppDbContext db, IActivityLogger activity)
+    {
+        _db = db;
+        _activity = activity;
+    }
 
     public async Task<PaginatedResult<ContactDto>> GetAllAsync(
         Guid businessId, int page, int pageSize, string? search, string? type, string? balance)
@@ -187,6 +192,8 @@ public class ContactService : IContactService
             Type = request.Type
         };
         _db.Contacts.Add(contact);
+        await _activity.LogAsync(businessId, "contact.created", "Contact", contact.Id, contact.Name,
+            $"added contact “{contact.Name}”");
         await _db.SaveChangesAsync();
 
         return new ContactDto
@@ -213,6 +220,8 @@ public class ContactService : IContactService
         contact.Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim().ToLowerInvariant();
         contact.Type = request.Type;
 
+        await _activity.LogAsync(businessId, "contact.updated", "Contact", contact.Id, contact.Name,
+            $"edited contact “{contact.Name}”");
         await _db.SaveChangesAsync();
         return await GetByIdAsync(businessId, contactId);
     }
@@ -236,7 +245,10 @@ public class ContactService : IContactService
             .ToListAsync();
         _db.LedgerEntries.RemoveRange(ledgerEntries);
 
+        var contactName = contact.Name;
         _db.Contacts.Remove(contact);
+        await _activity.LogAsync(businessId, "contact.deleted", "Contact", contact.Id, contactName,
+            $"deleted contact “{contactName}”");
         await _db.SaveChangesAsync();
     }
 }

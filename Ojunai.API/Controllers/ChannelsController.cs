@@ -2,6 +2,7 @@ using Ojunai.API.Common;
 using Ojunai.API.Data;
 using Ojunai.API.Models.Messaging;
 using Ojunai.API.Services.Channels;
+using Ojunai.API.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -22,12 +23,14 @@ public class ChannelsController : OjunaiBaseController
     private readonly IChannelLinkingService _linking;
     private readonly AppDbContext _db;
     private readonly ILogger<ChannelsController> _logger;
+    private readonly IActivityLogger _activity;
 
-    public ChannelsController(IChannelLinkingService linking, AppDbContext db, ILogger<ChannelsController> logger)
+    public ChannelsController(IChannelLinkingService linking, AppDbContext db, ILogger<ChannelsController> logger, IActivityLogger activity)
     {
         _linking = linking;
         _db = db;
         _logger = logger;
+        _activity = activity;
     }
 
     /// <summary>
@@ -101,6 +104,8 @@ public class ChannelsController : OjunaiBaseController
             row.BusinessId = null;
         }
 
+        if (rows.Count > 0)
+            await _activity.LogAsync(BusinessId, "channel.disconnected", "Channel", UserId, "Telegram", "disconnected Telegram");
         await _db.SaveChangesAsync();
         return Ok(ApiResponse<object>.Ok(null!, "Telegram disconnected."));
     }
@@ -133,6 +138,8 @@ public class ChannelsController : OjunaiBaseController
             row.BusinessId = null;
         }
 
+        if (rows.Count > 0)
+            await _activity.LogAsync(BusinessId, "channel.disconnected", "Channel", UserId, "Messenger", "disconnected Messenger");
         await _db.SaveChangesAsync();
         return Ok(ApiResponse<object>.Ok(null!, "Messenger disconnected."));
     }

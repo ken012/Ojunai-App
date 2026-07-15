@@ -43,6 +43,11 @@ public class ActivityFeedDto
     public string? PaymentMethod { get; set; }
     public string? Details { get; set; }
     public DateTime CreatedAtUtc { get; set; }
+
+    // Populated only for "action" (audit-log) rows — drive per-action icons + deep-links in the UI.
+    public string? Action { get; set; }       // dotted code, e.g. "product.deleted", "staff.role_changed"
+    public string? EntityType { get; set; }   // "Product", "Contact", "Staff", "Business", "Billing", "Channel", "User", …
+    public Guid? EntityId { get; set; }
 }
 
 public class PaginatedActivityResult

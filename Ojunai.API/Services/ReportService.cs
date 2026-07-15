@@ -431,6 +431,16 @@ public partial class ReportService : IReportService
         // Helper: generate a short human-readable reference ID from a GUID
         static string MakeRef(Guid id, string prefix) => $"{prefix}-{id.ToString("N")[..8].ToUpper()}";
 
+        // Helper: display label for an audit entry's channel.
+        static string ChannelLabel(string ch) => ch switch
+        {
+            "dashboard" => "Dashboard",
+            "whatsapp" => "WhatsApp",
+            "telegram" => "Telegram",
+            "messenger" => "Messenger",
+            _ => "System",
+        };
+
         // Sales — IgnoreQueryFilters so voided sales appear too (with their own entry type)
         if (type == null || type == "sale" || type == "sale_voided")
         {
@@ -631,6 +641,34 @@ public partial class ReportService : IReportService
                     CreatedAtUtc = e.CreatedAtUtc
                 });
             }
+        }
+
+        // Actions — the append-only user/bot audit log (create/update/delete across modules).
+        if (type == null || type == "action")
+        {
+            var actionsQ = _db.ActivityLogEntries.AsNoTracking()
+                .Where(a => a.BusinessId == businessId);
+            if (lo.HasValue) actionsQ = actionsQ.Where(a => a.CreatedAtUtc >= lo.Value);
+            if (hi.HasValue) actionsQ = actionsQ.Where(a => a.CreatedAtUtc < hi.Value);
+            var actions = await actionsQ
+                .OrderByDescending(a => a.CreatedAtUtc)
+                .Take(500)
+                .ToListAsync();
+
+            activities.AddRange(actions.Select(a => new ActivityFeedDto
+            {
+                Id = a.Id,
+                RefId = MakeRef(a.Id, "AC"),
+                Type = "action",
+                Description = a.Summary,
+                RecordedBy = a.ActorName,
+                Source = ChannelLabel(a.ActorChannel),
+                Details = a.Details,
+                CreatedAtUtc = a.CreatedAtUtc,
+                Action = a.Action,
+                EntityType = a.EntityType,
+                EntityId = a.EntityId,
+            }));
         }
 
         // Apply date range filter
