@@ -16,10 +16,11 @@ public class StaffController : OjunaiBaseController
     private readonly PlanGuard _planGuard;
     private readonly IWhatsAppService _whatsApp;
     private readonly IAlertService _alerts;
+    private readonly IActivityLogger _activity;
 
-    public StaffController(AppDbContext db, PlanGuard planGuard, IWhatsAppService whatsApp, IAlertService alerts)
+    public StaffController(AppDbContext db, PlanGuard planGuard, IWhatsAppService whatsApp, IAlertService alerts, IActivityLogger activity)
     {
-        _db = db; _planGuard = planGuard; _whatsApp = whatsApp; _alerts = alerts;
+        _db = db; _planGuard = planGuard; _whatsApp = whatsApp; _alerts = alerts; _activity = activity;
     }
 
     private async Task EmitStaffChangeAlertAsync(Models.User staff, bool added)
@@ -133,6 +134,8 @@ public class StaffController : OjunaiBaseController
             _db.Users.Add(user);
         }
         var business = await _db.Businesses.FindAsync(BusinessId);
+        await _activity.LogAsync(BusinessId, "staff.added", "Staff", user.Id, user.FullName,
+            $"added {user.Role} “{user.FullName}”");
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
 
@@ -195,6 +198,8 @@ public class StaffController : OjunaiBaseController
         // Wipe any pending password reset code so it can't be used to regain access after deactivation.
         staff.PasswordResetCode = null;
         staff.PasswordResetCodeExpiresAtUtc = null;
+        await _activity.LogAsync(BusinessId, "staff.removed", "Staff", staff.Id, staff.FullName,
+            $"removed {staff.Role} “{staff.FullName}”");
         await _db.SaveChangesAsync();
 
         await EmitStaffChangeAlertAsync(staff, added: false);
@@ -251,9 +256,12 @@ public class StaffController : OjunaiBaseController
         if (!Enum.TryParse<UserRole>(request.Role, true, out var role) || role == UserRole.Owner)
             return BadRequest(ApiResponse<object>.Fail("Invalid role."));
 
+        var oldRole = staff.Role;
         staff.Role = role;
         // Invalidate any existing tokens so the user's next request re-reads their new role.
         staff.TokenVersion++;
+        await _activity.LogAsync(BusinessId, "staff.role_changed", "Staff", staff.Id, staff.FullName,
+            $"changed {staff.FullName}’s role {oldRole} → {role}");
         await _db.SaveChangesAsync();
 
         return Ok(ApiResponse<StaffDto>.Ok(new StaffDto
