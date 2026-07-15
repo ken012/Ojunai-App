@@ -33,6 +33,7 @@ public class ImportJobService
     private readonly IInventoryService _inventory;
     private readonly IWhatsAppService _whatsApp;
     private readonly Ojunai.API.Services.Channels.INotificationDispatcher _dispatcher;
+    private readonly IActivityLogger _activity;
     private readonly ILogger<ImportJobService> _logger;
 
     // Flush progress + SaveChanges every N rows. 200 is a compromise between progress granularity and DB load.
@@ -59,6 +60,7 @@ public class ImportJobService
         IInventoryService inventory,
         IWhatsAppService whatsApp,
         Ojunai.API.Services.Channels.INotificationDispatcher dispatcher,
+        IActivityLogger activity,
         ILogger<ImportJobService> logger)
     {
         _db = db;
@@ -68,6 +70,7 @@ public class ImportJobService
         _inventory = inventory;
         _whatsApp = whatsApp;
         _dispatcher = dispatcher;
+        _activity = activity;
         _logger = logger;
     }
 
@@ -132,6 +135,12 @@ public class ImportJobService
             job.CompletedAtUtc = DateTime.UtcNow;
             // Free up the large text column once processing is done.
             job.RawCsvText = null;
+
+            // Import runs in a Hangfire job (no HTTP user) — attribute to the user who queued it.
+            await _activity.LogAsync(job.BusinessId, "import.completed", "Import", job.Id, job.FileName,
+                $"imported {job.Type.ToString().ToLowerInvariant()}: {job.SuccessCount} of {job.TotalRows} row(s) from {job.FileName}",
+                actor: new ActivityActor(job.UserId, user?.FullName ?? "User", "dashboard"));
+
             await _db.SaveChangesAsync();
 
             await SendCompletionMessageAsync(job);
