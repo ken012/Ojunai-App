@@ -10,13 +10,25 @@ namespace Ojunai.API.Services;
 public class BusinessService : IBusinessService
 {
     private readonly AppDbContext _db;
+    private readonly IActivityLogger _activity;
 
-    public BusinessService(AppDbContext db) => _db = db;
+    public BusinessService(AppDbContext db, IActivityLogger activity)
+    {
+        _db = db;
+        _activity = activity;
+    }
 
     public async Task<BusinessDto> UpdateAsync(Guid businessId, UpdateBusinessRequest request)
     {
         var business = await _db.Businesses.FirstOrDefaultAsync(b => b.Id == businessId)
             ?? throw new KeyNotFoundException("Business not found.");
+
+        // Snapshot notable fields before mutation for the audit diff.
+        var oldCurrency = business.Currency;
+        var oldName = business.Name;
+        var oldLargeSaleThreshold = business.LargeSaleThreshold;
+        var oldReceiptHeader = business.ReceiptHeaderText;
+        var oldReceiptFooter = business.ReceiptFooterText;
 
         // Name is intentionally NOT editable — it's set at registration only.
         if (request.BusinessType != null) business.BusinessType = string.IsNullOrWhiteSpace(request.BusinessType) ? null : request.BusinessType.Trim();
@@ -74,6 +86,17 @@ public class BusinessService : IBusinessService
         if (request.ReceiptHeaderText != null) business.ReceiptHeaderText = string.IsNullOrWhiteSpace(request.ReceiptHeaderText) ? null : request.ReceiptHeaderText.Trim();
         if (request.ReceiptFooterText != null) business.ReceiptFooterText = string.IsNullOrWhiteSpace(request.ReceiptFooterText) ? null : request.ReceiptFooterText.Trim();
         if (request.ReceiptAccentColor != null) business.ReceiptAccentColor = string.IsNullOrWhiteSpace(request.ReceiptAccentColor) ? null : request.ReceiptAccentColor.Trim();
+
+        var changes = new List<string>();
+        if (business.Currency != oldCurrency) changes.Add($"currency {oldCurrency} → {business.Currency}");
+        if (business.Name != oldName) changes.Add($"name \"{oldName}\" → \"{business.Name}\"");
+        if (business.LargeSaleThreshold != oldLargeSaleThreshold) changes.Add($"large-sale threshold {oldLargeSaleThreshold:0.##} → {business.LargeSaleThreshold:0.##}");
+        if (business.ReceiptHeaderText != oldReceiptHeader) changes.Add("receipt header updated");
+        if (business.ReceiptFooterText != oldReceiptFooter) changes.Add("receipt footer updated");
+        var summary = changes.Count > 0
+            ? $"updated settings: {string.Join(", ", changes)}"
+            : "updated business settings";
+        await _activity.LogAsync(businessId, "settings.updated", "Business", businessId, business.Name, summary);
 
         await _db.SaveChangesAsync();
         return ToDto(business);

@@ -7,17 +7,26 @@ using Ojunai.API.Services.Interfaces;
 
 namespace Ojunai.API.Services;
 
+/// <summary>Scoped holder for a bot/job-supplied actor override (see <see cref="ICurrentActor"/>).</summary>
+public class CurrentActor : ICurrentActor
+{
+    public ActivityActor? Override { get; private set; }
+    public void Set(Guid? userId, string name, string channel) => Override = new ActivityActor(userId, name, channel);
+}
+
 /// <inheritdoc />
 public class ActivityLogger : IActivityLogger
 {
     private readonly AppDbContext _db;
     private readonly IHttpContextAccessor _http;
+    private readonly ICurrentActor _current;
     private readonly ILogger<ActivityLogger> _logger;
 
-    public ActivityLogger(AppDbContext db, IHttpContextAccessor http, ILogger<ActivityLogger> logger)
+    public ActivityLogger(AppDbContext db, IHttpContextAccessor http, ICurrentActor current, ILogger<ActivityLogger> logger)
     {
         _db = db;
         _http = http;
+        _current = current;
         _logger = logger;
     }
 
@@ -27,7 +36,8 @@ public class ActivityLogger : IActivityLogger
     {
         try
         {
-            var a = actor ?? await ResolveHttpActorAsync();
+            // Precedence: explicit arg → bot/job override → HTTP JWT → System.
+            var a = actor ?? _current.Override ?? await ResolveHttpActorAsync();
             _db.ActivityLogEntries.Add(new ActivityLogEntry
             {
                 BusinessId = businessId,

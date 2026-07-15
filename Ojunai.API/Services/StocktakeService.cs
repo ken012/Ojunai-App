@@ -16,8 +16,13 @@ namespace Ojunai.API.Services;
 public class StocktakeService : IStocktakeService
 {
     private readonly AppDbContext _db;
+    private readonly IActivityLogger _activity;
 
-    public StocktakeService(AppDbContext db) => _db = db;
+    public StocktakeService(AppDbContext db, IActivityLogger activity)
+    {
+        _db = db;
+        _activity = activity;
+    }
 
     public async Task<StocktakeDto> CreateAsync(Guid businessId, CreateStocktakeRequest request, Guid? userId, string? userName)
     {
@@ -55,6 +60,7 @@ public class StocktakeService : IStocktakeService
         };
 
         _db.Stocktakes.Add(stocktake);
+        await _activity.LogAsync(businessId, "stocktake.started", "Stocktake", stocktake.Id, stocktake.Reference, "started a stock count");
         await _db.SaveChangesAsync();
         return ToDto(stocktake);
     }
@@ -147,6 +153,13 @@ public class StocktakeService : IStocktakeService
         st.Status = StocktakeStatus.Completed;
         st.CompletedAtUtc = now;
 
+        var adjustmentCount = counted.Count(i =>
+        {
+            var product = _db.Products.Local.FirstOrDefault(p => p.Id == i.ProductId);
+            return product != null && i.CountedQuantity.HasValue && i.CountedQuantity.Value != i.SystemQuantity;
+        });
+        await _activity.LogAsync(businessId, "stocktake.completed", "Stocktake", st.Id, st.Reference,
+            $"completed a stock count ({adjustmentCount} adjustment{(adjustmentCount == 1 ? "" : "s")})");
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
         return ToDto(st);
@@ -161,6 +174,7 @@ public class StocktakeService : IStocktakeService
             return ToDto(st);
         st.Status = StocktakeStatus.Cancelled;
         st.CancelledAtUtc = DateTime.UtcNow;
+        await _activity.LogAsync(businessId, "stocktake.cancelled", "Stocktake", st.Id, st.Reference, "cancelled a stock count");
         await _db.SaveChangesAsync();
         return ToDto(st);
     }
