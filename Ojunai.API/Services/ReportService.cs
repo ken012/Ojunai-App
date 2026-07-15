@@ -665,6 +665,9 @@ public partial class ReportService : IReportService
                 Source = ChannelLabel(a.ActorChannel),
                 Details = a.Details,
                 CreatedAtUtc = a.CreatedAtUtc,
+                Action = a.Action,
+                EntityType = a.EntityType,
+                EntityId = a.EntityId,
             }));
         }
 

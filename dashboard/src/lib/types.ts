@@ -360,6 +360,10 @@ export interface ActivityFeedDto {
   paymentMethod?: string;
   details?: string;
   createdAtUtc: string;
+  // Only present on "action" (audit-log) rows — drive per-action icons + deep-links.
+  action?: string;      // dotted code, e.g. "product.deleted"
+  entityType?: string;  // "Product", "Contact", "Staff", "Business", "Billing", "Channel", "User", …
+  entityId?: string;
 }
 
 export interface PaginatedActivityResult {

@@ -20,7 +20,8 @@ import {
   Search, X, ChevronLeft, ChevronRight, Download, Copy as CopyIcon, ExternalLink,
   Activity as ActivityIcon, Calendar,
   ShoppingCart, Receipt as ReceiptIcon, Package, CheckCircle, AlertTriangle, Wallet,
-  Pencil,
+  Pencil, Trash2, Users, Settings, CreditCard, KeyRound, Upload, Layers, Truck,
+  ClipboardCheck, Link2Off,
 } from "lucide-react";
 
 // ─── Type taxonomy ──────────────────────────────────────────────────────────
@@ -53,6 +54,49 @@ const TYPE_META: Record<string, TypeMeta> = {
 };
 function metaFor(type: string): TypeMeta {
   return TYPE_META[type] ?? { icon: ActivityIcon, dotColor: "bg-slate-400", text: "text-slate-500 dark:text-slate-400", label: type, filterGroup: "other" };
+}
+
+// Human labels for audit-log action codes. Fallback humanizes the code (product.deleted → "Product deleted").
+const ACTION_LABELS: Record<string, string> = {
+  "product.created": "Product added", "product.updated": "Product edited", "product.price_updated": "Price changed",
+  "product.deleted": "Product deleted", "product.bundle_updated": "Bundle updated",
+  "contact.created": "Contact added", "contact.updated": "Contact edited", "contact.deleted": "Contact deleted",
+  "staff.added": "Staff added", "staff.removed": "Staff removed", "staff.role_changed": "Role changed", "staff.password_reset": "Password reset",
+  "po.created": "PO created", "po.updated": "PO edited", "po.received": "PO received", "po.cancelled": "PO cancelled",
+  "stocktake.started": "Stock count started", "stocktake.completed": "Stock count completed", "stocktake.cancelled": "Stock count cancelled",
+  "variantgroup.created": "Variant style created", "variant.added": "Variant added", "variantgroup.ungrouped": "Variants ungrouped",
+  "batch.written_off": "Batch written off",
+  "settings.updated": "Settings changed", "settings.branding_updated": "Branding updated", "settings.branding_removed": "Branding removed",
+  "settings.alert_channel_changed": "Alert channel changed",
+  "import.completed": "Import completed",
+  "account.email_changed": "Email changed", "account.phone_changed": "Phone changed", "account.password_changed": "Password changed", "account.closed": "Account closed",
+  "channel.disconnected": "Channel disconnected",
+  "plan.changed": "Plan changed", "plan.downgrade_scheduled": "Downgrade scheduled", "plan.downgrade_scheduled_cancelled": "Downgrade cancelled",
+  "plan.trial_started": "Trial started", "subscription.cancelled": "Subscription cancelled",
+  "voice_ai.cancelled": "Voice AI disabled", "whatsapp_pack.auto_renew_cancelled": "Auto-renew off",
+};
+
+// Per-action icon + colour, derived by category (with a few destructive overrides).
+function actionMeta(action: string): TypeMeta {
+  const label = ACTION_LABELS[action] ?? action.replace(/[._]/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const pick = (icon: TypeMeta["icon"], color: string, dot: string): TypeMeta =>
+    ({ icon, text: color, dotColor: dot, label, filterGroup: "action" });
+  const rose = "text-rose-600 dark:text-rose-400", cyan = "text-cyan-600 dark:text-cyan-400";
+  if (action === "product.deleted") return pick(Trash2, rose, "bg-rose-500");
+  if (action === "account.closed") return pick(AlertTriangle, rose, "bg-rose-500");
+  if (action.startsWith("product.")) return pick(Package, cyan, "bg-cyan-500");
+  if (action.startsWith("contact.")) return pick(Users, "text-violet-600 dark:text-violet-400", "bg-violet-500");
+  if (action.startsWith("staff.")) return pick(Users, "text-indigo-600 dark:text-indigo-400", "bg-indigo-500");
+  if (action.startsWith("po.")) return pick(Truck, cyan, "bg-cyan-500");
+  if (action.startsWith("stocktake.")) return pick(ClipboardCheck, cyan, "bg-cyan-500");
+  if (action.startsWith("variant") || action.startsWith("batch.")) return pick(Layers, cyan, "bg-cyan-500");
+  if (action.startsWith("settings.")) return pick(Settings, "text-slate-600 dark:text-slate-300", "bg-slate-500");
+  if (action.startsWith("import.")) return pick(Upload, cyan, "bg-cyan-500");
+  if (action.startsWith("channel.")) return pick(Link2Off, "text-slate-600 dark:text-slate-300", "bg-slate-500");
+  if (action.startsWith("account.")) return pick(KeyRound, "text-amber-600 dark:text-amber-400", "bg-amber-500");
+  if (action.startsWith("plan.") || action.startsWith("subscription.") || action.startsWith("voice_ai.") || action.startsWith("whatsapp_pack."))
+    return pick(CreditCard, "text-emerald-600 dark:text-emerald-400", "bg-emerald-500");
+  return pick(Pencil, "text-slate-600 dark:text-slate-300", "bg-slate-500");
 }
 
 const FILTER_TABS: { id: string; label: string }[] = [
@@ -388,6 +432,22 @@ export default function ActivityPage() {
           else if (item.type.startsWith("expense")) router.push("/expenses");
           else if (item.type === "inventory") router.push("/inventory");
           else if (item.type.includes("payment") || item.type.includes("debt") || item.type === "adjustment") router.push("/contacts");
+          else if (item.type === "action") {
+            // Deep-link an audit row to the surface it happened on, by the audited entity.
+            switch (item.entityType) {
+              case "Product": router.push(item.entityId ? `/inventory?focus=${item.entityId}` : "/inventory"); break;
+              case "Contact": router.push("/contacts"); break;
+              case "Staff": case "User": router.push("/settings#team"); break;
+              case "Channel": router.push("/settings#channels"); break;
+              case "Billing": case "BusinessAddOn": router.push("/settings#plan"); break;
+              case "PurchaseOrder": router.push("/purchasing"); break;
+              case "Stocktake": router.push("/stocktake"); break;
+              case "VariantGroup": router.push("/variants"); break;
+              case "ProductBatch": router.push("/expiring"); break;
+              case "Import": router.push("/import"); break;
+              default: router.push("/settings");
+            }
+          }
         }}
       />
     </div>
@@ -509,7 +569,7 @@ function ActivityRow({
   onClick: () => void;
   onMouseEnter: () => void;
 }) {
-  const meta = metaFor(item.type);
+  const meta = item.type === "action" && item.action ? actionMeta(item.action) : metaFor(item.type);
   const isVoided = item.type === "sale_voided" || item.type === "expense_voided";
   const isPositive = item.type === "sale" || item.type === "payment_received" || item.type === "debt_recorded";
   const time = formatTime(new Date(item.createdAtUtc));
@@ -582,7 +642,7 @@ function DetailDrawer({
 }) {
   const { toast } = useToast();
   if (!item) return null;
-  const meta = metaFor(item.type);
+  const meta = item.type === "action" && item.action ? actionMeta(item.action) : metaFor(item.type);
   const isVoided = item.type === "sale_voided" || item.type === "expense_voided";
   const isPositive = item.type === "sale" || item.type === "payment_received" || item.type === "debt_recorded";
   const created = new Date(item.createdAtUtc);
