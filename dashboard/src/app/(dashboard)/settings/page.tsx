@@ -43,6 +43,7 @@ import {
 import { usePricing } from "@/lib/use-pricing";
 import { QuotaMeter, useQuotaSnapshot } from "@/components/quota-meter";
 import { WhatsAppPackPicker } from "@/components/whatsapp-pack-picker";
+import { COUNTRIES, COUNTRY_NAMES, subdivisionsFor } from "@/lib/geo";
 
 const CURRENCIES = [
   "NGN", "GHS", "KES", "ZAR", "TZS", "UGX", "RWF", "XAF", "XOF", "EGP", "ETB",
@@ -50,35 +51,7 @@ const CURRENCIES = [
   "GBP", "EUR", "CAD"
 ];
 
-const COUNTRIES: Record<string, { currency: string }> = {
-  "Nigeria": { currency: "NGN" },
-  "Ghana": { currency: "GHS" },
-  "Kenya": { currency: "KES" },
-  "South Africa": { currency: "ZAR" },
-  "Tanzania": { currency: "TZS" },
-  "Uganda": { currency: "UGX" },
-  "Rwanda": { currency: "RWF" },
-  "Cameroon": { currency: "XAF" },
-  "Senegal": { currency: "XOF" },
-  "Ivory Coast": { currency: "XOF" },
-  "Egypt": { currency: "EGP" },
-  "Ethiopia": { currency: "ETB" },
-  "DR Congo": { currency: "CDF" },
-  "Angola": { currency: "AOA" },
-  "Mozambique": { currency: "MZN" },
-  "Zambia": { currency: "ZMW" },
-  "Zimbabwe": { currency: "USD" },
-  "Botswana": { currency: "BWP" },
-  "Namibia": { currency: "NAD" },
-  "Malawi": { currency: "MWK" },
-  "Benin": { currency: "XOF" },
-  "Togo": { currency: "XOF" },
-  "Sierra Leone": { currency: "SLE" },
-  "Liberia": { currency: "LRD" },
-  "Gambia": { currency: "GMD" },
-};
-
-const COUNTRY_NAMES = Object.keys(COUNTRIES).sort();
+// COUNTRIES / COUNTRY_NAMES / subdivisionsFor now live in @/lib/geo (worldwide list + subdivisions).
 
 // Twilio sandbox — update if you move to a production WhatsApp sender
 const TWILIO_WHATSAPP_NUMBER = "14155238886";
@@ -253,7 +226,7 @@ function SettingsPage() {
           </div>
           <Separator />
           <div className="flex justify-between">
-            <span className="text-sm text-slate-500 dark:text-slate-400">Town / State</span>
+            <span className="text-sm text-slate-500 dark:text-slate-400">State / Province</span>
             <span className="text-sm">{business?.state ?? "—"}</span>
           </div>
           <Separator />
@@ -3095,33 +3068,6 @@ function EditBusinessDialog({
               ))}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>City</Label>
-              <Input
-                value={form.city}
-                onChange={(e) => setForm({ ...form, city: e.target.value })}
-                placeholder="e.g. Lagos"
-              />
-            </div>
-            <div>
-              <Label>Town / State</Label>
-              <Input
-                value={form.state}
-                onChange={(e) => setForm({ ...form, state: e.target.value })}
-                placeholder="e.g. Ikeja"
-              />
-            </div>
-          </div>
-          <div>
-            <Label>Address (for receipts)</Label>
-            <Input
-              value={form.address}
-              onChange={(e) => setForm({ ...form, address: e.target.value })}
-              placeholder="e.g. 12 Awolowo Way, Ikeja"
-            />
-            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Shown on PDF receipts. Optional.</p>
-          </div>
           <div>
             <Label>Country</Label>
             <select
@@ -3134,6 +3080,7 @@ function EditBusinessDialog({
                   ...form,
                   country,
                   currency: info?.currency ?? form.currency,
+                  state: "", // reset region — subdivisions differ per country
                 });
               }}
             >
@@ -3142,6 +3089,62 @@ function EditBusinessDialog({
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              {/* State/Province: a dropdown for countries we have subdivisions for, free-text otherwise. */}
+              {(() => {
+                const sub = subdivisionsFor(form.country);
+                if (!sub) {
+                  return (
+                    <>
+                      <Label>State / Province</Label>
+                      <Input
+                        value={form.state}
+                        onChange={(e) => setForm({ ...form, state: e.target.value })}
+                        placeholder="State / Province / Region"
+                      />
+                    </>
+                  );
+                }
+                return (
+                  <>
+                    <Label>{sub.label}</Label>
+                    <select
+                      className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
+                      value={form.state}
+                      onChange={(e) => setForm({ ...form, state: e.target.value })}
+                    >
+                      <option value="">Select {sub.label.toLowerCase()}</option>
+                      {/* Keep any legacy free-text value selectable so it isn't silently dropped. */}
+                      {form.state && !sub.items.includes(form.state) && (
+                        <option value={form.state}>{form.state}</option>
+                      )}
+                      {sub.items.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </>
+                );
+              })()}
+            </div>
+            <div>
+              <Label>City / Town</Label>
+              <Input
+                value={form.city}
+                onChange={(e) => setForm({ ...form, city: e.target.value })}
+                placeholder="e.g. your city or town"
+              />
+            </div>
+          </div>
+          <div>
+            <Label>Address (for receipts)</Label>
+            <Input
+              value={form.address}
+              onChange={(e) => setForm({ ...form, address: e.target.value })}
+              placeholder="e.g. 12 Awolowo Way"
+            />
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Shown on PDF receipts. Optional.</p>
           </div>
           {error && <p className="text-xs text-rose-500 dark:text-rose-400">{error}</p>}
         </div>
