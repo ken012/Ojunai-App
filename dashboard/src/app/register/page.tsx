@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { PasswordStrengthHint } from "@/components/password-strength-hint";
 import { validatePassword } from "@/lib/password-policy";
 import { api } from "@/lib/api";
+import { COUNTRY_NAMES, subdivisionsFor } from "@/lib/geo";
 
 const schema = z.object({
   fullName: z.string().min(2, "Full name required"),
@@ -26,6 +27,7 @@ const schema = z.object({
   }),
   businessName: z.string().min(2, "Business name required"),
   businessType: z.string().optional(),
+  country: z.string().min(1, "Please select your country"),
   state: z.string().optional(),
   city: z.string().optional(),
   dateOfBirth: z.string().optional(),
@@ -48,6 +50,7 @@ export default function RegisterPage() {
     register,
     handleSubmit,
     watch,
+    setValue,
     getValues,
     formState: { errors, isSubmitting },
   } = useForm<FormData>({
@@ -59,6 +62,7 @@ export default function RegisterPage() {
       password: "",
       businessName: "",
       businessType: "",
+      country: "",
       state: "",
       city: "",
       dateOfBirth: "",
@@ -242,8 +246,41 @@ export default function RegisterPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <Label>State</Label>
-                  <Input placeholder="e.g. Lagos" {...register("state")} />
+                  <Label>Country</Label>
+                  <select
+                    className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
+                    {...register("country", { onChange: () => setValue("state", "") })}
+                  >
+                    <option value="">Select country</option>
+                    {COUNTRY_NAMES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                  {errors.country && <p className="text-[11px] text-red-500">{errors.country.message}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  {(() => {
+                    const sub = subdivisionsFor(watch("country"));
+                    return (
+                      <>
+                        <Label>{sub?.label ?? "State / Province"} <span className="text-slate-400">(optional)</span></Label>
+                        {sub ? (
+                          <select
+                            className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
+                            {...register("state")}
+                          >
+                            <option value="">Select {sub.label.toLowerCase()}</option>
+                            {sub.items.map((s) => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <Input placeholder="State / Province / Region" {...register("state")} />
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <div className="col-span-2 space-y-1">

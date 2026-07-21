@@ -306,6 +306,7 @@ public class AuthController : OjunaiBaseController
             Password = request.Password,
             BusinessName = request.BusinessName,
             BusinessType = request.BusinessType,
+            Country = request.Country,
             State = request.State,
             City = request.City,
             DateOfBirth = request.DateOfBirth,

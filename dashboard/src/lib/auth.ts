@@ -79,6 +79,7 @@ export type RegisterPayload = {
   password: string;
   businessName: string;
   businessType?: string;
+  country?: string;
   state?: string;
   city?: string;
   dateOfBirth?: string;

@@ -75,7 +75,13 @@ public class AuthService : IAuthService
             await _db.SaveChangesAsync();
         }
 
-        var inferred = Common.CountryLookup.InferFromPhone(normalizedPhone) ?? Common.CountryLookup.Default;
+        // Country priority: explicit selection from the form → phone-dial-code inference (African
+        // markets only) → neutral default. Currency + timezone are derived SERVER-SIDE from the
+        // resolved country so a client can't pick a cheaper market's PPP-adjusted pricing.
+        var inferred = Common.CountryLookup.InferFromPhone(normalizedPhone);
+        var country = !string.IsNullOrWhiteSpace(request.Country)
+            ? request.Country!.Trim()
+            : (inferred?.Name ?? Common.CountryLookup.Default.Name);
 
         var business = new Business
         {
@@ -83,9 +89,9 @@ public class AuthService : IAuthService
             BusinessType = request.BusinessType,
             State = request.State,
             City = request.City,
-            Country = inferred.Name,
-            Currency = inferred.Currency,
-            Timezone = inferred.Timezone,
+            Country = country,
+            Currency = Common.CountryLookup.BillingCurrencyFor(country),
+            Timezone = Common.CountryLookup.TimezoneFor(country),
             Plan = "starter",
             TrialEndsAt = DateTime.UtcNow.AddDays(30),
             AccountNumber = await Common.AccountNumberGenerator.GenerateUniqueAsync(_db)

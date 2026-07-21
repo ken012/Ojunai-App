@@ -73,4 +73,45 @@ public static class CountryLookup
 
     /// <summary>Get the default info for businesses with no country set.</summary>
     public static CountryInfo Default => Countries[0]; // Nigeria
+
+    // ── Worldwide billing derivation ────────────────────────────────────────────
+    // Country → BILLING currency, derived SERVER-SIDE (never trust a client-chosen currency —
+    // that would let a merchant in a pricey market pick a cheaper market's PPP-adjusted prices).
+    // Only markets with a supported price table map to their local currency; everyone else bills
+    // in USD (the global default). Mirrors dashboard/src/lib/geo.ts. Add Canada→CAD, Eurozone→EUR
+    // here when those price tables go live.
+    private static readonly Dictionary<string, string> SupportedBillingCurrency =
+        new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Nigeria"] = "NGN", ["Ghana"] = "GHS", ["Kenya"] = "KES",
+        ["South Africa"] = "ZAR", ["Uganda"] = "UGX", ["United Kingdom"] = "GBP",
+    };
+
+    /// <summary>The supported billing currency for a country, or "USD" for every other market.</summary>
+    public static string BillingCurrencyFor(string? country)
+        => country != null && SupportedBillingCurrency.TryGetValue(country.Trim(), out var c) ? c : "USD";
+
+    // Reasonable default timezone for the major non-African markets (the African ones come from the
+    // Countries table above). Falls back to UTC; the merchant can adjust it in Settings.
+    private static readonly Dictionary<string, string> ExtraTimezones =
+        new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["United States"] = "America/New_York", ["Canada"] = "America/Toronto",
+        ["United Kingdom"] = "Europe/London", ["Ireland"] = "Europe/Dublin",
+        ["Australia"] = "Australia/Sydney", ["New Zealand"] = "Pacific/Auckland",
+        ["India"] = "Asia/Kolkata", ["Pakistan"] = "Asia/Karachi", ["Bangladesh"] = "Asia/Dhaka",
+        ["Germany"] = "Europe/Berlin", ["France"] = "Europe/Paris", ["Spain"] = "Europe/Madrid",
+        ["Italy"] = "Europe/Rome", ["Netherlands"] = "Europe/Amsterdam", ["Portugal"] = "Europe/Lisbon",
+        ["Brazil"] = "America/Sao_Paulo", ["Mexico"] = "America/Mexico_City",
+        ["United Arab Emirates"] = "Asia/Dubai", ["Saudi Arabia"] = "Asia/Riyadh",
+        ["Philippines"] = "Asia/Manila", ["Indonesia"] = "Asia/Jakarta", ["Singapore"] = "Asia/Singapore",
+    };
+
+    /// <summary>Best-effort default timezone for a country (African markets from the table; a curated
+    /// set of major markets; UTC otherwise). Editable in Settings.</summary>
+    public static string TimezoneFor(string? country)
+    {
+        if (GetByName(country) is { } info) return info.Timezone;
+        return country != null && ExtraTimezones.TryGetValue(country.Trim(), out var tz) ? tz : "Etc/UTC";
+    }
 }
