@@ -46,6 +46,7 @@ type VoiceAISettings = {
   id: string;
   name: string;
   defaultLanguage: VoiceLang;
+  strictLanguage: boolean;
   greetingTemplate: string | null;
   botName: string | null;
   region: string | null;
@@ -623,7 +624,22 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
             >
               {LANGUAGES.map((l) => <option key={l} value={l}>{LANG_LABELS[l]}</option>)}
             </select>
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">The language your customers usually call in. The bot greets and replies in this language by default; it&apos;ll auto-switch if a caller speaks differently.</p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">The language your customers usually call in. The bot greets and replies in this language by default; it&apos;ll auto-switch if a caller speaks differently — unless you lock it below.</p>
+          </div>
+
+          <div>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
+                checked={form.strictLanguage ?? false}
+                onChange={(e) => set("strictLanguage", e.target.checked)}
+              />
+              <div>
+                <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Strict language lock</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">When on, the bot always replies in your default language even if a caller speaks something else. Leave off if you sometimes serve customers in other languages.</p>
+              </div>
+            </label>
           </div>
 
           <div>
