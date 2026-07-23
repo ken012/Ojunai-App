@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePlanStatus } from "@/lib/use-plan-status";
@@ -426,8 +426,11 @@ function EnabledView({ planStatus, business }: {
       const { data } = await api.get<VoiceAISettings>("/business/voice-ai-settings");
       return data;
     },
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
+    // Keep other logged-in devices in sync: revalidate when the tab regains focus, so a
+    // save made on one device shows up when you return to another. (Was staleTime:Infinity
+    // + no focus refetch, which froze every other device on its first load.)
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
   });
 
   return (
@@ -521,6 +524,20 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
   const [advancedOpen, setAdvancedOpen] = useState(
     !!(initial.elevenLabsVoiceId || (initial.elevenLabsVoiceIds && Object.keys(initial.elevenLabsVoiceIds).length))
   );
+
+  // When a focus-refetch pulls newer settings (e.g. saved on another device), adopt them —
+  // but only if this form has no unsaved edits, so we never clobber what the merchant is
+  // typing. React Query's structural sharing keeps `initial`'s reference stable when the
+  // server data is unchanged, so this runs only on a genuine change.
+  const loadedRef = useRef(initial);
+  useEffect(() => {
+    const loaded = loadedRef.current;
+    if (initial === loaded) return;
+    loadedRef.current = initial;
+    setForm(current =>
+      JSON.stringify(current) === JSON.stringify(loaded) ? initial : current,
+    );
+  }, [initial]);
 
   function set<K extends keyof VoiceAISettings>(key: K, value: VoiceAISettings[K]) {
     setForm(f => ({ ...f, [key]: value }));
