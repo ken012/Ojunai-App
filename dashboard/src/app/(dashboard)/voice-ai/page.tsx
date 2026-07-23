@@ -532,6 +532,13 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
     set("elevenLabsVoiceIds", Object.keys(next).length ? next : null);
   }
 
+  // Wipe every raw-voice override so the chosen persona takes full effect. Clears BOTH the
+  // per-language map and the single fallback (the backend nulls both per its clear-semantics).
+  function clearAllOverrides() {
+    setForm(f => ({ ...f, elevenLabsVoiceId: null, elevenLabsVoiceIds: null }));
+    setSaveResult(null);
+  }
+
   function getDiff(): Partial<VoiceAISettings> {
     const diff: Record<string, unknown> = {};
     for (const key of Object.keys(form) as (keyof VoiceAISettings)[]) {
@@ -711,7 +718,7 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
               </p>
               <button
                 type="button"
-                onClick={() => set("elevenLabsVoiceIds", null)}
+                onClick={clearAllOverrides}
                 className="mt-2 text-xs font-semibold text-amber-800 dark:text-amber-300 underline hover:no-underline"
               >
                 Clear all overrides
@@ -725,6 +732,14 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
             </button>
             {advancedOpen && (
               <div className="mt-2 space-y-3 pl-3 border-l-2 border-slate-100 dark:border-slate-800">
+                {(form.elevenLabsVoiceId || overrideCodes.length > 0) && (
+                  <div className="flex justify-end">
+                    <button type="button" onClick={clearAllOverrides} className="text-[10px] font-medium text-rose-600 hover:underline">
+                      Clear all overrides
+                    </button>
+                  </div>
+                )}
+
                 <div>
                   <Label className="text-xs text-slate-500 dark:text-slate-400">Custom voice ID <span className="text-slate-400">(optional)</span></Label>
                   <Input value={form.elevenLabsVoiceId ?? ""} onChange={(e) => set("elevenLabsVoiceId", e.target.value || null)} placeholder="ElevenLabs voice ID" className="max-w-md font-mono text-xs" />
@@ -732,16 +747,9 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <button type="button" onClick={() => setVoicesOpen(o => !o)} className="text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100">
-                      {voicesOpen ? "▾" : "▸"} Native voices per language
-                    </button>
-                    {overrideCodes.length > 0 && (
-                      <button type="button" onClick={() => set("elevenLabsVoiceIds", null)} className="text-[10px] font-medium text-rose-600 hover:underline flex-shrink-0">
-                        Clear all overrides
-                      </button>
-                    )}
-                  </div>
+                  <button type="button" onClick={() => setVoicesOpen(o => !o)} className="text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100">
+                    {voicesOpen ? "▾" : "▸"} Native voices per language
+                  </button>
                   {voicesOpen && (
                     <div className="mt-2 space-y-2 pl-3 border-l-2 border-slate-100 dark:border-slate-800">
                       <p className="text-[10px] text-slate-400 dark:text-slate-500">If you serve customers in multiple languages, pick a native-speaker voice for each. A voice set here takes priority over your voice personality for that language.</p>
