@@ -30,7 +30,7 @@ export const VOICE_AI_TIER_FEATURES: Record<VoiceAITier, string[]> = {
     "300 inbound minutes / mo",
     "1 concurrent line",
     "Dedicated phone number",
-    "4 languages: English, Yoruba, Hausa, Igbo",
+    "4 languages: English, French, Spanish, Mandarin",
     "Live dashboard sync",
     "Owner handoff for complex calls",
   ],

@@ -31,7 +31,14 @@ import { CURRENCY_META, SUPPORTED_CURRENCIES } from "@/lib/pricing";
 import type { SupportedCurrency, BillingCycle } from "@/lib/pricing";
 import { useVoicePricing } from "@/lib/use-pricing";
 
-type VoiceLang = "en" | "yo" | "ha" | "ig" | "fr" | "es" | "zh";
+type VoiceLang = "en" | "fr" | "es" | "zh";
+
+type VoicePreset = "warm_female" | "professional_male" | "energetic_youthful";
+const VOICE_PRESETS: { value: VoicePreset; label: string }[] = [
+  { value: "warm_female", label: "Warm & Friendly" },
+  { value: "professional_male", label: "Professional" },
+  { value: "energetic_youthful", label: "Energetic & Youthful" },
+];
 
 type VoiceAISettings = {
   id: string;
@@ -41,6 +48,7 @@ type VoiceAISettings = {
   botName: string | null;
   region: string | null;
   voiceTransport: "record" | "streaming";
+  voicePreset: VoicePreset | null;
   elevenLabsVoiceId: string | null;
   elevenLabsVoiceIds: Record<string, string> | null;
   voiceNumberExternal: string | null;
@@ -50,17 +58,14 @@ type VoiceAISettings = {
 };
 
 const LANG_LABELS: Record<VoiceLang, string> = {
-  en: "English", yo: "Yoruba", ha: "Hausa", ig: "Igbo",
+  en: "English",
   fr: "French (Français)", es: "Spanish (Español)", zh: "Mandarin (中文)",
 };
-const LANGUAGES: VoiceLang[] = ["en", "yo", "ha", "ig", "fr", "es", "zh"];
+const LANGUAGES: VoiceLang[] = ["en", "fr", "es", "zh"];
 
 // Greeting placeholder by selected default language — illustrative; the merchant overwrites it.
 const GREETING_PLACEHOLDERS: Record<VoiceLang, string> = {
   en: "e.g. Welcome to {businessName}. How may I help you today?",
-  yo: "àpẹẹrẹ: Ẹ káàbọ̀ sí {businessName}. Báwo ni mo ṣe lè ràn yín lọ́wọ́?",
-  ha: "misali: Barka da zuwa {businessName}. Yaya zan taimaka muku yau?",
-  ig: "ọmụmaatụ: Nnọọ na {businessName}. Kedu ka m ga-esi nyere gị aka?",
   fr: "ex: Bienvenue chez {businessName}. Comment je peux t'aider ?",
   es: "ej: Bienvenido a {businessName}. ¿En qué te puedo ayudar?",
   zh: "例: 欢迎来到{businessName}。需要什么帮助？",
@@ -264,7 +269,7 @@ function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurre
         </div>
         <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-50">OjunaiVoice</h2>
         <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-md mx-auto">
-          AI-powered phone receptionist that handles customer calls in English, Yoruba, Hausa, and Igbo.
+          AI-powered phone receptionist that handles customer calls in English, French, Spanish, and Mandarin.
           Pick the tier that matches your call volume.
         </p>
         <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-3">
@@ -501,8 +506,17 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
   const [saving, setSaving] = useState(false);
   const [saveResult, setSaveResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [confirmStreaming, setConfirmStreaming] = useState(false);
+  // Holds a not-yet-applied default-language change while we ask the merchant what to do with
+  // their custom greeting (which is literal text and would otherwise play in the old language).
+  const [pendingLang, setPendingLang] = useState<VoiceLang | null>(null);
+  const [presetError, setPresetError] = useState<string | null>(null);
   const [voicesOpen, setVoicesOpen] = useState(
     !!(initial.elevenLabsVoiceIds && Object.keys(initial.elevenLabsVoiceIds).length)
+  );
+  // Custom voice ID + per-language overrides start expanded only for merchants who already
+  // set one (so their config stays visible); otherwise collapsed — the preset is the primary input.
+  const [advancedOpen, setAdvancedOpen] = useState(
+    !!(initial.elevenLabsVoiceId || (initial.elevenLabsVoiceIds && Object.keys(initial.elevenLabsVoiceIds).length))
   );
 
   function set<K extends keyof VoiceAISettings>(key: K, value: VoiceAISettings[K]) {
@@ -536,13 +550,18 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
 
     setSaving(true);
     setSaveResult(null);
+    setPresetError(null);
     try {
       await api.patch("/business/voice-ai-settings", { ...diff, timezone: businessTimezone });
       qc.invalidateQueries({ queryKey: ["voice-ai-settings"] });
       setSaveResult({ ok: true, msg: "Settings saved." });
     } catch (err: unknown) {
-      const ax = err as { response?: { data?: { errors?: string[]; message?: string } } };
-      setSaveResult({ ok: false, msg: ax.response?.data?.errors?.[0] ?? ax.response?.data?.message ?? "Failed to save." });
+      const ax = err as { response?: { status?: number; data?: { errors?: string[]; message?: string } } };
+      const msg = ax.response?.data?.errors?.[0] ?? ax.response?.data?.message ?? "Failed to save.";
+      // The voice backend validates the voicePreset enum; a 400 means an invalid value, so surface it
+      // inline on the field rather than as a banner. Any other status stays in the save banner.
+      if (ax.response?.status === 400) setPresetError(msg);
+      else setSaveResult({ ok: false, msg });
     } finally {
       setSaving(false);
     }
@@ -550,6 +569,20 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
 
   const hasChanges = Object.keys(getDiff()).length > 0;
   const greetingPlaceholder = GREETING_PLACEHOLDERS[form.defaultLanguage] ?? GREETING_PLACEHOLDERS.en;
+  // Short language name (drops the native-script parenthetical, e.g. "French (Français)" → "French") for prose.
+  const pendingLangName = pendingLang ? LANG_LABELS[pendingLang].replace(/\s*\(.*\)$/, "") : "";
+
+  // Voice resolution order is: per-language override → preset → raw voice ID. So when a preset AND
+  // per-language overrides both exist, the overrides silently win for those languages — surface that
+  // (the overrides otherwise hide inside the collapsed Advanced section) so the preset isn't "ignored".
+  const overrideCodes = form.elevenLabsVoiceIds ? Object.keys(form.elevenLabsVoiceIds) : [];
+  const presetOverrideConflict = !!form.voicePreset && overrideCodes.length > 0;
+  const overrideNames = overrideCodes
+    .map((c) => (LANG_LABELS as Record<string, string>)[c]?.replace(/\s*\(.*\)$/, "") ?? c.toUpperCase())
+    .join(", ");
+  const presetLabel = form.voicePreset
+    ? (VOICE_PRESETS.find((p) => p.value === form.voicePreset)?.label ?? form.voicePreset)
+    : "";
 
   return (
     <div className="space-y-4">
@@ -569,7 +602,14 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
             <Label className="text-xs text-slate-500 dark:text-slate-400">Default Language</Label>
             <select
               value={form.defaultLanguage}
-              onChange={(e) => set("defaultLanguage", e.target.value as VoiceLang)}
+              onChange={(e) => {
+                const next = e.target.value as VoiceLang;
+                if (next === form.defaultLanguage) return;
+                // A blank greeting auto-localizes to the new language, so only prompt when the
+                // merchant has authored a literal greeting that would keep playing in the old language.
+                if (form.greetingTemplate?.trim()) setPendingLang(next);
+                else set("defaultLanguage", next);
+              }}
               className="mt-1 h-9 w-full max-w-xs px-2 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm"
             >
               {LANGUAGES.map((l) => <option key={l} value={l}>{LANG_LABELS[l]}</option>)}
@@ -645,29 +685,90 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
           </div>
 
           <div>
-            <Label className="text-xs text-slate-500 dark:text-slate-400">Voice <span className="text-slate-400">(optional)</span></Label>
-            <Input value={form.elevenLabsVoiceId ?? ""} onChange={(e) => set("elevenLabsVoiceId", e.target.value || null)} placeholder="ElevenLabs voice ID" className="max-w-md font-mono text-xs" />
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">The voice your customers hear. Browse <a href="https://elevenlabs.io/voice-library" target="_blank" rel="noreferrer" className="text-cyan-600 hover:underline">elevenlabs.io/voice-library</a> and paste a voice ID.</p>
+            <Label className="text-xs text-slate-500 dark:text-slate-400">Voice personality <span className="text-slate-400">(recommended)</span></Label>
+            <select
+              value={form.voicePreset ?? ""}
+              onChange={(e) => { setPresetError(null); set("voicePreset", (e.target.value || null) as VoicePreset | null); }}
+              className="w-full max-w-md h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-200"
+            >
+              <option value="">Default (use raw voice ID)</option>
+              {VOICE_PRESETS.map((p) => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Your bot&apos;s voice personality. Same feel across every language the bot speaks in. Pick one persona instead of hunting for individual ElevenLabs voice IDs.</p>
+            {presetError && <p className="text-[10px] text-red-500 mt-1">{presetError}</p>}
           </div>
 
+          {presetOverrideConflict && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30 p-3">
+              <p className="text-xs text-amber-800 dark:text-amber-300">
+                <span className="font-semibold">Per-language voice overrides are active.</span>{" "}
+                Your custom voice for {overrideNames} takes priority over the “{presetLabel}” personality for{" "}
+                {overrideCodes.length === 1 ? "that language" : "those languages"} — so the personality won&apos;t apply
+                there. Clear {overrideCodes.length === 1 ? "it" : "them"} to use the personality everywhere, or keep{" "}
+                {overrideCodes.length === 1 ? "it" : "them"} to mix both.
+              </p>
+              <button
+                type="button"
+                onClick={() => set("elevenLabsVoiceIds", null)}
+                className="mt-2 text-xs font-semibold text-amber-800 dark:text-amber-300 underline hover:no-underline"
+              >
+                Clear all overrides
+              </button>
+            </div>
+          )}
+
           <div>
-            <button type="button" onClick={() => setVoicesOpen(o => !o)} className="text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100">
-              {voicesOpen ? "▾" : "▸"} Native voices per language <span className="text-slate-400 font-normal">(advanced)</span>
+            <button type="button" onClick={() => setAdvancedOpen(o => !o)} className="text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100">
+              {advancedOpen ? "▾" : "▸"} Advanced: custom voice ID <span className="text-slate-400 font-normal">(optional)</span>
             </button>
-            {voicesOpen && (
-              <div className="mt-2 space-y-2 pl-3 border-l-2 border-slate-100 dark:border-slate-800">
-                <p className="text-[10px] text-slate-400 dark:text-slate-500">If you serve customers in multiple languages, pick a native-speaker voice for each. Otherwise the bot uses your default voice with its underlying accent.</p>
-                {PER_LANGUAGE_VOICE_LANGS.map(({ code, label }) => (
-                  <div key={code} className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500 dark:text-slate-400 w-20 flex-shrink-0">{label}</span>
-                    <Input
-                      value={form.elevenLabsVoiceIds?.[code] ?? ""}
-                      onChange={(e) => setVoiceId(code, e.target.value)}
-                      placeholder="voice ID"
-                      className="max-w-xs font-mono text-xs"
-                    />
+            {advancedOpen && (
+              <div className="mt-2 space-y-3 pl-3 border-l-2 border-slate-100 dark:border-slate-800">
+                <div>
+                  <Label className="text-xs text-slate-500 dark:text-slate-400">Custom voice ID <span className="text-slate-400">(optional)</span></Label>
+                  <Input value={form.elevenLabsVoiceId ?? ""} onChange={(e) => set("elevenLabsVoiceId", e.target.value || null)} placeholder="ElevenLabs voice ID" className="max-w-md font-mono text-xs" />
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Overrides the persona with one specific voice. Browse <a href="https://elevenlabs.io/voice-library" target="_blank" rel="noreferrer" className="text-cyan-600 hover:underline">elevenlabs.io/voice-library</a> and paste a voice ID.</p>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <button type="button" onClick={() => setVoicesOpen(o => !o)} className="text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100">
+                      {voicesOpen ? "▾" : "▸"} Native voices per language
+                    </button>
+                    {overrideCodes.length > 0 && (
+                      <button type="button" onClick={() => set("elevenLabsVoiceIds", null)} className="text-[10px] font-medium text-rose-600 hover:underline flex-shrink-0">
+                        Clear all overrides
+                      </button>
+                    )}
                   </div>
-                ))}
+                  {voicesOpen && (
+                    <div className="mt-2 space-y-2 pl-3 border-l-2 border-slate-100 dark:border-slate-800">
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500">If you serve customers in multiple languages, pick a native-speaker voice for each. A voice set here takes priority over your voice personality for that language.</p>
+                      {PER_LANGUAGE_VOICE_LANGS.map(({ code, label }) => (
+                        <div key={code} className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500 dark:text-slate-400 w-20 flex-shrink-0">{label}</span>
+                          <Input
+                            value={form.elevenLabsVoiceIds?.[code] ?? ""}
+                            onChange={(e) => setVoiceId(code, e.target.value)}
+                            placeholder="voice ID"
+                            className="max-w-xs font-mono text-xs"
+                          />
+                          {form.elevenLabsVoiceIds?.[code] && (
+                            <button
+                              type="button"
+                              onClick={() => setVoiceId(code, "")}
+                              aria-label={`Clear ${label} override`}
+                              className="text-slate-400 hover:text-rose-600 text-base leading-none px-1 flex-shrink-0"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -731,6 +832,24 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmStreaming(false)}>Cancel</Button>
             <Button onClick={() => { set("voiceTransport", "streaming"); setConfirmStreaming(false); }}>Continue</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* A saved greeting is literal text, so switching default language would keep playing it in the old
+          language. Offer to clear it (→ localized auto-default) or keep it. Only shown when a custom
+          greeting exists — the language <select> onChange applies blank-greeting changes directly. */}
+      <Dialog open={pendingLang !== null} onOpenChange={(o) => { if (!o) setPendingLang(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Update your greeting for {pendingLangName}?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600 dark:text-slate-400">
+            Your default language is now {pendingLangName}, but your saved greeting plays exactly as written — it won&apos;t be translated automatically. Keep it as-is, or clear it so the bot uses an auto-generated {pendingLangName} greeting.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { if (pendingLang) set("defaultLanguage", pendingLang); setPendingLang(null); }}>Keep my greeting</Button>
+            <Button onClick={() => { if (pendingLang) { set("defaultLanguage", pendingLang); set("greetingTemplate", null); } setPendingLang(null); }}>Clear it</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
