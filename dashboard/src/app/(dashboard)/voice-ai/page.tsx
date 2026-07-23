@@ -35,9 +35,11 @@ type VoiceLang = "en" | "fr" | "es" | "zh";
 
 type VoicePreset = "warm_female" | "professional_male" | "energetic_youthful";
 const VOICE_PRESETS: { value: VoicePreset; label: string }[] = [
-  { value: "warm_female", label: "Warm & Friendly" },
-  { value: "professional_male", label: "Professional" },
-  { value: "energetic_youthful", label: "Energetic & Youthful" },
+  { value: "warm_female", label: "Warm & Friendly (Female)" },
+  { value: "professional_male", label: "Professional (Male)" },
+  // "energetic_youthful" is a male voice for now (temporary placeholder); a future backend
+  // release swaps it to a young female persona with the same enum key — no UI change needed then.
+  { value: "energetic_youthful", label: "Energetic & Youthful (Male)" },
 ];
 
 type VoiceAISettings = {
