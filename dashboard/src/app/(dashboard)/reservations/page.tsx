@@ -35,6 +35,9 @@ type VoiceReservation = {
   createdAt: string;
   updatedAt: string;
   holdExpiresAt: string;
+  // Scheduled pickup time the caller gave during the call (from the reservation's
+  // PickupBooking on the voice side). Optional until the voice reservations API returns it.
+  pickupScheduledFor?: string | null;
 };
 
 type UnifiedHold = {
@@ -49,6 +52,7 @@ type UnifiedHold = {
   notes: string | null;
   createdAt: string;
   holdExpiresAt: string | null;
+  pickupScheduledFor: string | null;
   isVoice: boolean;
   callSessionId: string | null;
   customerPhone: string | null;
@@ -185,6 +189,7 @@ export default function ReservationsPage() {
       notes: h.notes ?? null,
       createdAt: h.createdAtUtc,
       holdExpiresAt: null,
+      pickupScheduledFor: null,
       isVoice: false,
       callSessionId: null,
       customerPhone: null,
@@ -203,6 +208,7 @@ export default function ReservationsPage() {
       notes: r.productSku ? `SKU: ${r.productSku}` : null,
       createdAt: r.createdAt,
       holdExpiresAt: r.holdExpiresAt,
+      pickupScheduledFor: r.pickupScheduledFor ?? null,
       isVoice: true,
       callSessionId: r.callSessionId,
       customerPhone: r.customerPhone,
@@ -348,6 +354,7 @@ export default function ReservationsPage() {
                   <TableHead className="text-center">Qty</TableHead>
                   <TableHead>Source</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Pickup</TableHead>
                   {tab !== "completed" && <TableHead>Expires</TableHead>}
                   <TableHead>Date</TableHead>
                   <TableHead>Notes</TableHead>
@@ -367,6 +374,9 @@ export default function ReservationsPage() {
                     <TableCell className="text-center font-semibold text-slate-900 dark:text-slate-50">{h.quantity}</TableCell>
                     <TableCell><SourceBadge source={h.source} /></TableCell>
                     <TableCell><StatusBadge status={h.status} releaseReason={h.releaseReason} releaseNote={h.releaseNote} /></TableCell>
+                    <TableCell className="text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                      {h.pickupScheduledFor ? formatDateTime(h.pickupScheduledFor) : <span className="text-slate-300 dark:text-slate-600">—</span>}
+                    </TableCell>
                     {tab !== "completed" && (
                       <TableCell>
                         {h.holdExpiresAt ? <HoldCountdown expiresAt={h.holdExpiresAt} /> : <span className="text-xs text-slate-300 dark:text-slate-600">—</span>}
