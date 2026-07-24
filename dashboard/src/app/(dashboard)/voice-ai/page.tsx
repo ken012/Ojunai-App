@@ -31,7 +31,7 @@ import { CURRENCY_META, SUPPORTED_CURRENCIES } from "@/lib/pricing";
 import type { SupportedCurrency, BillingCycle } from "@/lib/pricing";
 import { useVoicePricing } from "@/lib/use-pricing";
 
-type VoiceLang = "en" | "fr" | "es" | "zh";
+type VoiceLang = "en" | "fr" | "es" | "zh" | "ar";
 
 type VoicePreset = "warm_female" | "professional_male" | "energetic_youthful";
 const VOICE_PRESETS: { value: VoicePreset; label: string }[] = [
@@ -63,8 +63,9 @@ type VoiceAISettings = {
 const LANG_LABELS: Record<VoiceLang, string> = {
   en: "English",
   fr: "French (Français)", es: "Spanish (Español)", zh: "Mandarin (中文)",
+  ar: "Arabic (العربية)",
 };
-const LANGUAGES: VoiceLang[] = ["en", "fr", "es", "zh"];
+const LANGUAGES: VoiceLang[] = ["en", "fr", "es", "zh", "ar"];
 
 // Greeting placeholder by selected default language — illustrative; the merchant overwrites it.
 const GREETING_PLACEHOLDERS: Record<VoiceLang, string> = {
@@ -72,6 +73,7 @@ const GREETING_PLACEHOLDERS: Record<VoiceLang, string> = {
   fr: "ex: Bienvenue chez {businessName}. Comment je peux t'aider ?",
   es: "ej: Bienvenido a {businessName}. ¿En qué te puedo ayudar?",
   zh: "例: 欢迎来到{businessName}。需要什么帮助？",
+  ar: "مثال: مرحباً بك في {businessName}. كيف يمكنني مساعدتك؟",
 };
 
 // Non-default languages that can carry their own ElevenLabs voice (advanced section).
@@ -79,6 +81,7 @@ const PER_LANGUAGE_VOICE_LANGS: { code: VoiceLang; label: string }[] = [
   { code: "fr", label: "French" },
   { code: "es", label: "Spanish" },
   { code: "zh", label: "Mandarin" },
+  { code: "ar", label: "Arabic" },
 ];
 
 // ── Action log: the hero feature of the Voice AI page ────────────────────────
@@ -621,7 +624,7 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
         <CardContent className="space-y-4">
           <div>
             <Label className="text-xs text-slate-500 dark:text-slate-400">Business Name</Label>
-            <Input value={form.name} onChange={(e) => set("name", e.target.value)} maxLength={200} placeholder="Your business name" />
+            <Input dir="auto" value={form.name} onChange={(e) => set("name", e.target.value)} maxLength={200} placeholder="Your business name" />
             <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Read aloud by the bot when callers ask who they&apos;ve reached.</p>
           </div>
 
@@ -662,6 +665,9 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
           <div>
             <Label className="text-xs text-slate-500 dark:text-slate-400">Greeting</Label>
             <textarea
+              // dir="auto" so a greeting typed in Arabic (or any RTL language) renders
+              // right-to-left instead of being forced LTR and looking mangled.
+              dir="auto"
               className="w-full h-24 p-3 mt-1 rounded-md border border-slate-200 dark:border-slate-800 text-sm resize-none bg-white dark:bg-slate-900"
               maxLength={500}
               placeholder={greetingPlaceholder}
@@ -676,7 +682,7 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
 
           <div>
             <Label className="text-xs text-slate-500 dark:text-slate-400">Bot Name <span className="text-slate-400">(optional)</span></Label>
-            <Input value={form.botName ?? ""} onChange={(e) => set("botName", e.target.value || null)} maxLength={50} placeholder="e.g. Tomi" className="max-w-xs" />
+            <Input dir="auto" value={form.botName ?? ""} onChange={(e) => set("botName", e.target.value || null)} maxLength={50} placeholder="e.g. Tomi" className="max-w-xs" />
             <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Give your bot a persona name. Customers hear &quot;Hi, I&apos;m Tomi from {form.name || "your business"}&quot; instead of a generic &quot;assistant&quot;.</p>
           </div>
 
