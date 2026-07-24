@@ -692,7 +692,7 @@ function SettingsForm({ initial, businessTimezone }: { initial: VoiceAISettings;
               <span className="text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-1.5">{businessTimezone}</span>
               <a href="/settings" className="text-xs text-cyan-600 hover:underline">Change in Settings</a>
             </div>
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Synced from your business settings. Used by Voice AI to interpret caller times correctly.</p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Timezone derived from your country set in business settings. Used by Voice AI to interpret caller times correctly.</p>
           </div>
         </CardContent>
       </Card>
