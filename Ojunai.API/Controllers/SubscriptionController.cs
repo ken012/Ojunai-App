@@ -603,8 +603,13 @@ public class SubscriptionController : OjunaiBaseController
         Stripe.Event stripeEvent;
         try
         {
+            // throwOnApiVersionMismatch: false — the dashboard endpoint sends events at the account's
+            // API version, which may differ from the SDK's pinned version. We still enforce the
+            // signature; the fields we read (metadata, amounts, ids) are stable across versions, so we
+            // process the event rather than rejecting it on a version delta.
             stripeEvent = Stripe.EventUtility.ConstructEvent(
-                body, Request.Headers["Stripe-Signature"].ToString(), secret);
+                body, Request.Headers["Stripe-Signature"].ToString(), secret,
+                throwOnApiVersionMismatch: false);
         }
         catch (Stripe.StripeException ex)
         {
