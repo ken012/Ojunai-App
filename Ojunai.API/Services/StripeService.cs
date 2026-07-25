@@ -162,7 +162,9 @@ public class StripeService
         // Stripe:AutomaticTax (default off — otherwise checkout errors with "valid head-office address").
         // Turn it on in prod once Tax is set up. Webhook validation uses the pre-tax subtotal either
         // way (AmountSubtotal == our price when tax is off; == price pre-tax when on), so it's safe to flip.
-        if (_config.GetValue<bool>("Stripe:AutomaticTax"))
+        // bool.TryParse (not GetValue<bool>) so a blank/absent/invalid Stripe:AutomaticTax reads as
+        // false instead of throwing — GetValue<bool> throws a FormatException on an empty-string env var.
+        if (bool.TryParse(_config["Stripe:AutomaticTax"], out var taxOn) && taxOn)
         {
             options.AutomaticTax = new SessionAutomaticTaxOptions { Enabled = true };
             options.BillingAddressCollection = "required";
