@@ -1,7 +1,8 @@
 # Stripe billing — deploy & runbook
 
 Stripe is the third billing provider (added 2026-07-25, commit `7852520`), routing **USD / GBP / CAD /
-EUR** subscription checkouts to hosted Stripe Checkout with Stripe Tax. CAD and EUR are now real billing
+EUR** subscription checkouts to hosted Stripe Checkout (with optional Stripe Tax, off by default —
+see step 3). CAD and EUR are now real billing
 currencies (previously mapped to USD). NGN stays on Paystack; GHS/KES/ZAR/UGX stay on Flutterwave.
 
 Provider routing (`BillingConfig.GetProvider`):
@@ -33,9 +34,12 @@ Session creation validated against the live test API. The `AddStripeFields` migr
    - Events: `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`,
      `customer.subscription.deleted`, `customer.subscription.updated`
    - Copy its **signing secret** into `Stripe:WebhookSecret`.
-3. **Stripe Tax — REQUIRED** (Tax is ON in code). Dashboard → **Settings → Tax**: set the head-office /
-   origin address and add tax registrations where you're liable. Without this, `automatic_tax` errors and
-   checkout fails (confirmed in test mode: *"You must have a valid head-office address…"*).
+3. **Stripe Tax** — gated behind config `Stripe:AutomaticTax` (**default OFF**). To enable: Dashboard →
+   **Settings → Tax** → set the head-office / origin address (pulls from Settings → Business details) +
+   registrations where you're liable, THEN set env `Stripe:AutomaticTax=true`. Keep it OFF until Tax is
+   configured — with it on but no address, checkout errors (*"You must have a valid head-office
+   address…"*). Amount validation uses the pre-tax subtotal either way, so flipping it is safe.
+   **Test/sandbox:** leave it OFF and hosted checkout works with no address setup.
 4. **Deploy**: `./scripts/deploy-api.sh` (the `AddStripeFields` migration auto-applies at startup via
    `db.Database.MigrateAsync()`) then `./scripts/deploy-dashboard.sh`. Rollback: `rollback-api.sh` /
    `rollback-dashboard.sh` (the migration is additive-only — two nullable columns — so a rollback of the

@@ -156,12 +156,18 @@ public class StripeService
             Metadata = metadata,
             SuccessUrl = $"{DashboardUrl()}/settings?{successPath}&session_id={{CHECKOUT_SESSION_ID}}",
             CancelUrl = $"{DashboardUrl()}/settings?checkout=cancelled",
-            // Stripe Tax ON — Stripe calculates VAT/GST/sales tax by customer location and adds it on
-            // top of our price. Webhook validation uses AmountSubtotal (pre-tax) against BillingConfig.
-            AutomaticTax = new SessionAutomaticTaxOptions { Enabled = true },
-            BillingAddressCollection = "required",
-            CustomerUpdate = new SessionCustomerUpdateOptions { Address = "auto" },
         };
+        // Stripe Tax adds VAT/GST/sales tax by customer location on top of our price. It REQUIRES a
+        // configured head-office address + registrations in the Stripe dashboard, so it's gated behind
+        // Stripe:AutomaticTax (default off — otherwise checkout errors with "valid head-office address").
+        // Turn it on in prod once Tax is set up. Webhook validation uses the pre-tax subtotal either
+        // way (AmountSubtotal == our price when tax is off; == price pre-tax when on), so it's safe to flip.
+        if (_config.GetValue<bool>("Stripe:AutomaticTax"))
+        {
+            options.AutomaticTax = new SessionAutomaticTaxOptions { Enabled = true };
+            options.BillingAddressCollection = "required";
+            options.CustomerUpdate = new SessionCustomerUpdateOptions { Address = "auto" };
+        }
         if (recurring)
             options.SubscriptionData = new SessionSubscriptionDataOptions { Metadata = metadata };
 
