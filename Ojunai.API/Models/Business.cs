@@ -20,6 +20,8 @@ public class Business
     public string? PaystackPlanCode { get; set; }
     public string? FlutterwaveSubscriptionId { get; set; }
     public string? FlutterwaveCustomerId { get; set; }
+    public string? StripeCustomerId { get; set; }
+    public string? StripeSubscriptionId { get; set; }
     public string BillingProvider { get; set; } = "paystack";
     public string BillingCycle { get; set; } = "monthly";
     public string BillingCurrency { get; set; } = "NGN";

@@ -24,6 +24,7 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
     <PackageReference Include="QuestPDF" Version="2026.2.4" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
+    <PackageReference Include="Stripe.net" Version="52.1.1" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="Twilio" Version="7.3.1" />
     <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />

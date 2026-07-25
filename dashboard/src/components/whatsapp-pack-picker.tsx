@@ -47,7 +47,7 @@ type WhatsAppPacksResponse = {
 };
 
 type PurchaseInitResult = {
-  provider: "paystack" | "flutterwave";
+  provider: "paystack" | "flutterwave" | "stripe";
   paymentUrl?: string;
   publicKey?: string;
   txRef?: string;
@@ -128,10 +128,10 @@ export function WhatsAppPackPicker({ currency: currencyProp }: { currency?: Supp
       );
       const result = resp.data!;
 
-      if (result.provider === "paystack") {
-        // Paystack — full-page redirect to their hosted checkout
+      if (result.provider === "paystack" || result.provider === "stripe") {
+        // Paystack + Stripe — full-page redirect to their hosted checkout
         if (!result.paymentUrl) {
-          throw new Error("No paymentUrl returned for Paystack purchase");
+          throw new Error(`No paymentUrl returned for ${result.provider} purchase`);
         }
         window.location.href = result.paymentUrl;
         return;

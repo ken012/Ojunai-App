@@ -27,7 +27,7 @@ import {
   VOICE_AI_TRIAL_MINUTES,
   type VoiceAITier,
 } from "@/lib/voice-ai-pricing";
-import { CURRENCY_META, SUPPORTED_CURRENCIES } from "@/lib/pricing";
+import { CURRENCY_META, SUPPORTED_CURRENCIES, getProvider } from "@/lib/pricing";
 import type { SupportedCurrency, BillingCycle } from "@/lib/pricing";
 import { useVoicePricing } from "@/lib/use-pricing";
 
@@ -266,6 +266,30 @@ function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurre
 
   // Live Voice prices from the backend (single source of truth) — no hardcoded numbers.
   const { getVoiceTierPrice } = useVoicePricing();
+  const [subscribing, setSubscribing] = useState<string | null>(null);
+
+  // OjunaiVoice self-serve checkout for hosted-redirect providers (Stripe for USD/GBP/CAD/EUR,
+  // Paystack for NGN). African currencies (Flutterwave) keep the concierge "contact us" flow —
+  // the inline checkout SDK isn't wired into this marketing view.
+  async function handleSubscribeVoice(tier: string) {
+    setSubscribing(tier);
+    try {
+      const { data } = await api.post<{ data: { provider?: string; paymentUrl?: string } }>(
+        "/subscription/voice-ai/initialize",
+        { tier, billingCycle: cycle, currency },
+      );
+      const result = data.data ?? {};
+      if ((result.provider === "stripe" || result.provider === "paystack") && result.paymentUrl) {
+        window.location.href = result.paymentUrl;
+        return;
+      }
+      setSubscribing(null);
+      window.alert("Couldn't start checkout for this currency here — please contact us to enable OjunaiVoice.");
+    } catch {
+      setSubscribing(null);
+      window.alert("Could not start checkout. Please try again or contact support.");
+    }
+  }
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -337,17 +361,33 @@ function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurre
                     </div>
                   ))}
                 </div>
-                <a
-                  href={`mailto:contact@ojunai.com?subject=${contactSubject}&body=${contactBody}`}
-                  className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${
-                    isPro
-                      ? "bg-violet-600 hover:bg-violet-700 text-white"
-                      : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-50"
-                  }`}
-                >
-                  <Phone size={14} />
-                  Contact us to enable
-                </a>
+                {getProvider(currency) === "flutterwave" ? (
+                  <a
+                    href={`mailto:contact@ojunai.com?subject=${contactSubject}&body=${contactBody}`}
+                    className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+                      isPro
+                        ? "bg-violet-600 hover:bg-violet-700 text-white"
+                        : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-50"
+                    }`}
+                  >
+                    <Phone size={14} />
+                    Contact us to enable
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleSubscribeVoice(tier)}
+                    disabled={subscribing !== null}
+                    className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-lg text-sm font-semibold transition-colors disabled:opacity-60 ${
+                      isPro
+                        ? "bg-violet-600 hover:bg-violet-700 text-white"
+                        : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-50"
+                    }`}
+                  >
+                    <Phone size={14} />
+                    {subscribing === tier ? "Starting checkout…" : "Subscribe"}
+                  </button>
+                )}
               </CardContent>
             </Card>
           );

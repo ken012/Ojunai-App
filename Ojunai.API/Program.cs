@@ -30,6 +30,12 @@ foreach (var key in requiredKeys)
         throw new InvalidOperationException($"Required configuration '{key}' is not set. Check environment variables.");
 }
 
+// Fail fast on a weak HS256 signing key. HMAC-SHA256's security assumes a key with at least as much
+// entropy as the output (256 bits / 32 bytes); a short key materially weakens forgery resistance. The
+// .example documents "AT_LEAST_32_CHAR" but nothing enforced it until now (N-11 / OJ-28).
+if (System.Text.Encoding.UTF8.GetByteCount(config["Jwt:Secret"]!) < 32)
+    throw new InvalidOperationException("Jwt:Secret must be at least 32 bytes (256 bits) for HS256. Set a longer secret.");
+
 // ── Database ─────────────────────────────────────────────────────────────────
 var connString = config.GetConnectionString("DefaultConnection")!;
 if (!connString.Contains("Maximum Pool Size", StringComparison.OrdinalIgnoreCase))
@@ -166,6 +172,9 @@ builder.Services.AddHttpClient("VoiceAI", client =>
 });
 builder.Services.AddScoped<PaystackService>();
 builder.Services.AddScoped<FlutterwaveService>();
+// Stripe SDK: set the secret key globally (the SDK owns its pooled HttpClient — no AddHttpClient).
+Stripe.StripeConfiguration.ApiKey = config["Stripe:SecretKey"];
+builder.Services.AddScoped<StripeService>();
 builder.Services.AddScoped<PlanGuard>();
 builder.Services.AddScoped<VoiceAIGuard>();
 builder.Services.AddScoped<VoiceAIProvisioningService>();

@@ -19,6 +19,7 @@ public class SubscriptionController : OjunaiBaseController
 
     private readonly PaystackService _paystack;
     private readonly FlutterwaveService _flutterwave;
+    private readonly StripeService _stripe;
     private readonly AppDbContext _db;
     private readonly IConfiguration _config;
     private readonly IUsageService _usage;
@@ -28,6 +29,7 @@ public class SubscriptionController : OjunaiBaseController
     public SubscriptionController(
         PaystackService paystack,
         FlutterwaveService flutterwave,
+        StripeService stripe,
         AppDbContext db,
         IConfiguration config,
         IUsageService usage,
@@ -36,6 +38,7 @@ public class SubscriptionController : OjunaiBaseController
     {
         _paystack = paystack;
         _flutterwave = flutterwave;
+        _stripe = stripe;
         _db = db;
         _config = config;
         _usage = usage;
@@ -135,6 +138,15 @@ public class SubscriptionController : OjunaiBaseController
                 BusinessId, packCode, email, autoRenew: request.AutoRenew);
             return Ok(ApiResponse<object>.Ok(
                 new { paymentUrl = url, provider = "paystack", autoRenew = request.AutoRenew },
+                "Redirecting to payment..."));
+        }
+
+        // Stripe (USD/GBP/CAD/EUR): hosted Checkout, one-time (auto-renew deferred for Stripe).
+        if (provider == BillingConfig.BillingProvider.Stripe)
+        {
+            var url = await _stripe.InitializeWhatsAppPackChargeAsync(BusinessId, packCode, email);
+            return Ok(ApiResponse<object>.Ok(
+                new { paymentUrl = url, provider = "stripe", autoRenew = false },
                 "Redirecting to payment..."));
         }
 
@@ -330,6 +342,14 @@ public class SubscriptionController : OjunaiBaseController
                 "Redirecting to payment..."));
         }
 
+        // Stripe (USD/GBP/CAD/EUR): hosted Checkout Session, same redirect shape as Paystack.
+        if (provider == BillingConfig.BillingProvider.Stripe)
+        {
+            var url = await _stripe.InitializeSubscriptionAsync(BusinessId, plan, email);
+            return Ok(ApiResponse<object>.Ok(new { paymentUrl = url, provider = "stripe" },
+                "Redirecting to payment..."));
+        }
+
         // Flutterwave: return inline checkout config for the frontend JS SDK
         if (!Enum.TryParse<BillingConfig.BillingCycle>(cycle, true, out var billingCycle))
             return BadRequest(ApiResponse<object>.Fail("Invalid billing cycle."));
@@ -403,6 +423,8 @@ public class SubscriptionController : OjunaiBaseController
 
         if (business.BillingProvider == "flutterwave")
             await _flutterwave.CancelSubscriptionAsync(BusinessId);
+        else if (business.BillingProvider == "stripe")
+            await _stripe.CancelSubscriptionAsync(BusinessId);
         else
             await _paystack.CancelSubscriptionAsync(BusinessId);
 
@@ -563,6 +585,37 @@ public class SubscriptionController : OjunaiBaseController
         return Ok();
     }
 
+    /// <summary>Stripe webhook (USD/GBP/CAD/EUR payments). Signature is verified here via
+    /// EventUtility.ConstructEvent, so the service receives an authenticated, typed Event.</summary>
+    [AllowAnonymous]
+    [HttpPost("webhook/stripe")]
+    [RequestSizeLimit(256 * 1024)]
+    public async Task<IActionResult> StripeWebhook()
+    {
+        var secret = _config["Stripe:WebhookSecret"];
+        if (string.IsNullOrEmpty(secret)) return StatusCode(500);
+
+        Request.Body.Position = 0;
+        string body;
+        using (var reader = new StreamReader(Request.Body))
+            body = await reader.ReadToEndAsync();
+
+        Stripe.Event stripeEvent;
+        try
+        {
+            stripeEvent = Stripe.EventUtility.ConstructEvent(
+                body, Request.Headers["Stripe-Signature"].ToString(), secret);
+        }
+        catch (Stripe.StripeException ex)
+        {
+            _logger.LogWarning(ex, "Stripe webhook signature verification failed");
+            return Unauthorized();
+        }
+
+        await _stripe.HandleWebhookAsync(stripeEvent);
+        return Ok();
+    }
+
     // ── Voice AI add-on ──────────────────────────────────────────────────────
 
     [AllowAnonymous]
@@ -615,6 +668,14 @@ public class SubscriptionController : OjunaiBaseController
         {
             var url = await _paystack.InitializeVoiceAIAsync(BusinessId, email, amount, currency, cycle, tier);
             return Ok(ApiResponse<object>.Ok(new { paymentUrl = url, provider = "paystack", tier },
+                "Redirecting to payment..."));
+        }
+
+        // Stripe (USD/GBP/CAD/EUR): hosted Checkout subscription for the Voice AI tier.
+        if (provider == BillingConfig.BillingProvider.Stripe)
+        {
+            var url = await _stripe.InitializeVoiceAIAsync(BusinessId, email, amount, currency, cycle, tier);
+            return Ok(ApiResponse<object>.Ok(new { paymentUrl = url, provider = "stripe", tier },
                 "Redirecting to payment..."));
         }
 

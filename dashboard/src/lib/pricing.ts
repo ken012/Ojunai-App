@@ -6,9 +6,9 @@
 // stable, non-price concerns: the supported-currency list, symbols, formatting, and provider routing.
 
 export type BillingCycle = "monthly" | "annual";
-export type SupportedCurrency = "NGN" | "GHS" | "USD" | "GBP" | "KES" | "ZAR" | "UGX";
+export type SupportedCurrency = "NGN" | "GHS" | "USD" | "GBP" | "KES" | "ZAR" | "UGX" | "CAD" | "EUR";
 
-export const SUPPORTED_CURRENCIES: SupportedCurrency[] = ["NGN", "GHS", "USD", "GBP", "KES", "ZAR", "UGX"];
+export const SUPPORTED_CURRENCIES: SupportedCurrency[] = ["NGN", "GHS", "USD", "GBP", "KES", "ZAR", "UGX", "CAD", "EUR"];
 
 export const CURRENCY_META: Record<SupportedCurrency, { symbol: string; label: string }> = {
   NGN: { symbol: "₦", label: "NGN" },
@@ -18,6 +18,8 @@ export const CURRENCY_META: Record<SupportedCurrency, { symbol: string; label: s
   KES: { symbol: "KSh", label: "KES" },
   ZAR: { symbol: "R", label: "ZAR" },
   UGX: { symbol: "USh", label: "UGX" },
+  CAD: { symbol: "C$", label: "CAD" },
+  EUR: { symbol: "€", label: "EUR" },
 };
 
 // ─── Helpers ─────────────────────────────────────────────
@@ -29,8 +31,10 @@ export function formatPrice(amount: number, currency: SupportedCurrency): string
   return `${meta.symbol}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export function getProvider(currency: SupportedCurrency): "paystack" | "flutterwave" {
-  return currency === "NGN" ? "paystack" : "flutterwave";
+export function getProvider(currency: SupportedCurrency): "paystack" | "flutterwave" | "stripe" {
+  if (currency === "NGN") return "paystack";
+  if (currency === "USD" || currency === "GBP" || currency === "CAD" || currency === "EUR") return "stripe";
+  return "flutterwave";
 }
 
 // Currencies we accept on signup but don't bill in directly → mapped to the nearest billing currency.
@@ -39,7 +43,7 @@ const CURRENCY_MAP: Record<string, SupportedCurrency> = {
   TZS: "USD", RWF: "USD", XAF: "USD", XOF: "USD",
   EGP: "USD", ETB: "USD", CDF: "USD", AOA: "USD", MZN: "USD",
   ZMW: "USD", BWP: "ZAR", NAD: "ZAR", MWK: "USD",
-  SLE: "USD", LRD: "USD", GMD: "USD", EUR: "USD", CAD: "USD",
+  SLE: "USD", LRD: "USD", GMD: "USD",
 };
 
 export function toBillingCurrency(currency: string | undefined): SupportedCurrency {

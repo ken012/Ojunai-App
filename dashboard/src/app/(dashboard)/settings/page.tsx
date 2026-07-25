@@ -2393,7 +2393,8 @@ function PlanCard({ business, selectedCurrency }: {
       });
       const result = data.data!;
 
-      if (result.provider === "paystack") {
+      // Paystack + Stripe both return a hosted-checkout URL → full-page redirect.
+      if (result.provider === "paystack" || result.provider === "stripe") {
         window.location.href = result.paymentUrl as string;
         return;
       }
