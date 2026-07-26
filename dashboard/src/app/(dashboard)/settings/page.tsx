@@ -302,6 +302,9 @@ function SettingsPage() {
           </select>
         </label>
       </div>
+      <p className="text-[11px] text-slate-400 dark:text-slate-500 -mt-2 mb-3">
+        Local-price currencies are available only to stores located in that country. USD, GBP, CAD, EUR and ZAR are available everywhere.
+      </p>
       {/* Current-month assistant action usage — sits above the plan picker so a merchant
           who's hit a cap sees the trigger right where they decide whether to upgrade. */}
       <QuotaMeter />
