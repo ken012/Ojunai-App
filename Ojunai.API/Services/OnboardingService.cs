@@ -247,7 +247,9 @@ public class OnboardingService
             BusinessType = state.BusinessType,
             City = state.City,
             Country = inferred.Name,
+            // Local display currency; billing routed to a supported market (USD fallback). See AuthService.
             Currency = inferred.Currency,
+            BillingCurrency = Common.CountryLookup.BillingCurrencyFor(inferred.Name),
             Timezone = inferred.Timezone,
             Plan = "starter",
             TrialEndsAt = DateTime.UtcNow.AddDays(30),

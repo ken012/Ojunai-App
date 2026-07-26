@@ -91,6 +91,7 @@ public class AuthService : IAuthService
             City = request.City,
             Country = country,
             Currency = Common.CountryLookup.BillingCurrencyFor(country),
+            BillingCurrency = Common.CountryLookup.BillingCurrencyFor(country),
             Timezone = Common.CountryLookup.TimezoneFor(country),
             Plan = "starter",
             TrialEndsAt = DateTime.UtcNow.AddDays(30),
@@ -411,7 +412,11 @@ public class AuthService : IAuthService
         {
             Name = string.IsNullOrWhiteSpace(businessName) ? $"{fullName}'s Business" : businessName,
             Country = inferred.Name,
+            // Display currency = the merchant's LOCAL currency (drives their WhatsApp/receipt formatting);
+            // billing currency = routed to a supported market (USD fallback), so a TZS/RWF/XAF signup
+            // still has a billable currency with a real price table. These legitimately diverge.
             Currency = inferred.Currency,
+            BillingCurrency = Common.CountryLookup.BillingCurrencyFor(inferred.Name),
             Timezone = inferred.Timezone,
             Plan = "starter",
             TrialEndsAt = now.AddDays(30),
@@ -532,7 +537,11 @@ public class AuthService : IAuthService
         {
             Name = string.IsNullOrWhiteSpace(businessName) ? $"{fullName}'s Business" : businessName,
             Country = inferred.Name,
+            // Display currency = the merchant's LOCAL currency (drives their WhatsApp/receipt formatting);
+            // billing currency = routed to a supported market (USD fallback), so a TZS/RWF/XAF signup
+            // still has a billable currency with a real price table. These legitimately diverge.
             Currency = inferred.Currency,
+            BillingCurrency = Common.CountryLookup.BillingCurrencyFor(inferred.Name),
             Timezone = inferred.Timezone,
             Plan = "starter",
             TrialEndsAt = now.AddDays(30),

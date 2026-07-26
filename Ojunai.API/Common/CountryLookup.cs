@@ -78,14 +78,31 @@ public static class CountryLookup
     // Country → BILLING currency, derived SERVER-SIDE (never trust a client-chosen currency —
     // that would let a merchant in a pricey market pick a cheaper market's PPP-adjusted prices).
     // Only markets with a supported price table map to their local currency; everyone else bills
-    // in USD (the global default). Mirrors dashboard/src/lib/geo.ts. Add Canada→CAD, Eurozone→EUR
-    // here when those price tables go live.
-    private static readonly Dictionary<string, string> SupportedBillingCurrency =
-        new(StringComparer.OrdinalIgnoreCase)
+    // in USD (the global default). Mirrors dashboard/src/lib/geo.ts.
+    // NOTE: the four deep-PPP African currencies (NGN/GHS/KES/UGX) are the ones a future gate
+    // restricts to country-matched merchants; ZAR/GBP/CAD/EUR are FX-neutral and stay free.
+
+    // The 20 Eurozone member states (all bill in EUR). Names must match the geo.ts / Countries keys.
+    private static readonly string[] EurozoneCountries =
     {
-        ["Nigeria"] = "NGN", ["Ghana"] = "GHS", ["Kenya"] = "KES",
-        ["South Africa"] = "ZAR", ["Uganda"] = "UGX", ["United Kingdom"] = "GBP",
+        "Austria", "Belgium", "Croatia", "Cyprus", "Estonia", "Finland", "France",
+        "Germany", "Greece", "Ireland", "Italy", "Latvia", "Lithuania", "Luxembourg",
+        "Malta", "Netherlands", "Portugal", "Slovakia", "Slovenia", "Spain",
     };
+
+    private static readonly Dictionary<string, string> SupportedBillingCurrency = BuildBillingMap();
+
+    private static Dictionary<string, string> BuildBillingMap()
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Nigeria"] = "NGN", ["Ghana"] = "GHS", ["Kenya"] = "KES",
+            ["South Africa"] = "ZAR", ["Uganda"] = "UGX", ["United Kingdom"] = "GBP",
+            ["Canada"] = "CAD",
+        };
+        foreach (var c in EurozoneCountries) map[c] = "EUR";
+        return map;
+    }
 
     /// <summary>The supported billing currency for a country, or "USD" for every other market.</summary>
     public static string BillingCurrencyFor(string? country)
