@@ -28,7 +28,11 @@ public class BusinessDto
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? BusinessType { get; set; }
+    /// <summary>Display/operating currency — drives money formatting across the app. Merchant-controlled (Edit Business).</summary>
     public string Currency { get; set; } = "NGN";
+    /// <summary>What the subscription is actually charged in / which provider routes it. Distinct from Currency:
+    /// the Plan &amp; Billing picker reflects THIS, so a CAD checkout stays CAD without flipping app-wide display.</summary>
+    public string BillingCurrency { get; set; } = "NGN";
     public string? State { get; set; }
     public string? City { get; set; }
     public string? Country { get; set; }

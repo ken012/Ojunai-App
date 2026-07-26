@@ -43,7 +43,10 @@ export interface BusinessDto {
   id: string;
   name: string;
   businessType?: string;
+  /** Display/operating currency — drives money formatting across the dashboard. */
   currency: string;
+  /** Subscription billing currency — what the Plan & Billing picker reflects (distinct from `currency`). */
+  billingCurrency?: string;
   state?: string;
   city?: string;
   country?: string;

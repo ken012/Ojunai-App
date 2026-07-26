@@ -306,9 +306,6 @@ public class StripeService
         business.StripeCustomerId = session.CustomerId ?? business.StripeCustomerId;
         business.BillingProvider = "stripe";
         business.BillingCurrency = currency;
-        // Persist the chosen currency as the merchant's display currency too, so the dashboard picker
-        // (which reads business.Currency) reflects it instead of reverting to the old value after checkout.
-        business.Currency = currency;
         business.BillingCycle = cycle;
         business.PaymentMethod = "card";
 

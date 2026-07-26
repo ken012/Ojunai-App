@@ -58,7 +58,9 @@ export function getDefaultCurrency(): SupportedCurrency {
     const raw = localStorage.getItem("oj_business");
     if (raw) {
       const biz = JSON.parse(raw);
-      return toBillingCurrency(biz.currency);
+      // Prefer the billing currency (what's charged); fall back to display currency for merchants
+      // who've never checked out. Keeps the picker's initial seed consistent with the settings useEffect.
+      return toBillingCurrency(biz.billingCurrency ?? biz.currency);
     }
   } catch { /* ignore */ }
   return "NGN";

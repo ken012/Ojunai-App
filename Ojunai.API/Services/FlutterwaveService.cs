@@ -883,9 +883,6 @@ public class FlutterwaveService
         business.BillingProvider = "flutterwave";
         business.BillingCycle = billingCycle ?? "monthly";
         business.BillingCurrency = currency ?? business.Currency;
-        // Persist the chosen currency as the display currency too, so the dashboard picker reflects it
-        // instead of reverting after checkout (same fix as StripeService).
-        if (!string.IsNullOrEmpty(currency)) business.Currency = currency;
         business.FlutterwaveCustomerId = customerId;
         var allowedMethods = new[] { "card", "mobilemoney", "banktransfer", "ussd", "accounttransfer" };
         business.PaymentMethod = allowedMethods.Contains(paymentType) ? paymentType : "card";

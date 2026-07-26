@@ -86,9 +86,13 @@ function SettingsPage() {
   // so switching it updates pack prices too (not just the plan tiers).
   const [planCurrency, setPlanCurrency] = useState<SupportedCurrency>(getDefaultCurrency());
 
+  // Seed the picker from the BILLING currency (what's actually charged), falling back to the display
+  // currency for merchants who've never checked out. This keeps a CAD checkout showing CAD afterward
+  // without flipping the app-wide display currency.
   useEffect(() => {
-    if (business?.currency) setPlanCurrency(toBillingCurrency(business.currency));
-  }, [business?.currency]);
+    const billing = business?.billingCurrency ?? business?.currency;
+    if (billing) setPlanCurrency(toBillingCurrency(billing));
+  }, [business?.billingCurrency, business?.currency]);
 
   useEffect(() => {
     if (syncBusiness) setBusiness(syncBusiness);
@@ -974,6 +978,7 @@ type BusinessShape = {
   name: string;
   businessType?: string;
   currency: string;
+  billingCurrency?: string;
   state?: string;
   city?: string;
   country?: string;

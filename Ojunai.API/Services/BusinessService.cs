@@ -115,6 +115,7 @@ public class BusinessService : IBusinessService
         Name = b.Name,
         BusinessType = b.BusinessType,
         Currency = b.Currency,
+        BillingCurrency = b.BillingCurrency,
         State = b.State,
         City = b.City,
         Country = b.Country,
