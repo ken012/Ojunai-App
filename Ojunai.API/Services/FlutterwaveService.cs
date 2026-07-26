@@ -110,6 +110,18 @@ public class FlutterwaveService
         => expected.HasValue && paid.HasValue && Math.Abs(paid.Value - expected.Value) <= tolerance;
 
     /// <summary>
+    /// Fail-closed currency check (N-1): true ONLY when the transaction's currency is present and equals
+    /// the expected plan currency (case-insensitive). Amount alone is meaningless without currency — "30"
+    /// is a Pro plan in USD but ~$0.23 in KES — so both verify paths must pin the currency of the
+    /// server-verified transaction before accepting the amount. A missing/blank currency returns false so
+    /// callers REJECT rather than activate.
+    /// </summary>
+    internal static bool CurrencyMatches(string? paidCurrency, string? expectedCurrency)
+        => !string.IsNullOrWhiteSpace(paidCurrency)
+           && !string.IsNullOrWhiteSpace(expectedCurrency)
+           && string.Equals(paidCurrency, expectedCurrency, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Server-to-server confirmation of a Flutterwave transaction. The webhook body is authenticated
     /// only by a STATIC shared secret (verif-hash) — not an HMAC over the payload — so if that secret
     /// leaks (it is sent in plaintext on every delivery), an attacker can forge a "charge.completed"
@@ -261,6 +273,19 @@ public class FlutterwaveService
 
         var currency = business.BillingCurrency ?? business.Currency;
         var isAnnual = billingCycle.Equals("annual", StringComparison.OrdinalIgnoreCase);
+
+        // FAIL CLOSED on currency mismatch (N-1). The amount check below compares the transaction's raw
+        // `amount` number against the plan price computed in the EXPECTED currency. Without also pinning
+        // the transaction's currency, a merchant can edit the Flutterwave inline-SDK call to pay e.g.
+        // 30 KES (~$0.23) against a 30 USD plan and pass the numeric check. `chargeData` here is the
+        // server-verified transaction (from the /verify API), so its `currency` is authoritative.
+        var paidCurrency = chargeData.TryGetProperty("currency", out var curEl) ? curEl.GetString() : null;
+        if (!CurrencyMatches(paidCurrency, currency))
+        {
+            _logger.LogWarning("Flutterwave verify: currency mismatch paid {Paid} expected {Expected} for {Plan}; rejecting.",
+                paidCurrency, currency, plan);
+            return "Payment currency does not match your plan currency. Please contact support if you were charged.";
+        }
 
         // Verify the paid amount matches the expected plan price
         if (!Enum.TryParse<BillingConfig.BillingCycle>(billingCycle, true, out var bc))
@@ -858,6 +883,9 @@ public class FlutterwaveService
         business.BillingProvider = "flutterwave";
         business.BillingCycle = billingCycle ?? "monthly";
         business.BillingCurrency = currency ?? business.Currency;
+        // Persist the chosen currency as the display currency too, so the dashboard picker reflects it
+        // instead of reverting after checkout (same fix as StripeService).
+        if (!string.IsNullOrEmpty(currency)) business.Currency = currency;
         business.FlutterwaveCustomerId = customerId;
         var allowedMethods = new[] { "card", "mobilemoney", "banktransfer", "ussd", "accounttransfer" };
         business.PaymentMethod = allowedMethods.Contains(paymentType) ? paymentType : "card";
@@ -1008,6 +1036,17 @@ public class FlutterwaveService
         var expected = BillingConfig.GetWhatsAppPackPrice(packCode, cycle, currency);
         if (!expected.HasValue)
             return $"No price for pack {packCode}/{cycle}/{currency}.";
+
+        // FAIL CLOSED on currency mismatch (N-1) — same class as the tier path above. Without pinning
+        // the verified transaction's currency, a pack priced at 30 USD could be paid as 30 of a cheaper
+        // currency and pass the numeric amount check.
+        var paidCurrency = chargeData.TryGetProperty("currency", out var packCurEl) ? packCurEl.GetString() : null;
+        if (!CurrencyMatches(paidCurrency, currency))
+        {
+            _logger.LogWarning("Flutterwave pack verify: currency mismatch paid {Paid} expected {Expected} for {Pack}; rejecting.",
+                paidCurrency, currency, packCode);
+            return "Payment currency does not match the pack currency. Please contact support if you were charged.";
+        }
 
         decimal? paid = chargeData.TryGetProperty("amount", out var amtEl) ? amtEl.GetDecimal() : null;
         if (paid.HasValue && Math.Abs(paid.Value - expected.Value) > 1)
