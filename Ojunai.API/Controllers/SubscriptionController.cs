@@ -122,6 +122,10 @@ public class SubscriptionController : OjunaiBaseController
         if (!BillingConfig.IsCurrencySupported(currency))
             return BadRequest(ApiResponse<object>.Fail($"Billing in {currency} isn't supported yet."));
 
+        if (!BillingConfig.IsBillingCurrencyAllowed(currency, business.Country))
+            return BadRequest(ApiResponse<object>.Fail(
+                BillingConfig.GatedCurrencyRejectionMessage(currency, business.Country)));
+
         var cycleStr = (business.BillingCycle ?? "monthly").ToLowerInvariant();
         if (!BillingConfig.IsValidWhatsAppPackCombination(packCode, cycleStr, currency))
             return BadRequest(ApiResponse<object>.Fail(
@@ -319,6 +323,12 @@ public class SubscriptionController : OjunaiBaseController
             return BadRequest(ApiResponse<object>.Fail(
                 $"Billing in {currency} isn't supported yet. Supported: {string.Join(", ", BillingConfig.SupportedCurrencies)}. Contact support if you'd like {currency} added."));
         }
+
+        // Gate the deep-PPP currencies to country-matched stores (server-side enforcement — the
+        // frontend also hides them, but this is the authoritative check).
+        if (!BillingConfig.IsBillingCurrencyAllowed(currency, business.Country))
+            return BadRequest(ApiResponse<object>.Fail(
+                BillingConfig.GatedCurrencyRejectionMessage(currency, business.Country)));
 
         if (!BillingConfig.IsValidCombination(plan, cycle, currency))
             return BadRequest(ApiResponse<object>.Fail($"Invalid plan/cycle/currency combination: {plan}/{cycle}/{currency}"));
@@ -654,6 +664,10 @@ public class SubscriptionController : OjunaiBaseController
 
         var currency = request.Currency?.ToUpper() ?? business.BillingCurrency ?? business.Currency ?? "NGN";
         var cycle = request.BillingCycle?.ToLower() ?? "monthly";
+
+        if (!BillingConfig.IsBillingCurrencyAllowed(currency, business.Country))
+            return BadRequest(ApiResponse<object>.Fail(
+                BillingConfig.GatedCurrencyRejectionMessage(currency, business.Country)));
 
         if (!BillingConfig.IsValidVoiceAITierCombination(tier, cycle, currency))
             return BadRequest(ApiResponse<object>.Fail(

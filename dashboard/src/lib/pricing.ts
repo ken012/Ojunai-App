@@ -52,6 +52,24 @@ export function toBillingCurrency(currency: string | undefined): SupportedCurren
   return CURRENCY_MAP[c] ?? "NGN";
 }
 
+// ── Billing-currency gate ("gate the 4, free the rest") ──────────────────────
+// The four deep-PPP-discounted currencies are country-gated; the FX-neutral set stays free.
+// Mirror of the server BillingConfig.GatedCurrencies / IsBillingCurrencyAllowed.
+export const GATED_CURRENCIES: SupportedCurrency[] = ["NGN", "GHS", "KES", "UGX"];
+
+/**
+ * Currencies a merchant may bill in, given their store's country currency (the raw geo code, e.g.
+ * "NGN" / "TZS" / "CAD"). The FX-neutral currencies (USD/GBP/CAD/EUR/ZAR) are always available; the
+ * four deep-PPP currencies only when the currency is the merchant's own country currency. The
+ * merchant's own currency is listed first (the natural default). Unknown/missing country → USD,
+ * matching the server's BillingCurrencyFor default.
+ */
+export function allowedBillingCurrencies(countryCurrency: string | undefined): SupportedCurrency[] {
+  const own: SupportedCurrency = countryCurrency ? toBillingCurrency(countryCurrency) : "USD";
+  const rest = SUPPORTED_CURRENCIES.filter((c) => c !== own && !GATED_CURRENCIES.includes(c));
+  return [own, ...rest];
+}
+
 export function getDefaultCurrency(): SupportedCurrency {
   if (typeof window === "undefined") return "NGN";
   try {

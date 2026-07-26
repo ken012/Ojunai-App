@@ -108,6 +108,35 @@ public static class BillingConfig
         => !string.IsNullOrWhiteSpace(currency)
            && Array.Exists(SupportedCurrencies, c => c.Equals(currency, StringComparison.OrdinalIgnoreCase));
 
+    // ── Billing-currency gate ("gate the 4, free the rest") ─────────────────────────────
+    // The four deep-PPP-discounted currencies (~31-40% below USD list) are country-gated: a
+    // merchant may only bill in one if their store's country actually derives to it (e.g. only a
+    // Nigerian store bills in NGN). The FX-neutral currencies (USD/GBP/CAD/EUR/ZAR, all within ~5%
+    // of USD) stay free so diaspora / foreign-card / multi-country merchants aren't blocked — USD is
+    // the universal escape hatch. This closes PPP-arbitrage without punishing legitimate payers.
+    public static readonly string[] GatedCurrencies = { "NGN", "GHS", "KES", "UGX" };
+
+    /// <summary>True if a store located in <paramref name="country"/> may bill in <paramref name="currency"/>.
+    /// Non-gated (FX-neutral) currencies are always allowed; a gated currency is allowed only when it is the
+    /// billing currency that country derives to.</summary>
+    public static bool IsBillingCurrencyAllowed(string? currency, string? country)
+    {
+        if (string.IsNullOrWhiteSpace(currency)) return false;
+        var c = currency.Trim().ToUpperInvariant();
+        if (!Array.Exists(GatedCurrencies, g => g == c)) return true; // free set / USD escape hatch
+        return CountryLookup.BillingCurrencyFor(country).Equals(c, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Human-facing explanation when a gated currency is rejected — lists the escape hatches
+    /// and, if the merchant's own country is a gated market, their local currency.</summary>
+    public static string GatedCurrencyRejectionMessage(string currency, string? country)
+    {
+        var own = CountryLookup.BillingCurrencyFor(country);
+        var local = Array.Exists(GatedCurrencies, g => g == own) ? $", or your local currency {own}" : "";
+        return $"{currency.ToUpperInvariant()} pricing is only available to stores located in that country. " +
+               $"You can bill in USD, GBP, CAD, EUR, or ZAR{local}.";
+    }
+
     /// <summary>Get the fixed price for a plan + cycle + currency. Returns null if the combination is invalid.</summary>
     public static decimal? GetPrice(string plan, BillingCycle cycle, string currency)
     {

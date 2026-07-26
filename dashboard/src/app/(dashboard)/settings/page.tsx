@@ -34,11 +34,11 @@ import { SettingsSection } from "@/components/settings-section";
 import { SettingsNav } from "@/components/settings-nav";
 import {
   type SupportedCurrency,
-  SUPPORTED_CURRENCIES,
   CURRENCY_META,
   formatPrice,
   getDefaultCurrency,
   toBillingCurrency,
+  allowedBillingCurrencies,
 } from "@/lib/pricing";
 import { usePricing } from "@/lib/use-pricing";
 import { QuotaMeter, useQuotaSnapshot } from "@/components/quota-meter";
@@ -93,6 +93,13 @@ function SettingsPage() {
     const billing = business?.billingCurrency ?? business?.currency;
     if (billing) setPlanCurrency(toBillingCurrency(billing));
   }, [business?.billingCurrency, business?.currency]);
+
+  // Currencies this store may bill in — the four deep-PPP currencies are limited to stores located
+  // in that country; the FX-neutral set (USD/GBP/CAD/EUR/ZAR) is always available. Mirrors the
+  // server-side gate (BillingConfig.IsBillingCurrencyAllowed).
+  const currencyOptions = allowedBillingCurrencies(
+    business?.country ? COUNTRIES[business.country]?.currency : undefined,
+  );
 
   useEffect(() => {
     if (syncBusiness) setBusiness(syncBusiness);
@@ -289,7 +296,7 @@ function SettingsPage() {
             onChange={(e) => setPlanCurrency(e.target.value as SupportedCurrency)}
             className="h-8 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
           >
-            {SUPPORTED_CURRENCIES.map((c) => (
+            {currencyOptions.map((c) => (
               <option key={c} value={c}>{CURRENCY_META[c].symbol} {c}</option>
             ))}
           </select>

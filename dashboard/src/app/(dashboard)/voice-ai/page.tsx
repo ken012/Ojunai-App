@@ -27,8 +27,9 @@ import {
   VOICE_AI_TRIAL_MINUTES,
   type VoiceAITier,
 } from "@/lib/voice-ai-pricing";
-import { CURRENCY_META, SUPPORTED_CURRENCIES, getProvider } from "@/lib/pricing";
+import { CURRENCY_META, getProvider, allowedBillingCurrencies, toBillingCurrency } from "@/lib/pricing";
 import type { SupportedCurrency, BillingCycle } from "@/lib/pricing";
+import { COUNTRIES } from "@/lib/geo";
 import { useVoicePricing } from "@/lib/use-pricing";
 
 type VoiceLang = "en" | "fr" | "es" | "zh" | "ar";
@@ -252,14 +253,23 @@ export default function VoiceAIPage() {
     return <EnabledView planStatus={planStatus} business={business} />;
   }
 
-  return <MarketingView currency={(business?.currency ?? "NGN") as SupportedCurrency} />;
+  return (
+    <MarketingView
+      currency={toBillingCurrency(business?.billingCurrency ?? business?.currency ?? "NGN")}
+      country={business?.country}
+    />
+  );
 }
 
 // ── Marketing View (not enabled) ─────────────────────────────────────────────
 
-function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurrency }) {
+function MarketingView({ currency: defaultCurrency, country }: { currency: SupportedCurrency; country?: string }) {
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
   const [currency, setCurrency] = useState<SupportedCurrency>(defaultCurrency);
+
+  // Deep-PPP currencies are limited to stores in that country; FX-neutral set stays free.
+  // Mirrors the server gate on /subscription/voice-ai/initialize.
+  const currencyOptions = allowedBillingCurrencies(country ? COUNTRIES[country]?.currency : undefined);
 
   const contactSubject = encodeURIComponent("OjunaiVoice — Enable for my business");
   const contactBody = encodeURIComponent("Hi Ojunai Team,\n\nI'm interested in enabling OjunaiVoice for my business.\n\nPlease get in touch to set it up.\n\nThank you.");
@@ -327,7 +337,7 @@ function MarketingView({ currency: defaultCurrency }: { currency: SupportedCurre
           onChange={(e) => setCurrency(e.target.value as SupportedCurrency)}
           className="h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-xs bg-white dark:bg-slate-900"
         >
-          {SUPPORTED_CURRENCIES.map((c) => <option key={c} value={c}>{CURRENCY_META[c].symbol} {c}</option>)}
+          {currencyOptions.map((c) => <option key={c} value={c}>{CURRENCY_META[c].symbol} {c}</option>)}
         </select>
       </div>
 

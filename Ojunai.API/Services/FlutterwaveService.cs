@@ -732,6 +732,29 @@ public class FlutterwaveService
             // paid — activated the Voice AI tier regardless of amount.
             var vaCycle = vaIsAnnual ? BillingConfig.BillingCycle.Annual : BillingConfig.BillingCycle.Monthly;
             var vaCurrency = verified.Currency ?? currency ?? vaBiz.BillingCurrency ?? vaBiz.Currency;
+            // Country gate: a gated (deep-PPP) currency is only valid for a store located in that market.
+            // The webhook takes the PAID currency as authoritative, so re-enforce here — a hand-built
+            // Flutterwave inline charge could otherwise pay a gated currency the controller gate blocked.
+            if (!BillingConfig.IsBillingCurrencyAllowed(vaCurrency, vaBiz.Country))
+            {
+                _logger.LogWarning("Flutterwave Voice AI webhook: currency {Currency} not allowed for country {Country}; rejecting.",
+                    vaCurrency, vaBiz.Country);
+                _db.BillingEvents.Add(new BillingEvent
+                {
+                    BusinessId = businessId,
+                    EventType = "payment.rejected",
+                    Provider = "flutterwave",
+                    Plan = $"voice_ai.{vaTier ?? "unknown"}",
+                    Amount = verified.Amount,
+                    Currency = vaCurrency,
+                    TransactionRef = txRef,
+                    Status = "rejected",
+                    ErrorDetails = $"Currency {vaCurrency} not allowed for country {vaBiz.Country}",
+                    CreatedAtUtc = DateTime.UtcNow
+                });
+                await _db.SaveChangesAsync();
+                return;
+            }
             var vaExpected = BillingConfig.GetVoiceAITierPrice(vaTier ?? "", vaCycle, vaCurrency);
             if (!IsPaidAmountAcceptable(vaExpected, verified.Amount, 0.5m))
             {
@@ -823,6 +846,29 @@ public class FlutterwaveService
         if (!Enum.TryParse<BillingConfig.BillingCycle>(billingCycle ?? "monthly", true, out var verifyBc))
             verifyBc = BillingConfig.BillingCycle.Monthly;
         var verifyCurrency = verified.Currency ?? business.Currency;
+        // Country gate: re-enforce on the webhook (which trusts the paid currency) so a hand-built
+        // Flutterwave charge can't activate a gated currency the controller gate blocked. Mirrors the
+        // tier VERIFY path's currency pin against business.BillingCurrency.
+        if (!BillingConfig.IsBillingCurrencyAllowed(verifyCurrency, business.Country))
+        {
+            _logger.LogWarning("Flutterwave webhook: currency {Currency} not allowed for country {Country}; rejecting.",
+                verifyCurrency, business.Country);
+            _db.BillingEvents.Add(new BillingEvent
+            {
+                BusinessId = businessId,
+                EventType = "payment.rejected",
+                Provider = "flutterwave",
+                Plan = plan,
+                Amount = verified.Amount,
+                Currency = verifyCurrency,
+                TransactionRef = txRef,
+                Status = "rejected",
+                ErrorDetails = $"Currency {verifyCurrency} not allowed for country {business.Country}",
+                CreatedAtUtc = DateTime.UtcNow
+            });
+            await _db.SaveChangesAsync();
+            return;
+        }
         var fullPrice = BillingConfig.GetPrice(plan ?? "starter", verifyBc, verifyCurrency);
         // For a delta upgrade, recompute the expected difference server-side and validate against THAT,
         // so a tampered request can't under-pay by faking the delta marker.

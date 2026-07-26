@@ -201,8 +201,9 @@ export function WhatsAppPackPicker({ currency: currencyProp }: { currency?: Supp
 
   if (isLoading || !data) return null;
 
-  // Follow the currency chosen in Plan & Billing; fall back to the business default if rendered standalone.
-  const currency = currencyProp ?? toBillingCurrency(business?.currency ?? "USD");
+  // Follow the currency chosen in Plan & Billing; fall back to the business billing currency if
+  // rendered standalone (then display currency, then USD).
+  const currency = currencyProp ?? toBillingCurrency(business?.billingCurrency ?? business?.currency ?? "USD");
   const activeCode = data.activePack?.code ?? null;
 
   return (
