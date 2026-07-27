@@ -85,6 +85,15 @@ public class BusinessController : OjunaiBaseController
     public async Task<ActionResult<ApiResponse<BusinessDto>>> Get()
     {
         var result = await _business.GetByIdAsync(BusinessId);
+        // Multi-location (Phase 2): surface the entitlement + the business's locations so the dashboard
+        // can show the switcher. Additive — omitted from the login/register embed, which the dashboard
+        // refreshes via this endpoint anyway.
+        result.IsMultiLocation = await _planGuard.CanUseMultiLocationAsync(BusinessId);
+        result.Locations = await _db.Locations
+            .Where(l => l.BusinessId == BusinessId)
+            .OrderByDescending(l => l.IsDefault).ThenBy(l => l.CreatedAtUtc)
+            .Select(l => new LocationDto { Id = l.Id, Name = l.Name, Type = l.Type, IsDefault = l.IsDefault, IsActive = l.IsActive })
+            .ToListAsync();
         return Ok(ApiResponse<BusinessDto>.Ok(result));
     }
 

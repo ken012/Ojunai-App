@@ -1,3 +1,5 @@
+using Ojunai.API.DTOs.Business;
+
 namespace Ojunai.API.DTOs.Auth;
 
 public class AuthResponse
@@ -77,4 +79,11 @@ public class BusinessDto
     public string? ReceiptHeaderText { get; set; }
     public string? ReceiptFooterText { get; set; }
     public string? ReceiptAccentColor { get; set; }
+
+    // ── Multi-location (Phase 2) ─────────────────────────────────────
+    /// <summary>True if the business may operate more than one location (Scale+/add-on). Drives whether the
+    /// dashboard shows the location switcher. Populated by the GET /business endpoint; false elsewhere.</summary>
+    public bool IsMultiLocation { get; set; }
+    /// <summary>The business's locations (always at least the default "Main"). Populated by GET /business.</summary>
+    public List<LocationDto> Locations { get; set; } = new();
 }

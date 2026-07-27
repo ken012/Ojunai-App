@@ -380,4 +380,47 @@ public class PlanGuard
         }
         return null;
     }
+
+    // ── Multi-location entitlement (Phase 2) ─────────────────────────────────────
+    // Multi-location is a Scale/Enterprise tier feature OR the addon.multi_location add-on (any tier) —
+    // the "keep Scale+ included, add-on for lower tiers" decision. Single-source gate: every enforcement
+    // point (Location create, per-location writes) routes through here. See docs/multi-location-spec.md.
+
+    /// <summary>Reasonable default cap on active locations for an entitled business (tunable). Enterprise
+    /// is effectively unlimited.</summary>
+    public const int MultiLocationDefaultQuota = 10;
+
+    /// <summary>True if the business may operate more than one location: a Scale/Enterprise tier (PricingV2
+    /// catalog, or legacy <c>HasMultiBranch</c> = Scale), or an active add-on granting <c>multi_location</c>
+    /// on any tier. Every business always has its single default location regardless of this.</summary>
+    public async Task<bool> CanUseMultiLocationAsync(Guid businessId)
+    {
+        var business = await _db.Businesses.FindAsync(businessId);
+        if (business == null) return false;
+
+        // Add-on path: an active add-on granting "multi_location" enables it on any tier.
+        var activeAddOnCodes = await _db.BusinessAddOns
+            .Where(a => a.BusinessId == businessId && a.Status == "active")
+            .Select(a => a.AddOnCode)
+            .ToListAsync();
+        if (activeAddOnCodes.Any(code => PricingV2.AddOnCatalog.Get(code)?.Grants.Contains("multi_location") == true))
+            return true;
+
+        // Tier path: Scale/Enterprise via the PricingV2 catalog, or legacy HasMultiBranch (Scale).
+        if (business.PricingV2Enabled)
+            return PricingV2.PlanCatalog.GetDashboard(business.Plan)?.Features.Contains("multi_location") == true;
+        return PlanLimits.Get(business.Plan).HasMultiBranch;
+    }
+
+    /// <summary>Maximum active locations the business may have: 1 when not entitled (their default only);
+    /// otherwise a fixed cap (Enterprise = unlimited). Tunable via <see cref="MultiLocationDefaultQuota"/>.</summary>
+    public async Task<int> GetLocationQuotaAsync(Guid businessId)
+    {
+        if (!await CanUseMultiLocationAsync(businessId)) return 1;
+        var business = await _db.Businesses.FindAsync(businessId);
+        if (business?.PricingV2Enabled == true
+            && string.Equals(business.Plan, "enterprise", StringComparison.OrdinalIgnoreCase))
+            return int.MaxValue;
+        return MultiLocationDefaultQuota;
+    }
 }

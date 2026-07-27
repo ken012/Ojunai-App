@@ -88,6 +88,19 @@ export interface BusinessDto {
   receiptHeaderText?: string;
   receiptFooterText?: string;
   receiptAccentColor?: string;
+  // Multi-location (Phase 2) — populated by GET /business. Switcher UI lands in Phase 2b.
+  /** True if the business may operate more than one location (Scale+/add-on). */
+  isMultiLocation?: boolean;
+  locations?: LocationDto[];
+}
+
+export interface LocationDto {
+  id: string;
+  name: string;
+  /** "branch" or "warehouse". */
+  type: string;
+  isDefault: boolean;
+  isActive: boolean;
 }
 
 export interface ProductDto {
