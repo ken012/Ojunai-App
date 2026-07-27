@@ -26,11 +26,12 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { MessageSquare, Building2, User, Pencil, Bell, Tags, X, Plus, Users, Trash2, KeyRound, CreditCard, Phone, FileText, Save, CheckCircle2, ImageIcon, Upload, Lock, Send, Link as LinkIcon, ExternalLink } from "lucide-react";
+import { MessageSquare, Building2, User, Pencil, Bell, Tags, X, Plus, Users, Trash2, KeyRound, CreditCard, Phone, FileText, Save, CheckCircle2, ImageIcon, Upload, Lock, Send, Link as LinkIcon, ExternalLink, MapPin } from "lucide-react";
 import { CATEGORY_NAMES } from "@/lib/categories";
 import { hasPermission, Permission } from "@/lib/permissions";
 import { InstallSettingsCard } from "@/components/install-settings-card";
 import { SettingsSection } from "@/components/settings-section";
+import { LocationsCard } from "@/components/locations-card";
 import { SettingsNav } from "@/components/settings-nav";
 import {
   type SupportedCurrency,
@@ -161,6 +162,7 @@ function SettingsPage() {
           items={[
             { href: "#install", label: "Install on phone" },
             { href: "#business", label: "Business" },
+            { href: "#locations", label: "Locations" },
             { href: "#receipts", label: "Receipts" },
             { href: "#plan", label: "Plan & Billing" },
             { href: "#alerts", label: "Alerts" },
@@ -267,6 +269,11 @@ function SettingsPage() {
           if (typeof window !== "undefined") { localStorage.setItem("oj_business", JSON.stringify(updated)); refreshSync(); }
         }} />
       )}
+      </SettingsSection>
+
+      <SettingsSection id="locations" title="Locations" icon={<MapPin size={14} />}>
+      {/* Multi-location: management for entitled businesses (Scale+/add-on); upsell teaser otherwise. */}
+      <LocationsCard />
       </SettingsSection>
 
       <SettingsSection id="receipts" title="Receipts" icon={<FileText size={14} />}>

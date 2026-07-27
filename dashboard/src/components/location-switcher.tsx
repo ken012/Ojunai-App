@@ -43,19 +43,22 @@ export function LocationSwitcher() {
   }
 
   return (
-    <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
-      <MapPin size={14} className="text-slate-400" />
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-8 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-        aria-label="Location"
-      >
-        <option value="all">All locations</option>
-        {active.map((l) => (
-          <option key={l.id} value={l.id}>{l.name}</option>
-        ))}
-      </select>
-    </label>
+    <div className="inline-flex items-center gap-2">
+      <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
+        <MapPin size={14} className="text-slate-400" />
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-8 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+          aria-label="Location"
+        >
+          <option value="all">All locations</option>
+          {active.map((l) => (
+            <option key={l.id} value={l.id}>{l.name}</option>
+          ))}
+        </select>
+      </label>
+      <a href="/settings#locations" className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">Manage</a>
+    </div>
   );
 }
