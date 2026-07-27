@@ -17,11 +17,13 @@ public class StocktakeService : IStocktakeService
 {
     private readonly AppDbContext _db;
     private readonly IActivityLogger _activity;
+    private readonly LocationStockService _locStock;
 
-    public StocktakeService(AppDbContext db, IActivityLogger activity)
+    public StocktakeService(AppDbContext db, IActivityLogger activity, LocationStockService locStock)
     {
         _db = db;
         _activity = activity;
+        _locStock = locStock;
     }
 
     public async Task<StocktakeDto> CreateAsync(Guid businessId, CreateStocktakeRequest request, Guid? userId, string? userName)
@@ -124,6 +126,10 @@ public class StocktakeService : IStocktakeService
         // One transaction: all adjustments + status commit together, or none do.
         await using var tx = await _db.Database.BeginTransactionAsync();
 
+        // Multi-location: when a specific location is selected, the count reconciles THAT location's stock;
+        // otherwise the whole product (single-location / All locations = unchanged behaviour).
+        var stkLoc = await _locStock.SelectedLocationForAsync(businessId);
+
         foreach (var item in counted)
         {
             var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == item.ProductId && p.BusinessId == businessId);
@@ -132,7 +138,8 @@ public class StocktakeService : IStocktakeService
             var target = item.CountedQuantity!.Value;
             // Diff against CURRENT stock at commit time (not the snapshot) so interim sales/receipts
             // are accounted for and the transaction log is accurate. Matches AdjustAsync semantics.
-            var diff = target - product.CurrentStock;
+            var effectiveCurrent = stkLoc is { } sl ? await _locStock.StockAtAsync(product.Id, sl) : product.CurrentStock;
+            var diff = target - effectiveCurrent;
             if (diff == 0) continue;
 
             _db.InventoryTransactions.Add(new InventoryTransaction
@@ -142,12 +149,14 @@ public class StocktakeService : IStocktakeService
                 Type = InventoryTransactionType.Adjustment,
                 Quantity = Math.Abs(diff),
                 UnitCost = item.UnitCost > 0 ? item.UnitCost : null,
-                Notes = $"Stock count {st.Reference}: {product.CurrentStock:0.##} → {target:0.##}",
+                Notes = $"Stock count {st.Reference}: {effectiveCurrent:0.##} → {target:0.##}",
                 RecordedByUserId = userId,
                 RecordedByName = userName,
                 CreatedAtUtc = now,
             });
-            product.CurrentStock = target;
+            // Roll-up: for a specific location move only its slice by `diff` (mirror lands PLS(loc)=target);
+            // otherwise set the product total.
+            product.CurrentStock = stkLoc != null ? product.CurrentStock + diff : target;
         }
 
         st.Status = StocktakeStatus.Completed;

@@ -10,8 +10,13 @@ namespace Ojunai.API.Services;
 public class InventoryService : IInventoryService
 {
     private readonly AppDbContext _db;
+    private readonly LocationStockService _locStock;
 
-    public InventoryService(AppDbContext db) => _db = db;
+    public InventoryService(AppDbContext db, LocationStockService locStock)
+    {
+        _db = db;
+        _locStock = locStock;
+    }
 
     public async Task<InventoryTransactionDto> StockInAsync(Guid businessId, StockInRequest request, Guid? recordedByUserId = null, string? recordedByName = null, DateTime? createdAtUtc = null)
     {
@@ -57,8 +62,10 @@ public class InventoryService : IInventoryService
     {
         var product = await GetProductAsync(businessId, request.ProductId);
 
-        if (product.CurrentStock < request.Quantity)
-            throw new InvalidOperationException($"Insufficient stock. Available: {product.CurrentStock} {UnitFormat.Plural(product.CurrentStock, product.Unit)}.");
+        var outLoc = await _locStock.SelectedLocationForAsync(businessId);
+        var outAvailable = outLoc is { } ol ? await _locStock.StockAtAsync(request.ProductId, ol) : product.CurrentStock;
+        if (outAvailable < request.Quantity)
+            throw new InvalidOperationException($"Insufficient stock{(outLoc != null ? " at this location" : "")}. Available: {outAvailable} {UnitFormat.Plural(outAvailable, product.Unit)}.");
 
         var txn = new InventoryTransaction
         {
@@ -80,7 +87,11 @@ public class InventoryService : IInventoryService
     public async Task<InventoryTransactionDto> AdjustAsync(Guid businessId, AdjustmentRequest request, Guid? recordedByUserId = null, string? recordedByName = null)
     {
         var product = await GetProductAsync(businessId, request.ProductId);
-        var diff = request.NewQuantity - product.CurrentStock;
+        // Absolute set. For a specific location, "set stock to N" means set THAT location's stock; otherwise
+        // it's the whole product (single-location / All locations = unchanged behaviour).
+        var adjLoc = await _locStock.SelectedLocationForAsync(businessId);
+        var effectiveCurrent = adjLoc is { } al ? await _locStock.StockAtAsync(request.ProductId, al) : product.CurrentStock;
+        var diff = request.NewQuantity - effectiveCurrent;
 
         var txn = new InventoryTransaction
         {
@@ -88,12 +99,14 @@ public class InventoryService : IInventoryService
             ProductId = request.ProductId,
             Type = InventoryTransactionType.Adjustment,
             Quantity = Math.Abs(diff),
-            Notes = request.Notes ?? $"Adjusted from {product.CurrentStock} to {request.NewQuantity}",
+            Notes = request.Notes ?? $"Adjusted from {effectiveCurrent} to {request.NewQuantity}",
             RecordedByUserId = recordedByUserId,
             RecordedByName = recordedByName
         };
 
-        product.CurrentStock = request.NewQuantity;
+        // Set the business-wide roll-up. For a specific location, move only that location's slice by `diff`
+        // (the dual-write mirror then lands PLS(location) = NewQuantity); otherwise set the product total.
+        product.CurrentStock = adjLoc != null ? product.CurrentStock + diff : request.NewQuantity;
         _db.InventoryTransactions.Add(txn);
         await _db.SaveChangesAsync();
         return ToDto(txn, product.Name, product.Unit);
@@ -103,8 +116,10 @@ public class InventoryService : IInventoryService
     {
         var product = await GetProductAsync(businessId, request.ProductId);
 
-        if (product.CurrentStock < request.Quantity)
-            throw new InvalidOperationException($"Insufficient stock. Available: {product.CurrentStock} {UnitFormat.Plural(product.CurrentStock, product.Unit)}.");
+        var outLoc = await _locStock.SelectedLocationForAsync(businessId);
+        var outAvailable = outLoc is { } ol ? await _locStock.StockAtAsync(request.ProductId, ol) : product.CurrentStock;
+        if (outAvailable < request.Quantity)
+            throw new InvalidOperationException($"Insufficient stock{(outLoc != null ? " at this location" : "")}. Available: {outAvailable} {UnitFormat.Plural(outAvailable, product.Unit)}.");
 
         var txn = new InventoryTransaction
         {
@@ -127,8 +142,10 @@ public class InventoryService : IInventoryService
     {
         var product = await GetProductAsync(businessId, request.ProductId);
 
-        if (product.CurrentStock < request.Quantity)
-            throw new InvalidOperationException($"Insufficient stock. Available: {product.CurrentStock} {UnitFormat.Plural(product.CurrentStock, product.Unit)}.");
+        var outLoc = await _locStock.SelectedLocationForAsync(businessId);
+        var outAvailable = outLoc is { } ol ? await _locStock.StockAtAsync(request.ProductId, ol) : product.CurrentStock;
+        if (outAvailable < request.Quantity)
+            throw new InvalidOperationException($"Insufficient stock{(outLoc != null ? " at this location" : "")}. Available: {outAvailable} {UnitFormat.Plural(outAvailable, product.Unit)}.");
 
         var txn = new InventoryTransaction
         {

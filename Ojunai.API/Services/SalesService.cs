@@ -11,7 +11,13 @@ public class SalesService : ISalesService
 {
     private readonly AppDbContext _db;
 
-    public SalesService(AppDbContext db) => _db = db;
+    private readonly LocationStockService _locStock;
+
+    public SalesService(AppDbContext db, LocationStockService locStock)
+    {
+        _db = db;
+        _locStock = locStock;
+    }
 
     /// <summary>
     /// Creates a sale atomically: validates stock, deducts inventory, records inventory transactions, and saves the sale.
@@ -67,6 +73,18 @@ public class SalesService : ISalesService
                 .ToDictionaryAsync(p => p.Id);
         }
 
+        // Multi-location: when a specific location is selected, availability is checked against THAT
+        // location's stock (single-location / "All locations" → business-wide, unchanged). Batch-load the
+        // per-location stock for the sold products + any bundle components up front.
+        var saleLoc = await _locStock.SelectedLocationForAsync(businessId);
+        Dictionary<Guid, decimal>? locStock = null;
+        if (saleLoc is { } sl)
+        {
+            var stockIds = productIds.Concat(componentProducts.Keys).Distinct().ToList();
+            locStock = await _locStock.StockAtAsync(stockIds, sl);
+        }
+        decimal Available(Product prod) => locStock is null ? prod.CurrentStock : locStock.GetValueOrDefault(prod.Id, 0m);
+
         foreach (var item in request.Items)
         {
             if (!products.TryGetValue(item.ProductId, out var product))
@@ -81,12 +99,13 @@ public class SalesService : ISalesService
                     if (!componentProducts.TryGetValue(c.ComponentProductId, out var cp))
                         throw new KeyNotFoundException($"A component of '{product.Name}' no longer exists. Fix the bundle before selling it.");
                     var required = c.Quantity * item.Quantity;
-                    if (cp.CurrentStock < required)
-                        throw new InvalidOperationException($"Not enough '{cp.Name}' to make {item.Quantity:0.##} {product.Name}. Need {required:0.##} {UnitFormat.Plural(required, cp.Unit)}, have {cp.CurrentStock:0.##}.");
+                    var cpAvail = Available(cp);
+                    if (cpAvail < required)
+                        throw new InvalidOperationException($"Not enough '{cp.Name}'{(locStock != null ? " at this location" : "")} to make {item.Quantity:0.##} {product.Name}. Need {required:0.##} {UnitFormat.Plural(required, cp.Unit)}, have {cpAvail:0.##}.");
                 }
             }
-            else if (product.CurrentStock < item.Quantity)
-                throw new InvalidOperationException($"Insufficient stock for '{product.Name}'. Available: {product.CurrentStock} {UnitFormat.Plural(product.CurrentStock, product.Unit)}.");
+            else if (Available(product) < item.Quantity)
+                throw new InvalidOperationException($"Insufficient stock for '{product.Name}'{(locStock != null ? " at this location" : "")}. Available: {Available(product)} {UnitFormat.Plural(Available(product), product.Unit)}.");
         }
 
         // ── VAT processing ────────────────────────────────────────────────────

@@ -197,6 +197,7 @@ builder.Services.AddScoped<IExpenseService, ExpenseService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
 builder.Services.AddScoped<IStocktakeService, StocktakeService>();
+builder.Services.AddScoped<LocationStockService>(); // multi-location Phase 2 hardening (gated per-location writes)
 builder.Services.AddScoped<IVariantGroupService, VariantGroupService>();
 builder.Services.AddScoped<IProductBatchService, ProductBatchService>();
 builder.Services.AddScoped<IContactService, ContactService>();
