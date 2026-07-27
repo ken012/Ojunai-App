@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { MapPin } from "lucide-react";
 import { useBusiness } from "@/lib/data-sync";
 import { getSelectedLocation, setSelectedLocation } from "@/lib/location";
@@ -14,7 +13,6 @@ import { getSelectedLocation, setSelectedLocation } from "@/lib/location";
  */
 export function LocationSwitcher() {
   const business = useBusiness();
-  const qc = useQueryClient();
   const [selected, setSelected] = useState<string>(getSelectedLocation() ?? "all");
 
   const active = (business?.locations ?? []).filter((l) => l.isActive);
@@ -37,9 +35,10 @@ export function LocationSwitcher() {
   const value = selected !== "all" && !active.some((l) => l.id === selected) ? "all" : selected;
 
   function onChange(next: string) {
-    setSelected(next);
-    setSelectedLocation(next === "all" ? null : next);
-    qc.invalidateQueries(); // refetch everything with the new X-Location-Id
+    setSelectedLocation(next === "all" ? null : next); // persisted → survives the reload
+    // Full reload so EVERY view refetches with the new X-Location-Id. The dashboard mixes React Query and
+    // plain useEffect+api.get fetches, so invalidateQueries alone wouldn't refresh the manual-fetch pages.
+    if (typeof window !== "undefined") window.location.reload();
   }
 
   return (
