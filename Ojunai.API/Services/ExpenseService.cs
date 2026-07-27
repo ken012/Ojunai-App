@@ -10,14 +10,21 @@ namespace Ojunai.API.Services;
 public class ExpenseService : IExpenseService
 {
     private readonly AppDbContext _db;
+    private readonly LocationStockService _locStock;
 
-    public ExpenseService(AppDbContext db) => _db = db;
+    public ExpenseService(AppDbContext db, LocationStockService locStock)
+    {
+        _db = db;
+        _locStock = locStock;
+    }
 
     public async Task<ExpenseDto> CreateAsync(Guid businessId, CreateExpenseRequest request, string source = "Manual", Guid? recordedByUserId = null, string? recordedByName = null)
     {
         var expense = new Expense
         {
             BusinessId = businessId,
+            // Attribute to the selected location (null for single-location / no selection → business-wide, unchanged).
+            LocationId = await _locStock.SelectedLocationForAsync(businessId),
             Category = request.Category,
             ExpenseType = request.ExpenseType ?? "operating",
             Amount = request.Amount,
@@ -38,6 +45,11 @@ public class ExpenseService : IExpenseService
         Guid businessId, int page, int pageSize, DateTime? from, DateTime? to, string? expenseType = null, string? category = null, string? paymentMethod = null, string? source = null, string? search = null)
     {
         var query = _db.Expenses.Where(e => e.BusinessId == businessId);
+
+        // When a location is selected (multi-location business), show only that location's expenses. Expenses
+        // recorded before multi-location existed have a null LocationId and surface only under "All locations".
+        if (await _locStock.SelectedLocationForAsync(businessId) is { } locId)
+            query = query.Where(e => e.LocationId == locId);
 
         if (from.HasValue) query = query.Where(e => e.CreatedAtUtc >= from.Value);
         if (to.HasValue) query = query.Where(e => e.CreatedAtUtc <= to.Value);

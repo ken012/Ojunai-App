@@ -163,6 +163,9 @@ public class SalesService : ISalesService
         var sale = new Sale
         {
             BusinessId = businessId,
+            // Attribute the sale to the selected location (null for single-location businesses / no selection →
+            // business-wide, unchanged). saleLoc was already resolved above for the per-location availability check.
+            LocationId = saleLoc,
             ContactId = request.ContactId,
             PaymentStatus = request.PaymentStatus,
             PaymentMethod = request.PaymentMethod,
@@ -275,6 +278,11 @@ public class SalesService : ISalesService
             .Include(s => s.Contact)
             .Include(s => s.Items).ThenInclude(i => i.Product)
             .Where(s => s.BusinessId == businessId);
+
+        // When a location is selected (multi-location business), show only that location's sales. Sales
+        // recorded before multi-location existed have a null LocationId and surface only under "All locations".
+        if (await _locStock.SelectedLocationForAsync(businessId) is { } locId)
+            query = query.Where(s => s.LocationId == locId);
 
         if (from.HasValue) query = query.Where(s => s.CreatedAtUtc >= from.Value);
         if (to.HasValue) query = query.Where(s => s.CreatedAtUtc <= to.Value);

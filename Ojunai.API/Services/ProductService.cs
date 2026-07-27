@@ -11,11 +11,13 @@ public class ProductService : IProductService
 {
     private readonly AppDbContext _db;
     private readonly IActivityLogger _activity;
+    private readonly LocationStockService _locStock;
 
-    public ProductService(AppDbContext db, IActivityLogger activity)
+    public ProductService(AppDbContext db, IActivityLogger activity, LocationStockService locStock)
     {
         _db = db;
         _activity = activity;
+        _locStock = locStock;
     }
 
     public async Task<PaginatedResult<ProductDto>> GetAllAsync(
@@ -94,17 +96,17 @@ public class ProductService : IProductService
 
     /// <summary>
     /// Per-location read overlay (multi-location Phase 2b). When a specific location is selected for the
-    /// request (X-Location-Id → <see cref="LocationScope"/>) and it belongs to this business, replace each
-    /// product's business-wide CurrentStock with that location's stock (0 when the product has no row
-    /// there). Absent/invalid selection ⇒ business-wide, unchanged — so single-location businesses (which
-    /// never send the header) run ZERO extra queries. NOTE: stock-level FILTERING stays business-wide for
-    /// now; per-location filtering is a follow-up. See docs/multi-location-spec.md.
+    /// request (X-Location-Id → <see cref="LocationScope"/>) AND the business has more than one active
+    /// location, replace each product's business-wide CurrentStock with that location's stock (0 when the
+    /// product has no row there). Absent/invalid selection ⇒ business-wide, unchanged — so single-location
+    /// businesses (which never send the header) run ZERO extra queries. Uses the SAME gate
+    /// (<see cref="LocationStockService.SelectedLocationForAsync"/>) the write mirror uses, so reads and
+    /// writes can never disagree about whether a request is location-scoped.
     /// </summary>
     private async Task OverlayLocationStockAsync(Guid businessId, List<ProductDto> items)
     {
-        if (LocationScope.Current is not { } locId || items.Count == 0) return;
-        var belongs = await _db.Locations.AnyAsync(l => l.Id == locId && l.BusinessId == businessId);
-        if (!belongs) return;
+        if (items.Count == 0) return;
+        if (await _locStock.SelectedLocationForAsync(businessId) is not { } locId) return;
 
         var ids = items.Select(i => i.Id).ToList();
         var stockByProduct = await _db.ProductLocationStocks
@@ -288,6 +290,33 @@ public class ProductService : IProductService
 
     public async Task<List<ProductDto>> GetLowStockAsync(Guid businessId)
     {
+        if (await _locStock.SelectedLocationForAsync(businessId) is { } locId)
+        {
+            // Per-location low-stock: compare each product's stock AT THIS LOCATION (0 when it has no PLS row
+            // there) against its threshold. A product can be low at one branch while fine business-wide, so we
+            // cannot pre-filter on the business-wide CurrentStock — LEFT JOIN keeps rows with no location stock.
+            // NOTE: uses the product's business-wide LowStockThreshold (not the per-location PLS override, which
+            // has no UI yet and is deferred to Phase 3) so low-stock, stats chips and the list stay consistent.
+            var rows = await (
+                from p in _db.Products
+                where p.BusinessId == businessId && p.IsActive && !p.IsBundle
+                join s in _db.ProductLocationStocks.Where(x => x.LocationId == locId)
+                    on p.Id equals s.ProductId into gj
+                from s in gj.DefaultIfEmpty()
+                where (s == null ? 0m : s.CurrentStock) <= p.LowStockThreshold
+                orderby (s == null ? 0m : s.CurrentStock)
+                select new { Product = p, LocStock = s == null ? 0m : s.CurrentStock })
+                .ToListAsync();
+
+            return rows.Select(r =>
+            {
+                var dto = ToDto(r.Product);
+                dto.CurrentStock = r.LocStock;
+                dto.IsLowStock = !dto.IsBundle && r.LocStock <= dto.LowStockThreshold;
+                return dto;
+            }).ToList();
+        }
+
         return await _db.Products
             .Where(p => p.BusinessId == businessId && p.IsActive && !p.IsBundle && p.CurrentStock <= p.LowStockThreshold)
             .OrderBy(p => p.CurrentStock)
@@ -324,6 +353,36 @@ public class ProductService : IProductService
         }
         if (!string.IsNullOrWhiteSpace(category))
             query = query.Where(p => p.Category == category);
+
+        if (await _locStock.SelectedLocationForAsync(businessId) is { } locId)
+        {
+            // Per-location chip counts: bucket each product by its stock AT THIS LOCATION (0 when it has no
+            // PLS row there) instead of the business-wide CurrentStock, so the chips match the overlaid list.
+            // Threshold stays the product's business-wide LowStockThreshold (per-location override deferred, see GetLowStockAsync).
+            var locStats = await (
+                from p in query
+                join s in _db.ProductLocationStocks.Where(x => x.LocationId == locId)
+                    on p.Id equals s.ProductId into gj
+                from s in gj.DefaultIfEmpty()
+                select new { p.LowStockThreshold, Stock = s == null ? 0m : s.CurrentStock })
+                .GroupBy(_ => 1)
+                .Select(g => new
+                {
+                    Total = g.Count(),
+                    OutOfStock = g.Count(x => x.Stock <= 0),
+                    Low = g.Count(x => x.Stock > 0 && x.Stock <= x.LowStockThreshold),
+                    Sufficient = g.Count(x => x.Stock > x.LowStockThreshold),
+                })
+                .FirstOrDefaultAsync();
+
+            return new ProductStockStatsDto
+            {
+                Total = locStats?.Total ?? 0,
+                OutOfStock = locStats?.OutOfStock ?? 0,
+                Low = locStats?.Low ?? 0,
+                Sufficient = locStats?.Sufficient ?? 0,
+            };
+        }
 
         // One round-trip — count up the three buckets with conditional aggregates so the DB
         // does all the work. Total is the sum of all three.

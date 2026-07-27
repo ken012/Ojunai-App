@@ -228,7 +228,7 @@ public class MultiLocationDualWriteTests
     public async Task PerLocationRead_Overlay_ShowsSelectedLocationStock_ElseBusinessWide()
     {
         using var db = NewContext();
-        var svc = new ProductService(db, new NoopActivityLogger());
+        var svc = new ProductService(db, new NoopActivityLogger(), new LocationStockService(db));
         var biz = await AddBusinessAsync(db, "0000000020");
         var p = new Product { BusinessId = biz.Id, Name = "Widget", CurrentStock = 50, IsActive = true };
         db.Products.Add(p);
