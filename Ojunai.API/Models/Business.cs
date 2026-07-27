@@ -107,6 +107,11 @@ public class Business
     /// </summary>
     public bool PricingV2Enabled { get; set; } = false;
 
+    /// <summary>The business's default/primary location (the backfilled "Main"). Points at Locations.Id
+    /// (plain reference, no DB FK). Multi-location is additive Phase 0 — see docs/multi-location-spec.md.
+    /// Null until the backfill runs.</summary>
+    public Guid? DefaultLocationId { get; set; }
+
     // ── Receipts ─────────────────────────────────────
     public string? Address { get; set; }                       // Single-line business address printed on receipts
     public string? ReceiptPrefix { get; set; }                 // Auto-derived from Name on first generation, e.g. "GD" for "Glow Daddy"

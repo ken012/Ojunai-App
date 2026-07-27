@@ -4,6 +4,8 @@ public class LedgerEntry
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid BusinessId { get; set; }
+    /// <summary>Location of the transaction this entry came from (multi-location; null = default/legacy). Additive Phase 0.</summary>
+    public Guid? LocationId { get; set; }
     public Guid ContactId { get; set; }
     public LedgerEntryType EntryType { get; set; }
     public decimal Amount { get; set; }

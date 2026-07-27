@@ -10,6 +10,8 @@ public class PurchaseOrder
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid BusinessId { get; set; }
+    /// <summary>Location that receives this order's stock (multi-location; null = default/legacy). Additive Phase 0.</summary>
+    public Guid? LocationId { get; set; }
 
     /// <summary>Supplier this PO is for — a Contact (Supplier/Both). App-level reference, no DB FK.
     /// Nullable for a quick ad-hoc order. <see cref="SupplierName"/> snapshots the name for display.</summary>

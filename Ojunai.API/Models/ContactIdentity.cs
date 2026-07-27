@@ -31,6 +31,10 @@ public class ContactIdentity
     /// </summary>
     public Guid? BusinessId { get; set; }
 
+    /// <summary>Location this channel/handle is bound to, for routing bot writes to the right branch
+    /// (multi-location; null = resolve via staff default / prompt). Additive Phase 0 — not yet used.</summary>
+    public Guid? LocationId { get; set; }
+
     public Channel Channel { get; set; }
 
     /// <summary>

@@ -10,6 +10,8 @@ public class Stocktake
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid BusinessId { get; set; }
+    /// <summary>Location this count was performed at (multi-location; null = default/legacy). Additive Phase 0.</summary>
+    public Guid? LocationId { get; set; }
 
     /// <summary>Human reference, e.g. "SC-0003". Per-business, best-effort (not globally unique).</summary>
     public string Reference { get; set; } = string.Empty;

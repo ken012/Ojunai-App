@@ -5,6 +5,8 @@ public class InventoryTransaction
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid BusinessId { get; set; }
     public Guid ProductId { get; set; }
+    /// <summary>Location this stock movement affected (multi-location; null = default/legacy). Additive Phase 0.</summary>
+    public Guid? LocationId { get; set; }
     public InventoryTransactionType Type { get; set; }
     public decimal Quantity { get; set; }
     public decimal? UnitCost { get; set; }

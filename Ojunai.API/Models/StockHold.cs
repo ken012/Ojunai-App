@@ -5,6 +5,8 @@ public class StockHold
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid BusinessId { get; set; }
     public Guid ProductId { get; set; }
+    /// <summary>Location the stock is held at (multi-location; null = default/legacy). Additive Phase 0.</summary>
+    public Guid? LocationId { get; set; }
     public string ContactName { get; set; } = string.Empty;
     public decimal Quantity { get; set; }
     public string? Notes { get; set; }

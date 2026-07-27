@@ -13,6 +13,8 @@ public class ProductBatch
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid BusinessId { get; set; }
     public Guid ProductId { get; set; }
+    /// <summary>Location this lot is stored at (multi-location; null = default/legacy). Additive Phase 0.</summary>
+    public Guid? LocationId { get; set; }
 
     public decimal Quantity { get; set; }
     public DateOnly? ExpiryDate { get; set; }

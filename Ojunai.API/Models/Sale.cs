@@ -4,6 +4,8 @@ public class Sale
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid BusinessId { get; set; }
+    /// <summary>Location this sale occurred at (multi-location; null = default/legacy). Additive Phase 0.</summary>
+    public Guid? LocationId { get; set; }
     public Guid? ContactId { get; set; }
     public decimal TotalAmount { get; set; }
     public decimal VatAmount { get; set; } = 0m;        // Tax included in TotalAmount; receipt shows it separately if > 0

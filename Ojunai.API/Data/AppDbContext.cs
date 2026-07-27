@@ -44,6 +44,11 @@ public class AppDbContext : DbContext
     public DbSet<ActionUsage> ActionUsages => Set<ActionUsage>();
     public DbSet<BusinessOverride> BusinessOverrides => Set<BusinessOverride>();
 
+    // ── Multi-location (Phase 0) — additive, not yet wired into reads/writes ──
+    public DbSet<Location> Locations => Set<Location>();
+    public DbSet<ProductLocationStock> ProductLocationStocks => Set<ProductLocationStock>();
+    public DbSet<UserLocation> UserLocations => Set<UserLocation>();
+
     // ── Multi-channel messaging (Phase 1 refactor) — additive ─────────────────
     public DbSet<ContactIdentity> ContactIdentities => Set<ContactIdentity>();
 
@@ -237,6 +242,7 @@ public class AppDbContext : DbContext
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.BusinessId, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.BusinessId, x.LocationId, x.CreatedAtUtc }); // multi-location (Phase 0, additive)
             e.Property(x => x.TotalAmount).HasPrecision(18, 2);
             e.Property(x => x.PaymentMethod).HasMaxLength(50);
             e.Property(x => x.DeleteReason).HasMaxLength(20);
@@ -274,6 +280,7 @@ public class AppDbContext : DbContext
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.BusinessId, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.BusinessId, x.LocationId, x.CreatedAtUtc }); // multi-location (Phase 0, additive)
             e.Property(x => x.Amount).HasPrecision(18, 2);
             e.Property(x => x.Category).HasMaxLength(100).HasDefaultValue("General");
             e.Property(x => x.ExpenseType).HasMaxLength(20).HasDefaultValue("operating");
@@ -318,6 +325,7 @@ public class AppDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.BusinessId, x.ProductId });
             e.HasIndex(x => new { x.BusinessId, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.BusinessId, x.LocationId, x.CreatedAtUtc }); // multi-location (Phase 0, additive)
             e.Property(x => x.Quantity).HasPrecision(18, 4);
             e.Property(x => x.UnitCost).HasPrecision(18, 2);
             e.HasOne(x => x.Product)
@@ -554,6 +562,67 @@ public class AppDbContext : DbContext
             // Lookup "active overrides for this business right now" is the hot path.
             e.HasIndex(x => new { x.BusinessId, x.OverrideType });
             e.HasIndex(x => x.ExpiresAtUtc);
+        });
+
+        // ── Multi-location entity configurations (Phase 0) ─────────────────────
+        // Additive — nothing reads/writes these yet. The LocationId columns added to
+        // Sale/Expense/InventoryTransaction/etc. are plain nullable scalars (no FK) so historical rows
+        // and existing writers are unaffected; only the three tables below carry relationships.
+        mb.Entity<Location>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.BusinessId);
+            // Exactly one default location per business.
+            e.HasIndex(x => x.BusinessId)
+                .HasDatabaseName("IX_Locations_OneDefaultPerBusiness")
+                .HasFilter("\"IsDefault\" = true")
+                .IsUnique();
+            e.Property(x => x.Name).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Type).HasMaxLength(20).HasDefaultValue("branch");
+            e.Property(x => x.Address).HasMaxLength(300);
+            e.Property(x => x.City).HasMaxLength(100);
+            e.Property(x => x.State).HasMaxLength(100);
+            e.Property(x => x.Currency).HasMaxLength(10);
+            e.Property(x => x.Timezone).HasMaxLength(50);
+            e.Property(x => x.ReceiptPrefix).HasMaxLength(20);
+            e.HasOne(x => x.Business)
+             .WithMany()
+             .HasForeignKey(x => x.BusinessId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        mb.Entity<ProductLocationStock>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.ProductId, x.LocationId }).IsUnique();
+            e.HasIndex(x => new { x.BusinessId, x.LocationId });
+            e.Property(x => x.CurrentStock).HasPrecision(18, 4);
+            e.Property(x => x.LowStockThreshold).HasPrecision(18, 4);
+            e.Property(x => x.Version).IsRowVersion();
+            e.ToTable(t => t.HasCheckConstraint("CK_ProductLocationStock_CurrentStock_NonNegative", "\"CurrentStock\" >= 0"));
+            e.HasOne(x => x.Product)
+             .WithMany()
+             .HasForeignKey(x => x.ProductId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Location)
+             .WithMany()
+             .HasForeignKey(x => x.LocationId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        mb.Entity<UserLocation>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.UserId, x.LocationId }).IsUnique();
+            e.HasIndex(x => x.LocationId);
+            e.HasOne(x => x.User)
+             .WithMany()
+             .HasForeignKey(x => x.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Location)
+             .WithMany()
+             .HasForeignKey(x => x.LocationId)
+             .OnDelete(DeleteBehavior.Cascade);
         });
 
         mb.Entity<ContactIdentity>(e =>

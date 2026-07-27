@@ -4,6 +4,8 @@ public class Expense
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid BusinessId { get; set; }
+    /// <summary>Location this expense belongs to (multi-location; null = default/legacy). Additive Phase 0.</summary>
+    public Guid? LocationId { get; set; }
     public string Category { get; set; } = "General";
     public string ExpenseType { get; set; } = "operating"; // "operating" or "cogs"
     public decimal Amount { get; set; }
