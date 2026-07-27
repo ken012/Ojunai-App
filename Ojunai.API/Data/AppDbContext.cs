@@ -1,3 +1,4 @@
+using Ojunai.API.Common;
 using Ojunai.API.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -762,52 +763,90 @@ public class AppDbContext : DbContext
                     NextReceiptNumber = b.NextReceiptNumber, ReceiptPrefix = b.ReceiptPrefix,
                 }));
             }
-            var pendingBizDefault = newLocations.ToDictionary(x => x.biz.Id, x => (Guid?)x.loc.Id);
+            var pendingBizDefault = newLocations.ToDictionary(x => x.biz.Id, x => x.loc.Id);
 
-            // Products that were added, or whose CurrentStock changed, mirror into their default location.
-            var products = ChangeTracker.Entries<Product>()
+            // Products that were added, or whose CurrentStock changed. Keep the ENTRY (not just the entity)
+            // so the multi-location branch can read the pre-change CurrentStock for a delta.
+            var productEntries = ChangeTracker.Entries<Product>()
                 .Where(e => e.State == EntityState.Added
                     || (e.State == EntityState.Modified && e.Property(p => p.CurrentStock).IsModified))
-                .Select(e => e.Entity)
                 .ToList();
-            if (products.Count == 0 && newLocations.Count == 0) return;
+            if (productEntries.Count == 0 && newLocations.Count == 0) return;
 
-            // Batch-resolve default locations for the involved existing businesses (one query).
-            var existingBizIds = products.Select(p => p.BusinessId).Distinct()
+            // Load the involved businesses' locations in one query — for default resolution, single-vs-multi
+            // detection (active-location count), and validating the ambient X-Location-Id against the business.
+            var existingBizIds = productEntries.Select(e => e.Entity.BusinessId).Distinct()
                 .Where(id => !pendingBizDefault.ContainsKey(id)).ToList();
-            var dbDefaults = existingBizIds.Count == 0
-                ? new Dictionary<Guid, Guid?>()
-                : await Businesses.Where(b => existingBizIds.Contains(b.Id))
-                    .Select(b => new { b.Id, b.DefaultLocationId })
-                    .ToDictionaryAsync(x => x.Id, x => x.DefaultLocationId, ct);
+            var locRows = existingBizIds.Count == 0
+                ? new List<(Guid BusinessId, Guid Id, bool IsDefault, bool IsActive)>()
+                : (await Locations.Where(l => existingBizIds.Contains(l.BusinessId))
+                        .Select(l => new { l.BusinessId, l.Id, l.IsDefault, l.IsActive })
+                        .ToListAsync(ct))
+                    .Select(x => (x.BusinessId, x.Id, x.IsDefault, x.IsActive)).ToList();
+
+            var defaultByBiz = new Dictionary<Guid, Guid>();
+            var activeCountByBiz = new Dictionary<Guid, int>();
+            var activeIdsByBiz = new Dictionary<Guid, HashSet<Guid>>();
+            foreach (var (bizId, defId) in pendingBizDefault)
+            {
+                defaultByBiz[bizId] = defId; activeCountByBiz[bizId] = 1;
+                activeIdsByBiz[bizId] = new HashSet<Guid> { defId };
+            }
+            foreach (var g in locRows.GroupBy(l => l.BusinessId))
+            {
+                var def = g.FirstOrDefault(l => l.IsDefault);
+                if (def.Id != Guid.Empty) defaultByBiz[g.Key] = def.Id;
+                activeCountByBiz[g.Key] = g.Count(l => l.IsActive);
+                activeIdsByBiz[g.Key] = g.Where(l => l.IsActive).Select(l => l.Id).ToHashSet();
+            }
+
+            var ambient = LocationScope.Current; // resolved X-Location-Id for this request (if any)
 
             // Batch-load existing per-location stock rows for the involved products (one query).
-            var productIds = products.Select(p => p.Id).ToList();
-            var existing = productIds.Count == 0
-                ? new List<ProductLocationStock>()
-                : await ProductLocationStocks.Where(x => productIds.Contains(x.ProductId)).ToListAsync(ct);
+            var productIds = productEntries.Select(e => e.Entity.Id).ToList();
+            var existing = await ProductLocationStocks.Where(x => productIds.Contains(x.ProductId)).ToListAsync(ct);
             var byKey = existing.ToDictionary(x => (x.ProductId, x.LocationId));
             foreach (var pls in ProductLocationStocks.Local) byKey.TryAdd((pls.ProductId, pls.LocationId), pls);
 
-            foreach (var p in products)
+            foreach (var entry in productEntries)
             {
-                var locationId = pendingBizDefault.TryGetValue(p.BusinessId, out var pend)
-                    ? pend
-                    : (dbDefaults.TryGetValue(p.BusinessId, out var d) ? d : null);
-                if (locationId is not { } locId) continue; // business not backfilled → skip (drift-tolerant)
+                var p = entry.Entity;
+                if (!defaultByBiz.TryGetValue(p.BusinessId, out var defaultLoc)) continue; // not backfilled → skip
 
-                if (byKey.TryGetValue((p.Id, locId), out var row))
+                Guid targetLoc;
+                decimal newValue;
+                if (activeCountByBiz.GetValueOrDefault(p.BusinessId, 1) <= 1)
                 {
-                    stockToUpdate.Add((row, p.CurrentStock));
+                    // SINGLE-LOCATION — unchanged from Phase 1: the default PLS mirrors CurrentStock exactly.
+                    targetLoc = defaultLoc;
+                    newValue = p.CurrentStock;
                 }
+                else
+                {
+                    // MULTI-LOCATION — route the CurrentStock DELTA to the request's resolved location (validated
+                    // against the business; else the default), clamped ≥ 0 so it can never trip the non-negative
+                    // check constraint. Product.CurrentStock stays the business-wide roll-up the service set, so
+                    // SUM(per-location) == Product.CurrentStock holds for RELATIVE ops (sale/stock-in/out). Absolute
+                    // set-stock ops + per-location availability are follow-ups — see docs/multi-location-spec.md.
+                    targetLoc = ambient is { } a && activeIdsByBiz.GetValueOrDefault(p.BusinessId) is { } ids && ids.Contains(a)
+                        ? a : defaultLoc;
+                    var original = entry.State == EntityState.Added ? 0m
+                        : entry.Property(x => x.CurrentStock).OriginalValue;
+                    var delta = p.CurrentStock - original;
+                    var current = byKey.TryGetValue((p.Id, targetLoc), out var cr) ? cr.CurrentStock : 0m;
+                    newValue = Math.Max(0m, current + delta);
+                }
+
+                if (byKey.TryGetValue((p.Id, targetLoc), out var row))
+                    stockToUpdate.Add((row, newValue));
                 else
                 {
                     var added = new ProductLocationStock
                     {
-                        BusinessId = p.BusinessId, ProductId = p.Id, LocationId = locId, CurrentStock = p.CurrentStock,
+                        BusinessId = p.BusinessId, ProductId = p.Id, LocationId = targetLoc, CurrentStock = newValue,
                     };
                     stockToAdd.Add(added);
-                    byKey[(p.Id, locId)] = added; // guard against a duplicate within this same save
+                    byKey[(p.Id, targetLoc)] = added; // guard against a duplicate within this same save
                 }
             }
         }

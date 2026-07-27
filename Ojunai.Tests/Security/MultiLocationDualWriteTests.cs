@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Ojunai.API.Common;
 using Ojunai.API.Data;
 using Ojunai.API.Models;
 using Xunit;
@@ -107,5 +108,108 @@ public class MultiLocationDualWriteTests
         var pls = await db.ProductLocationStocks.SingleAsync(x => x.ProductId == p.Id);
         Assert.Equal(12, pls.CurrentStock);
         Assert.Equal(p.CurrentStock, pls.CurrentStock); // the invariant Phase 2 relies on
+    }
+
+    // ── Phase 2b: once a business has >1 active location, stock changes route the DELTA to the request's
+    // resolved location (X-Location-Id / LocationScope), leaving other locations untouched, and the
+    // SUM(per-location) == Product.CurrentStock roll-up holds for relative ops. ─────────────────────────
+
+    private static async Task<Location> AddLocationAsync(AppDbContext db, Guid businessId, string name)
+    {
+        var loc = new Location { BusinessId = businessId, Name = name, IsDefault = false, IsActive = true };
+        db.Locations.Add(loc);
+        await db.SaveChangesAsync();
+        return loc;
+    }
+
+    [Fact]
+    public async Task MultiLocation_StockChange_RoutesDeltaToResolvedLocation_RollupHolds()
+    {
+        using var db = NewContext();
+        var biz = await AddBusinessAsync(db, "0000000010");
+        var p = new Product { BusinessId = biz.Id, Name = "W", CurrentStock = 50 };
+        db.Products.Add(p);
+        await db.SaveChangesAsync();                 // single-location: PLS(default) = 50
+        var defaultLoc = biz.DefaultLocationId!.Value;
+
+        var branchB = await AddLocationAsync(db, biz.Id, "Branch B"); // now multi-location (2 active)
+
+        try
+        {
+            LocationScope.Current = branchB.Id;      // stock-in +30 AT branch B
+            p.CurrentStock += 30;                    // service sets the business-wide roll-up 50 -> 80
+            await db.SaveChangesAsync();
+        }
+        finally { LocationScope.Current = null; }
+
+        var plsB = await db.ProductLocationStocks.SingleAsync(x => x.ProductId == p.Id && x.LocationId == branchB.Id);
+        var plsDefault = await db.ProductLocationStocks.SingleAsync(x => x.ProductId == p.Id && x.LocationId == defaultLoc);
+        Assert.Equal(30, plsB.CurrentStock);         // the +30 delta landed at B
+        Assert.Equal(50, plsDefault.CurrentStock);   // the default location is untouched
+        Assert.Equal(p.CurrentStock, plsB.CurrentStock + plsDefault.CurrentStock); // roll-up: 80 == 30 + 50
+    }
+
+    [Fact]
+    public async Task MultiLocation_NoLocationHeader_RoutesToDefault()
+    {
+        using var db = NewContext();
+        var biz = await AddBusinessAsync(db, "0000000012");
+        var p = new Product { BusinessId = biz.Id, Name = "W", CurrentStock = 40 };
+        db.Products.Add(p);
+        await db.SaveChangesAsync();
+        var defaultLoc = biz.DefaultLocationId!.Value;
+        await AddLocationAsync(db, biz.Id, "Branch B"); // multi-location, but no LocationScope set
+
+        LocationScope.Current = null;                // "All locations" / no header → default
+        p.CurrentStock -= 10;                        // 40 -> 30
+        await db.SaveChangesAsync();
+
+        var plsDefault = await db.ProductLocationStocks.SingleAsync(x => x.ProductId == p.Id && x.LocationId == defaultLoc);
+        Assert.Equal(30, plsDefault.CurrentStock);   // delta landed on the default location
+    }
+
+    [Fact]
+    public async Task MultiLocation_ForeignLocationId_FallsBackToDefault()
+    {
+        using var db = NewContext();
+        var biz = await AddBusinessAsync(db, "0000000013");
+        var p = new Product { BusinessId = biz.Id, Name = "W", CurrentStock = 40 };
+        db.Products.Add(p);
+        await db.SaveChangesAsync();
+        var defaultLoc = biz.DefaultLocationId!.Value;
+        await AddLocationAsync(db, biz.Id, "Branch B");
+
+        try
+        {
+            LocationScope.Current = Guid.NewGuid();   // an id that is NOT one of this business's locations
+            p.CurrentStock -= 5;                      // 40 -> 35
+            await db.SaveChangesAsync();
+        }
+        finally { LocationScope.Current = null; }
+
+        var plsDefault = await db.ProductLocationStocks.SingleAsync(x => x.ProductId == p.Id && x.LocationId == defaultLoc);
+        Assert.Equal(35, plsDefault.CurrentStock);   // invalid/foreign id → default, not the foreign location
+    }
+
+    [Fact]
+    public async Task MultiLocation_OversellAtLocation_ClampsToZero_DoesNotThrow()
+    {
+        using var db = NewContext();
+        var biz = await AddBusinessAsync(db, "0000000014");
+        var p = new Product { BusinessId = biz.Id, Name = "W", CurrentStock = 50 };
+        db.Products.Add(p);
+        await db.SaveChangesAsync();
+        var branchB = await AddLocationAsync(db, biz.Id, "Branch B"); // B has 0 stock
+
+        try
+        {
+            LocationScope.Current = branchB.Id;
+            p.CurrentStock -= 10;                     // sell 10 "at B" which has 0 → delta -10
+            await db.SaveChangesAsync();              // must NOT throw (clamped, no negative)
+        }
+        finally { LocationScope.Current = null; }
+
+        var plsB = await db.ProductLocationStocks.FirstOrDefaultAsync(x => x.ProductId == p.Id && x.LocationId == branchB.Id);
+        Assert.Equal(0m, plsB?.CurrentStock ?? 0m);  // clamped to 0, never negative
     }
 }
