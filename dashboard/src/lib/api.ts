@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getSelectedLocation } from "@/lib/location";
 
 interface PageEnvelope<T> {
   items: T[];
@@ -29,6 +30,14 @@ export const api = axios.create({
   baseURL: BASE_URL,
   headers: { "Content-Type": "application/json" },
   withCredentials: true,
+});
+
+// Attach the selected location (multi-location Phase 2b). Only set when the user picked a specific
+// location in the switcher; "All locations" / single-location sends no header → business-wide behaviour.
+api.interceptors.request.use((config) => {
+  const loc = getSelectedLocation();
+  if (loc) config.headers["X-Location-Id"] = loc;
+  return config;
 });
 
 // On 401, clear local state and redirect to login

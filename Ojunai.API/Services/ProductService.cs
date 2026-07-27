@@ -81,6 +81,8 @@ public class ProductService : IProductService
             .Select(p => ToDto(p))
             .ToListAsync();
 
+        await OverlayLocationStockAsync(businessId, items);
+
         return new PaginatedResult<ProductDto>
         {
             Items = items,
@@ -88,6 +90,31 @@ public class ProductService : IProductService
             Page = page,
             PageSize = pageSize
         };
+    }
+
+    /// <summary>
+    /// Per-location read overlay (multi-location Phase 2b). When a specific location is selected for the
+    /// request (X-Location-Id → <see cref="LocationScope"/>) and it belongs to this business, replace each
+    /// product's business-wide CurrentStock with that location's stock (0 when the product has no row
+    /// there). Absent/invalid selection ⇒ business-wide, unchanged — so single-location businesses (which
+    /// never send the header) run ZERO extra queries. NOTE: stock-level FILTERING stays business-wide for
+    /// now; per-location filtering is a follow-up. See docs/multi-location-spec.md.
+    /// </summary>
+    private async Task OverlayLocationStockAsync(Guid businessId, List<ProductDto> items)
+    {
+        if (LocationScope.Current is not { } locId || items.Count == 0) return;
+        var belongs = await _db.Locations.AnyAsync(l => l.Id == locId && l.BusinessId == businessId);
+        if (!belongs) return;
+
+        var ids = items.Select(i => i.Id).ToList();
+        var stockByProduct = await _db.ProductLocationStocks
+            .Where(x => x.LocationId == locId && ids.Contains(x.ProductId))
+            .ToDictionaryAsync(x => x.ProductId, x => x.CurrentStock);
+        foreach (var item in items)
+        {
+            item.CurrentStock = stockByProduct.GetValueOrDefault(item.Id, 0m);
+            item.IsLowStock = !item.IsBundle && item.CurrentStock <= item.LowStockThreshold;
+        }
     }
 
     public async Task<ProductDto> GetByIdAsync(Guid businessId, Guid productId)

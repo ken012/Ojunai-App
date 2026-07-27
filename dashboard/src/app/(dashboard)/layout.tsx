@@ -10,6 +10,7 @@ import { InstallBanner } from "@/components/install-banner";
 import { EmailVerificationBanner } from "@/components/email-verification-banner";
 import { DashboardBackground } from "@/components/dashboard-background";
 import { CapHitDialog } from "@/components/cap-hit-dialog";
+import { LocationSwitcher } from "@/components/location-switcher";
 
 export default function DashboardLayout({
   children,
@@ -38,6 +39,11 @@ export default function DashboardLayout({
             className="lg:hidden"
             style={{ height: "calc(env(safe-area-inset-top) + 3rem)" }}
           />
+          {/* Location switcher — renders null unless the business is multi-location, and `empty:hidden`
+              collapses this wrapper entirely for single-location businesses so there's no layout gap. */}
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 flex justify-end empty:hidden">
+            <LocationSwitcher />
+          </div>
           <div
             className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto"
             style={{

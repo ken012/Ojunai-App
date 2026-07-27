@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Ojunai.API.Common;
 using Ojunai.API.Data;
 using Ojunai.API.Models;
+using Ojunai.API.Services;
+using Ojunai.API.Services.Interfaces;
 using Xunit;
 
 namespace Ojunai.Tests.Security;
@@ -211,5 +213,47 @@ public class MultiLocationDualWriteTests
 
         var plsB = await db.ProductLocationStocks.FirstOrDefaultAsync(x => x.ProductId == p.Id && x.LocationId == branchB.Id);
         Assert.Equal(0m, plsB?.CurrentStock ?? 0m);  // clamped to 0, never negative
+    }
+
+    // ── Phase 2b: per-location READ overlay — the products list shows the selected location's stock. ──────
+
+    private sealed class NoopActivityLogger : IActivityLogger
+    {
+        public Task LogAsync(Guid businessId, string action, string entityType, Guid? entityId,
+            string? entityName, string summary, string? details = null, ActivityActor? actor = null)
+            => Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task PerLocationRead_Overlay_ShowsSelectedLocationStock_ElseBusinessWide()
+    {
+        using var db = NewContext();
+        var svc = new ProductService(db, new NoopActivityLogger());
+        var biz = await AddBusinessAsync(db, "0000000020");
+        var p = new Product { BusinessId = biz.Id, Name = "Widget", CurrentStock = 50, IsActive = true };
+        db.Products.Add(p);
+        await db.SaveChangesAsync();
+        var defaultLoc = biz.DefaultLocationId!.Value;
+        var branchB = await AddLocationAsync(db, biz.Id, "Branch B");
+
+        try { LocationScope.Current = branchB.Id; p.CurrentStock += 30; await db.SaveChangesAsync(); }
+        finally { LocationScope.Current = null; }
+        // Now: business-wide 80 = default 50 + B 30.
+
+        async Task<decimal> StockView(Guid? loc)
+        {
+            try
+            {
+                LocationScope.Current = loc;
+                var view = await svc.GetAllAsync(biz.Id, 1, 100, null);
+                return view.Items.Single(i => i.Id == p.Id).CurrentStock;
+            }
+            finally { LocationScope.Current = null; }
+        }
+
+        Assert.Equal(80m, await StockView(null));            // "All locations" → business-wide roll-up
+        Assert.Equal(30m, await StockView(branchB.Id));      // Branch B → B's stock
+        Assert.Equal(50m, await StockView(defaultLoc));      // Default → default's stock
+        Assert.Equal(80m, await StockView(Guid.NewGuid()));  // foreign id → business-wide (not 0)
     }
 }
