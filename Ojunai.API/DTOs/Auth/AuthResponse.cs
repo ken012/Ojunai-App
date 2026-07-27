@@ -86,4 +86,10 @@ public class BusinessDto
     public bool IsMultiLocation { get; set; }
     /// <summary>The business's locations (always at least the default "Main"). Populated by GET /business.</summary>
     public List<LocationDto> Locations { get; set; } = new();
+    /// <summary>The active location ids the CURRENT user may access (Owner/Admin = all; restricted staff =
+    /// their assignments, or the default location only if unassigned). The switcher shows only these.</summary>
+    public List<Guid> AccessibleLocationIds { get; set; } = new();
+    /// <summary>True when the current user is restricted to a strict SUBSET of the active locations — the
+    /// switcher then hides "All locations" and always keeps a single location selected.</summary>
+    public bool LocationAccessRestricted { get; set; }
 }

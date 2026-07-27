@@ -1,10 +1,12 @@
 namespace Ojunai.API.Models;
 
 /// <summary>
-/// Scopes a staff user to a location. Semantics (Phase 1+): a user with NO rows implicitly accesses ALL
-/// of their business's locations (back-compat — existing staff are unaffected); a user with one or more
-/// rows is restricted to those locations. Owners/admins are all-access regardless. ADDITIVE Phase 0 —
-/// nothing reads or writes this yet. See docs/multi-location-spec.md.
+/// Scopes a staff user to a location. Semantics (enforced by <see cref="Ojunai.API.Services.LocationAccessService"/>):
+/// a restricted user (Sales/Bookkeeper/Viewer) with one or more rows is limited to those locations; a
+/// restricted user with NO rows gets the business's DEFAULT location only (owner-chosen policy — they can't
+/// see other branches until explicitly assigned). Owners/Admins are all-access regardless of rows. Only
+/// engages at MULTI-location businesses — single-location businesses (one active location) are unaffected.
+/// See docs/multi-location-spec.md.
 /// </summary>
 public class UserLocation
 {

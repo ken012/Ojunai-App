@@ -59,7 +59,62 @@ public class StaffController : OjunaiBaseController
             })
             .ToListAsync();
 
+        // Attach each staff member's raw location assignments in one round-trip (no N+1). Scoped to this
+        // business's locations so a stale cross-business row can never surface.
+        var staffIds = staff.Select(s => s.Id).ToList();
+        var assignments = await _db.UserLocations
+            .Where(ul => staffIds.Contains(ul.UserId) && ul.Location.BusinessId == BusinessId)
+            .Select(ul => new { ul.UserId, ul.LocationId })
+            .ToListAsync();
+        var byUser = assignments.GroupBy(a => a.UserId).ToDictionary(g => g.Key, g => g.Select(a => a.LocationId).ToList());
+        foreach (var s in staff)
+            if (byUser.TryGetValue(s.Id, out var locs)) s.AssignedLocationIds = locs;
+
         return Ok(ApiResponse<List<StaffDto>>.Ok(staff));
+    }
+
+    /// <summary>
+    /// Multi-location: replace a staff member's location assignments (the allow-list of branches/warehouses
+    /// they can see and act on). Empty list = unassign → default-location-only by policy. Only restricted
+    /// roles can be assigned; Owner/Admin are all-access so assignment is rejected as a no-op. Takes effect on
+    /// the user's next request (access is resolved server-side per request, not from their JWT).
+    /// </summary>
+    [HttpPut("{id:guid}/locations")]
+    [RequirePermission(Permission.ManageStaff)]
+    public async Task<ActionResult<ApiResponse<object>>> UpdateLocations(Guid id, [FromBody] UpdateStaffLocationsRequest request)
+    {
+        var staff = await _db.Users.FirstOrDefaultAsync(u => u.Id == id && u.BusinessId == BusinessId && u.IsActive);
+        if (staff == null) return NotFound(ApiResponse<object>.Fail("Staff not found."));
+        if (staff.Role is UserRole.Owner or UserRole.Admin)
+            return BadRequest(ApiResponse<object>.Fail("Owners and admins already have access to every location."));
+
+        var requested = (request.LocationIds ?? new List<Guid>()).Distinct().ToList();
+
+        // Validate every requested location belongs to THIS business and is active — no assigning someone to a
+        // foreign or deactivated location.
+        if (requested.Count > 0)
+        {
+            var validIds = await _db.Locations
+                .Where(l => l.BusinessId == BusinessId && l.IsActive && requested.Contains(l.Id))
+                .Select(l => l.Id)
+                .ToListAsync();
+            if (validIds.Count != requested.Count)
+                return BadRequest(ApiResponse<object>.Fail("One or more locations are invalid or inactive."));
+        }
+
+        // Replace the assignment set: drop existing rows, add the new ones.
+        var existing = await _db.UserLocations.Where(ul => ul.UserId == staff.Id).ToListAsync();
+        _db.UserLocations.RemoveRange(existing);
+        foreach (var locId in requested)
+            _db.UserLocations.Add(new UserLocation { UserId = staff.Id, LocationId = locId });
+
+        await _activity.LogAsync(BusinessId, "staff.locations_updated", "Staff", staff.Id, staff.FullName,
+            requested.Count == 0
+                ? $"set {staff.FullName} to the default location only"
+                : $"assigned {staff.FullName} to {requested.Count} location(s)");
+        await _db.SaveChangesAsync();
+
+        return Ok(ApiResponse<object>.Ok(null!, "Location access updated."));
     }
 
     [HttpPost]

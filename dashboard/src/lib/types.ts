@@ -92,6 +92,11 @@ export interface BusinessDto {
   /** True if the business may operate more than one location (Scale+/add-on). */
   isMultiLocation?: boolean;
   locations?: LocationDto[];
+  /** The active location ids the CURRENT user may access (Owner/Admin = all; restricted staff = their
+   *  assignments, or the default only if unassigned). The switcher shows only these. */
+  accessibleLocationIds?: string[];
+  /** True when the current user is restricted to a strict subset of locations — switcher hides "All". */
+  locationAccessRestricted?: boolean;
 }
 
 export interface LocationDto {

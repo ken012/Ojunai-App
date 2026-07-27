@@ -23,6 +23,7 @@ public class BusinessController : OjunaiBaseController
     private readonly Services.Interfaces.IBackgroundImageService _backgroundImage;
     private readonly IReceiptService _receipts;
     private readonly IActivityLogger _activity;
+    private readonly LocationAccessService _locationAccess;
 
     public BusinessController(
         IBusinessService business,
@@ -34,7 +35,8 @@ public class BusinessController : OjunaiBaseController
         IHttpClientFactory httpFactory,
         Services.Interfaces.IBackgroundImageService backgroundImage,
         IReceiptService receipts,
-        IActivityLogger activity)
+        IActivityLogger activity,
+        LocationAccessService locationAccess)
     {
         _business = business;
         _planGuard = planGuard;
@@ -46,6 +48,7 @@ public class BusinessController : OjunaiBaseController
         _backgroundImage = backgroundImage;
         _receipts = receipts;
         _activity = activity;
+        _locationAccess = locationAccess;
     }
 
     /// <summary>
@@ -94,6 +97,14 @@ public class BusinessController : OjunaiBaseController
             .OrderByDescending(l => l.IsDefault).ThenBy(l => l.CreatedAtUtc)
             .Select(l => new LocationDto { Id = l.Id, Name = l.Name, Type = l.Type, IsDefault = l.IsDefault, IsActive = l.IsActive })
             .ToListAsync();
+
+        // Scope the switcher to what THIS user may access (Owner/Admin = all; restricted = assignments or the
+        // default only). "Restricted" = they can reach a strict subset of the active locations → the switcher
+        // hides "All locations" and always keeps one selected.
+        var accessible = await _locationAccess.AccessibleLocationIdsAsync(BusinessId, UserId, User.GetRole());
+        result.AccessibleLocationIds = accessible;
+        var activeCount = result.Locations.Count(l => l.IsActive);
+        result.LocationAccessRestricted = accessible.Count < activeCount;
         return Ok(ApiResponse<BusinessDto>.Ok(result));
     }
 

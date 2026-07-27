@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getStoredUser } from "@/lib/auth";
 import { api, absoluteApiUrl } from "@/lib/api";
-import type { UserDto, BusinessDto } from "@/lib/types";
+import type { UserDto, BusinessDto, LocationDto } from "@/lib/types";
 import { PageHeader } from "@/components/page-header";
 import { useToast } from "@/components/toast";
 import { useBusiness, useUser, useDataSync } from "@/lib/data-sync";
@@ -566,6 +566,8 @@ type StaffMember = {
   role: string;
   isActive: boolean;
   permissions: string[];
+  /** Multi-location: raw location assignments. Empty = unassigned → default-location-only. */
+  assignedLocationIds?: string[];
   createdAtUtc: string;
 };
 
@@ -783,9 +785,79 @@ function VoiceAISettingsCard() {
   );
 }
 
+/**
+ * Multi-location access editor for one restricted staff member. Checkboxes over the business's active
+ * locations, pre-filled from their current assignments. Saving replaces their assignment set (empty =
+ * default-location-only). Shown only for restricted roles at a multi-location business.
+ */
+function StaffLocationAccess({ staff, locations }: { staff: StaffMember; locations: LocationDto[] }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [sel, setSel] = useState<string[]>(staff.assignedLocationIds ?? []);
+  const [saving, setSaving] = useState(false);
+
+  const assignedCount = staff.assignedLocationIds?.length ?? 0;
+  const summary = assignedCount === 0 ? "Default location only" : `${assignedCount} location${assignedCount > 1 ? "s" : ""}`;
+
+  function toggle(id: string) {
+    setSel((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      await api.put(`/staff/${staff.id}/locations`, { locationIds: sel });
+      await qc.invalidateQueries({ queryKey: ["staff"] });
+      toast.success("Location access updated");
+      setOpen(false);
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      toast.error("Couldn't update access", ax.response?.data?.errors?.[0] ?? "Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 border-t border-slate-100 dark:border-slate-800 pt-2">
+      <button
+        onClick={() => { setSel(staff.assignedLocationIds ?? []); setOpen(!open); }}
+        className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+      >
+        <MapPin size={13} className="text-slate-400" />
+        Location access: <span className="font-medium">{summary}</span>
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1.5">
+          {locations.map((l) => (
+            <label key={l.id} className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={sel.includes(l.id)}
+                onChange={() => toggle(l.id)}
+                className="h-3.5 w-3.5 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
+              />
+              {l.name}{l.isDefault && <span className="text-slate-400">(default)</span>}
+            </label>
+          ))}
+          <p className="text-[11px] text-slate-400 dark:text-slate-500">Leave all unchecked to limit them to the default location only.</p>
+          <div className="flex gap-2 pt-1">
+            <Button size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
+            <Button size="sm" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TeamMembersCard() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const teamBusiness = useBusiness();
+  const activeLocations = (teamBusiness?.locations ?? []).filter((l) => l.isActive);
+  const multiLocation = !!teamBusiness?.isMultiLocation && activeLocations.length > 1;
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ fullName: "", phoneNumber: "", password: "", email: "", role: "Sales" });
   const [saving, setSaving] = useState(false);
@@ -921,31 +993,37 @@ function TeamMembersCard() {
         {staff && staff.length > 0 ? (
           <div className="space-y-2">
             {staff.map((s) => (
-              <div key={s.id} className="flex items-center justify-between border rounded-lg px-3 py-2">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">{s.fullName}</p>
-                    <Badge variant={s.role === "Owner" ? "default" : "secondary"} className="text-xs">{s.role}</Badge>
+              <div key={s.id} className="border rounded-lg px-3 py-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">{s.fullName}</p>
+                      <Badge variant={s.role === "Owner" ? "default" : "secondary"} className="text-xs">{s.role}</Badge>
+                    </div>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 font-mono">{s.phoneNumber}</p>
                   </div>
-                  <p className="text-xs text-slate-400 dark:text-slate-500 font-mono">{s.phoneNumber}</p>
+                  {s.role !== "Owner" && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => { setResetting(s); setResetPasswordValue(""); setResetError(null); }}
+                        className="p-1 rounded hover:bg-cyan-50 dark:hover:bg-cyan-950/30 text-slate-400 dark:text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400"
+                        title="Reset password"
+                      >
+                        <KeyRound size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleRemove(s.id)}
+                        className="p-1 rounded hover:bg-rose-50 dark:bg-rose-950/30 text-slate-400 dark:text-slate-500 hover:text-rose-500 dark:text-rose-400"
+                        title="Remove staff"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {s.role !== "Owner" && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => { setResetting(s); setResetPasswordValue(""); setResetError(null); }}
-                      className="p-1 rounded hover:bg-cyan-50 dark:hover:bg-cyan-950/30 text-slate-400 dark:text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400"
-                      title="Reset password"
-                    >
-                      <KeyRound size={14} />
-                    </button>
-                    <button
-                      onClick={() => handleRemove(s.id)}
-                      className="p-1 rounded hover:bg-rose-50 dark:bg-rose-950/30 text-slate-400 dark:text-slate-500 hover:text-rose-500 dark:text-rose-400"
-                      title="Remove staff"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                {/* Multi-location: assign which branches a restricted staffer can access (Owner/Admin = all). */}
+                {multiLocation && s.role !== "Owner" && s.role !== "Admin" && (
+                  <StaffLocationAccess staff={s} locations={activeLocations} />
                 )}
               </div>
             ))}
