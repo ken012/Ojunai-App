@@ -13,20 +13,30 @@ namespace Ojunai.API.Services;
 public partial class ReportService : IReportService
 {
     private readonly AppDbContext _db;
+    private readonly LocationStockService _locStock;
 
-    public ReportService(AppDbContext db) => _db = db;
+    public ReportService(AppDbContext db, LocationStockService locStock)
+    {
+        _db = db;
+        _locStock = locStock;
+    }
 
     public async Task<DashboardOverviewDto> GetDashboardOverviewAsync(Guid businessId)
     {
+        // Per-location scope: when a location is selected (multi-location business) all money figures below
+        // reflect that location only; null (single-location / "All locations") = business-wide, unchanged.
+        // Ledger (receivables/payables) and stock counts stay business-wide by design.
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
+
         var todayUtc = DateTime.UtcNow.Date;
         var tomorrowUtc = todayUtc.AddDays(1);
 
         var todaySales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= todayUtc && s.CreatedAtUtc < tomorrowUtc)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= todayUtc && s.CreatedAtUtc < tomorrowUtc && (locId == null || s.LocationId == locId))
             .ToListAsync();
 
         var todayExpenses = await _db.Expenses
-            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= todayUtc && e.CreatedAtUtc < tomorrowUtc)
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= todayUtc && e.CreatedAtUtc < tomorrowUtc && (locId == null || e.LocationId == locId))
             .SumAsync(e => e.Amount);
 
         var (outstandingReceivables, outstandingPayables) = await GetOutstandingLedgerAsync(businessId);
@@ -36,16 +46,16 @@ public partial class ReportService : IReportService
 
         // 7-day trend
         var sevenDaysAgo = todayUtc.AddDays(-6);
-        var salesTrend = await BuildSalesTrendAsync(businessId, sevenDaysAgo, todayUtc);
-        var expenseTrend = await BuildExpenseTrendAsync(businessId, sevenDaysAgo, todayUtc);
+        var salesTrend = await BuildSalesTrendAsync(businessId, sevenDaysAgo, todayUtc, locId);
+        var expenseTrend = await BuildExpenseTrendAsync(businessId, sevenDaysAgo, todayUtc, locId);
 
         // Monthly totals for P&L card (first day of current month to now)
         var monthStart = new DateTime(todayUtc.Year, todayUtc.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         var monthlySales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= monthStart)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= monthStart && (locId == null || s.LocationId == locId))
             .SumAsync(s => s.TotalAmount);
         var monthlyExpenses = await _db.Expenses
-            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= monthStart)
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= monthStart && (locId == null || e.LocationId == locId))
             .SumAsync(e => e.Amount);
 
         return new DashboardOverviewDto
@@ -67,9 +77,10 @@ public partial class ReportService : IReportService
     public async Task<List<RecentActivityDto>> GetRecentActivityAsync(Guid businessId, int limit)
     {
         var activities = new List<RecentActivityDto>();
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
         var sales = await _db.Sales
-            .Where(s => s.BusinessId == businessId)
+            .Where(s => s.BusinessId == businessId && (locId == null || s.LocationId == locId))
             .OrderByDescending(s => s.CreatedAtUtc)
             .Take(limit)
             .Select(s => new RecentActivityDto
@@ -81,7 +92,7 @@ public partial class ReportService : IReportService
             }).ToListAsync();
 
         var expenses = await _db.Expenses
-            .Where(e => e.BusinessId == businessId)
+            .Where(e => e.BusinessId == businessId && (locId == null || e.LocationId == locId))
             .OrderByDescending(e => e.CreatedAtUtc)
             .Take(limit)
             .Select(e => new RecentActivityDto
@@ -103,13 +114,14 @@ public partial class ReportService : IReportService
         var targetDate = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var start = targetDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         var end = start.AddDays(1);
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
         var sales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= start && s.CreatedAtUtc < end)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= start && s.CreatedAtUtc < end && (locId == null || s.LocationId == locId))
             .ToListAsync();
 
         var totalExpenses = await _db.Expenses
-            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= start && e.CreatedAtUtc < end)
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= start && e.CreatedAtUtc < end && (locId == null || e.LocationId == locId))
             .SumAsync(e => e.Amount);
 
         var (receivables, payables) = await GetOutstandingLedgerAsync(businessId);
@@ -147,19 +159,20 @@ public partial class ReportService : IReportService
         var end = start.AddDays(7);
         var startDt = start.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         var endDt = end.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
         var totalSales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= startDt && s.CreatedAtUtc < endDt)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= startDt && s.CreatedAtUtc < endDt && (locId == null || s.LocationId == locId))
             .SumAsync(s => s.TotalAmount);
 
         var totalExpenses = await _db.Expenses
-            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= startDt && e.CreatedAtUtc < endDt)
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= startDt && e.CreatedAtUtc < endDt && (locId == null || e.LocationId == locId))
             .SumAsync(e => e.Amount);
 
         var topProducts = await _db.SaleItems
             .Include(i => i.Product)
             .Include(i => i.Sale)
-            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= startDt && i.Sale.CreatedAtUtc < endDt)
+            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= startDt && i.Sale.CreatedAtUtc < endDt && (locId == null || i.Sale.LocationId == locId))
             .GroupBy(i => new { i.ProductId, i.Product.Name, i.Product.Unit })
             .Select(g => new TopProductDto
             {
@@ -217,7 +230,7 @@ public partial class ReportService : IReportService
             var salesWithCost = await _db.SaleItems
                 .Include(i => i.Product)
                 .Include(i => i.Sale)
-                .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= startDt && i.Sale.CreatedAtUtc < endDt && i.Product.CostPrice.HasValue)
+                .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= startDt && i.Sale.CreatedAtUtc < endDt && i.Product.CostPrice.HasValue && (locId == null || i.Sale.LocationId == locId))
                 .ToListAsync();
             estimatedProfit = salesWithCost.Sum(i => (i.UnitPrice - i.Product.CostPrice!.Value) * i.Quantity) - totalExpenses;
         }
@@ -241,15 +254,17 @@ public partial class ReportService : IReportService
     {
         var now = DateTime.UtcNow;
         var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
         var totalSales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= monthStart)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= monthStart && (locId == null || s.LocationId == locId))
             .SumAsync(s => s.TotalAmount);
 
         var totalExpenses = await _db.Expenses
-            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= monthStart)
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= monthStart && (locId == null || e.LocationId == locId))
             .SumAsync(e => e.Amount);
 
+        // Receivables/payables stay business-wide (debts roll up across branches by design).
         var (receivables, payables) = await GetOutstandingLedgerAsync(businessId);
 
         var cashIn = totalSales - totalExpenses;
@@ -271,12 +286,13 @@ public partial class ReportService : IReportService
         var nowUtc = DateTime.UtcNow;
         var thirtyDaysAgo = nowUtc.Date.AddDays(-29);
         var fourteenDaysAgo = nowUtc.Date.AddDays(-13);
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
         // 1. Top Products (last 30 days)
         var topProducts = await _db.SaleItems
             .Include(i => i.Sale)
             .Include(i => i.Product)
-            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= thirtyDaysAgo)
+            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= thirtyDaysAgo && (locId == null || i.Sale.LocationId == locId))
             .GroupBy(i => new { i.Product.Name, i.Product.Unit })
             .Select(g => new TopProductInsightDto
             {
@@ -291,7 +307,7 @@ public partial class ReportService : IReportService
 
         // 2. Expense breakdown by category (last 30 days)
         var expenseCategories = await _db.Expenses
-            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= thirtyDaysAgo)
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= thirtyDaysAgo && (locId == null || e.LocationId == locId))
             .GroupBy(e => e.Category)
             .Select(g => new CategoryBreakdownDto
             {
@@ -303,7 +319,7 @@ public partial class ReportService : IReportService
 
         // 3. Sales by payment status (last 30 days)
         var paymentStatus = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= thirtyDaysAgo)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= thirtyDaysAgo && (locId == null || s.LocationId == locId))
             .GroupBy(s => s.PaymentStatus)
             .Select(g => new PaymentStatusBreakdownDto
             {
@@ -361,13 +377,13 @@ public partial class ReportService : IReportService
 
         // 5. Daily net cash flow (last 14 days)
         var salesByDay = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= fourteenDaysAgo)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= fourteenDaysAgo && (locId == null || s.LocationId == locId))
             .GroupBy(s => s.CreatedAtUtc.Date)
             .Select(g => new { Date = g.Key, Amount = g.Sum(s => s.TotalAmount) })
             .ToListAsync();
 
         var expensesByDay = await _db.Expenses
-            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= fourteenDaysAgo)
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= fourteenDaysAgo && (locId == null || e.LocationId == locId))
             .GroupBy(e => e.CreatedAtUtc.Date)
             .Select(g => new { Date = g.Key, Amount = g.Sum(e => e.Amount) })
             .ToListAsync();
@@ -391,7 +407,7 @@ public partial class ReportService : IReportService
         // 6. Top customers (last 30 days)
         var topCustomers = await _db.Sales
             .Include(s => s.Contact)
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= thirtyDaysAgo && s.ContactId != null)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= thirtyDaysAgo && s.ContactId != null && (locId == null || s.LocationId == locId))
             .GroupBy(s => new { s.ContactId, s.Contact!.Name })
             .Select(g => new TopCustomerDto
             {
@@ -420,6 +436,10 @@ public partial class ReportService : IReportService
         var business = await _db.Businesses.FindAsync(businessId);
         var cs = BillingConfig.Symbol(business?.Currency);
         var activities = new List<ActivityFeedDto>();
+        // Per-location scope for the money sources (sales/expenses/inventory). Ledger + audit-action sources
+        // stay business-wide. NOTE: the Sales source uses IgnoreQueryFilters(), so this location filter must be
+        // applied explicitly here (a global query filter would be bypassed).
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
         // Bound each source query so a single feed request (default view supplies no date filter) can't
         // drag a high-volume tenant's ENTIRE history into memory and OOM the shared process (N-6). Each
@@ -456,7 +476,7 @@ public partial class ReportService : IReportService
                 .AsNoTracking()
                 .Include(s => s.Items).ThenInclude(i => i.Product)
                 .Include(s => s.Contact)
-                .Where(s => s.BusinessId == businessId);
+                .Where(s => s.BusinessId == businessId && (locId == null || s.LocationId == locId));
             // A sale yields the sale row (keyed on CreatedAtUtc) plus, if voided/returned, a separate
             // event row keyed on DeletedAtUtc — so prefilter over EITHER timestamp (superset).
             if (lo.HasValue)
@@ -523,7 +543,7 @@ public partial class ReportService : IReportService
             var expensesQ = _db.Expenses
                 .IgnoreQueryFilters()
                 .AsNoTracking()
-                .Where(e => e.BusinessId == businessId);
+                .Where(e => e.BusinessId == businessId && (locId == null || e.LocationId == locId));
             if (lo.HasValue) expensesQ = expensesQ.Where(e => e.CreatedAtUtc >= lo.Value);
             if (hi.HasValue) expensesQ = expensesQ.Where(e => e.CreatedAtUtc < hi.Value);
             var expenses = await expensesQ
@@ -551,7 +571,7 @@ public partial class ReportService : IReportService
             var inventoryQ = _db.InventoryTransactions
                 .AsNoTracking()
                 .Include(t => t.Product)
-                .Where(t => t.BusinessId == businessId);
+                .Where(t => t.BusinessId == businessId && (locId == null || t.LocationId == locId));
             if (lo.HasValue) inventoryQ = inventoryQ.Where(t => t.CreatedAtUtc >= lo.Value);
             if (hi.HasValue) inventoryQ = inventoryQ.Where(t => t.CreatedAtUtc < hi.Value);
             var inventory = await inventoryQ
@@ -748,10 +768,10 @@ public partial class ReportService : IReportService
         return (receivables, payables);
     }
 
-    private async Task<List<TrendPointDto>> BuildSalesTrendAsync(Guid businessId, DateTime from, DateTime to)
+    private async Task<List<TrendPointDto>> BuildSalesTrendAsync(Guid businessId, DateTime from, DateTime to, Guid? locId = null)
     {
         var sales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= from && s.CreatedAtUtc <= to.AddDays(1))
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= from && s.CreatedAtUtc <= to.AddDays(1) && (locId == null || s.LocationId == locId))
             .GroupBy(s => s.CreatedAtUtc.Date)
             .Select(g => new { Date = g.Key, Amount = g.Sum(s => s.TotalAmount) })
             .ToListAsync();
@@ -766,10 +786,10 @@ public partial class ReportService : IReportService
             .ToList();
     }
 
-    private async Task<List<TrendPointDto>> BuildExpenseTrendAsync(Guid businessId, DateTime from, DateTime to)
+    private async Task<List<TrendPointDto>> BuildExpenseTrendAsync(Guid businessId, DateTime from, DateTime to, Guid? locId = null)
     {
         var expenses = await _db.Expenses
-            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= from && e.CreatedAtUtc <= to.AddDays(1))
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= from && e.CreatedAtUtc <= to.AddDays(1) && (locId == null || e.LocationId == locId))
             .GroupBy(e => e.CreatedAtUtc.Date)
             .Select(g => new { Date = g.Key, Amount = g.Sum(e => e.Amount) })
             .ToListAsync();
@@ -866,10 +886,11 @@ public partial class ReportService : IReportService
     public async Task<List<ProductProfitDto>> GetProfitByProductAsync(Guid businessId)
     {
         var thirtyDaysAgo = DateTime.UtcNow.Date.AddDays(-29);
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
         var saleItems = await _db.SaleItems
             .Include(i => i.Sale)
             .Include(i => i.Product)
-            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= thirtyDaysAgo && i.Product.CostPrice.HasValue)
+            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= thirtyDaysAgo && i.Product.CostPrice.HasValue && (locId == null || i.Sale.LocationId == locId))
             .ToListAsync();
 
         return saleItems
@@ -895,6 +916,7 @@ public partial class ReportService : IReportService
     public async Task<List<StaffSalesDto>> GetStaffSalesAsync(Guid businessId, string? staffName, DateOnly? date)
     {
         var targetDate = date?.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc) ?? DateTime.UtcNow.Date;
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
         var query = _db.SaleItems
             .Include(i => i.Sale)
@@ -902,7 +924,8 @@ public partial class ReportService : IReportService
             .Where(i => i.Sale.BusinessId == businessId
                         && i.Sale.CreatedAtUtc >= targetDate
                         && i.Sale.CreatedAtUtc < targetDate.AddDays(1)
-                        && i.Sale.RecordedByName != null);
+                        && i.Sale.RecordedByName != null
+                        && (locId == null || i.Sale.LocationId == locId));
 
         if (!string.IsNullOrEmpty(staffName))
             query = query.Where(i => i.Sale.RecordedByName!.ToLower().Contains(staffName.ToLower()));

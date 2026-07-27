@@ -93,17 +93,18 @@ public partial class ReportService
         var thisMonthStart = new DateTime(anchor.Year, anchor.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         var nextMonthStart = thisMonthStart.AddMonths(1);
         var prevMonthStart = thisMonthStart.AddMonths(-1);
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
-        var (currentRev, currentCogs, _) = await ComputePnlSegmentAsync(businessId, thisMonthStart, nextMonthStart);
+        var (currentRev, currentCogs, _) = await ComputePnlSegmentAsync(businessId, thisMonthStart, nextMonthStart, locId);
         var currentOpex = await _db.Expenses
             .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= thisMonthStart && e.CreatedAtUtc < nextMonthStart
-                        && e.Category != "Inventory")
+                        && e.Category != "Inventory" && (locId == null || e.LocationId == locId))
             .SumAsync(e => e.Amount);
 
-        var (prevRev, prevCogs, _) = await ComputePnlSegmentAsync(businessId, prevMonthStart, thisMonthStart);
+        var (prevRev, prevCogs, _) = await ComputePnlSegmentAsync(businessId, prevMonthStart, thisMonthStart, locId);
         var prevOpex = await _db.Expenses
             .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= prevMonthStart && e.CreatedAtUtc < thisMonthStart
-                        && e.Category != "Inventory")
+                        && e.Category != "Inventory" && (locId == null || e.LocationId == locId))
             .SumAsync(e => e.Amount);
 
         var grossProfit = currentRev - currentCogs;
@@ -133,13 +134,14 @@ public partial class ReportService
         };
     }
 
-    private async Task<(decimal Revenue, decimal Cogs, int Count)> ComputePnlSegmentAsync(Guid businessId, DateTime startUtc, DateTime endUtc)
+    private async Task<(decimal Revenue, decimal Cogs, int Count)> ComputePnlSegmentAsync(Guid businessId, DateTime startUtc, DateTime endUtc, Guid? locId = null)
     {
         var saleItems = await _db.SaleItems
             .Include(si => si.Product)
             .Where(si => si.Sale.BusinessId == businessId
                          && si.Sale.CreatedAtUtc >= startUtc
-                         && si.Sale.CreatedAtUtc < endUtc)
+                         && si.Sale.CreatedAtUtc < endUtc
+                         && (locId == null || si.Sale.LocationId == locId))
             .ToListAsync();
 
         var revenue = saleItems.Sum(si => si.TotalPrice);
@@ -156,9 +158,10 @@ public partial class ReportService
         var anchor = month ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var start = new DateTime(anchor.Year, anchor.Month, 1, 0, 0, 0, DateTimeKind.Utc);
         var end = start.AddMonths(1);
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
         var expenses = await _db.Expenses
-            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= start && e.CreatedAtUtc < end)
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= start && e.CreatedAtUtc < end && (locId == null || e.LocationId == locId))
             .ToListAsync();
 
         var total = expenses.Sum(e => e.Amount);
@@ -257,10 +260,11 @@ public partial class ReportService
         limit = Math.Clamp(limit, 1, 100);
 
         var cutoff = DateTime.UtcNow.AddMonths(-12);
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
         var allSales = await _db.Sales
             .Include(s => s.Contact)
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= cutoff)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= cutoff && (locId == null || s.LocationId == locId))
             .ToListAsync();
 
         var total = allSales.Sum(s => s.TotalAmount);
@@ -297,9 +301,10 @@ public partial class ReportService
     {
         weeks = Math.Clamp(weeks, 1, 52);
         var cutoff = DateTime.UtcNow.AddDays(-weeks * 7);
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
         var sales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= cutoff)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= cutoff && (locId == null || s.LocationId == locId))
             .Select(s => new { s.CreatedAtUtc, s.TotalAmount })
             .ToListAsync();
 
@@ -347,13 +352,14 @@ public partial class ReportService
         var now = DateTime.UtcNow;
         var earliest = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(-(months - 1));
 
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
         var sales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= earliest)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= earliest && (locId == null || s.LocationId == locId))
             .Select(s => new { s.CreatedAtUtc, s.TotalAmount })
             .ToListAsync();
 
         var expenses = await _db.Expenses
-            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= earliest)
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= earliest && (locId == null || e.LocationId == locId))
             .Select(e => new { e.CreatedAtUtc, e.Amount })
             .ToListAsync();
 
@@ -388,8 +394,9 @@ public partial class ReportService
         var now = DateTime.UtcNow;
         var earliest = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(-(months - 1));
 
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
         var sales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= earliest)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= earliest && (locId == null || s.LocationId == locId))
             .Select(s => new { s.CreatedAtUtc, s.TotalAmount, s.PaymentMethod, s.PaymentStatus })
             .ToListAsync();
 
@@ -529,12 +536,14 @@ public partial class ReportService
     {
         days = Math.Clamp(days, 1, 365);
         var cutoff = DateTime.UtcNow.AddDays(-days);
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
         var damage = await _db.InventoryTransactions
             .Include(t => t.Product)
             .Where(t => t.BusinessId == businessId
                         && (t.Type == InventoryTransactionType.Damaged || t.Type == InventoryTransactionType.Wastage)
-                        && t.CreatedAtUtc >= cutoff)
+                        && t.CreatedAtUtc >= cutoff
+                        && (locId == null || t.LocationId == locId))
             .ToListAsync();
 
         decimal TotalLoss(InventoryTransaction t)
@@ -570,9 +579,10 @@ public partial class ReportService
     {
         months = Math.Clamp(months, 1, 24);
         var earliest = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(-(months - 1));
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
         var sales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= earliest)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= earliest && (locId == null || s.LocationId == locId))
             .Select(s => new { s.CreatedAtUtc, s.TotalAmount })
             .ToListAsync();
 
@@ -603,8 +613,10 @@ public partial class ReportService
         var earliest = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(-(months - 1));
 
         // Grab first-purchase dates per contact to classify "new" vs "returning" for each month in the window.
+        // Scoped per location: "first purchase" is relative to the selected location's sales.
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
         var allSales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.ContactId.HasValue)
+            .Where(s => s.BusinessId == businessId && s.ContactId.HasValue && (locId == null || s.LocationId == locId))
             .Select(s => new { s.ContactId, s.CreatedAtUtc, s.TotalAmount })
             .ToListAsync();
 
@@ -693,11 +705,12 @@ public partial class ReportService
     {
         limit = Math.Clamp(limit, 1, 50);
         var cutoff = DateTime.UtcNow.AddDays(-90);
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
         // Multi-item sales only — single-item sales contribute no pairs.
         var multiItemSales = await _db.Sales
             .Include(s => s.Items).ThenInclude(i => i.Product)
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= cutoff && s.Items.Count > 1)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= cutoff && s.Items.Count > 1 && (locId == null || s.LocationId == locId))
             .ToListAsync();
 
         var pairs = new Dictionary<(Guid, Guid), (int Count, decimal Revenue, string NameA, string NameB)>();
@@ -741,8 +754,9 @@ public partial class ReportService
     public async Task<WeeklySalesTrendDto> GetWeeklySalesTrendAsync(Guid businessId, int months)
     {
         var cutoff = DateTime.UtcNow.AddMonths(-months);
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
         var sales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= cutoff)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= cutoff && (locId == null || s.LocationId == locId))
             .Select(s => new { s.TotalAmount, s.CreatedAtUtc })
             .ToListAsync();
 
@@ -840,11 +854,12 @@ public partial class ReportService
             previousLabel = previousStart.ToString("MMMM yyyy");
         }
 
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
         var currentSales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= currentStart && s.CreatedAtUtc < currentEnd)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= currentStart && s.CreatedAtUtc < currentEnd && (locId == null || s.LocationId == locId))
             .ToListAsync();
         var previousSales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= previousStart && s.CreatedAtUtc < previousEnd)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= previousStart && s.CreatedAtUtc < previousEnd && (locId == null || s.LocationId == locId))
             .ToListAsync();
 
         var cr = currentSales.Sum(s => s.TotalAmount);
@@ -872,10 +887,11 @@ public partial class ReportService
     {
         days = Math.Clamp(days, 1, 365);
         var cutoff = DateTime.UtcNow.AddDays(-days);
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
         var items = await _db.SaleItems
             .Include(si => si.Product)
-            .Where(si => si.Sale.BusinessId == businessId && si.Sale.CreatedAtUtc >= cutoff)
+            .Where(si => si.Sale.BusinessId == businessId && si.Sale.CreatedAtUtc >= cutoff && (locId == null || si.Sale.LocationId == locId))
             .Select(si => new { Category = si.Product.Category, Revenue = si.TotalPrice, SaleId = si.SaleId })
             .ToListAsync();
 
@@ -971,14 +987,15 @@ public partial class ReportService
     {
         var now = DateTime.UtcNow;
         var fourWeeksAgo = now.Date.AddDays(-28);
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
         var sales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= fourWeeksAgo)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= fourWeeksAgo && (locId == null || s.LocationId == locId))
             .Select(s => new { s.CreatedAtUtc, s.TotalAmount })
             .ToListAsync();
 
         var expenses = await _db.Expenses
-            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= fourWeeksAgo)
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= fourWeeksAgo && (locId == null || e.LocationId == locId))
             .Select(e => new { e.CreatedAtUtc, e.Amount })
             .ToListAsync();
 
