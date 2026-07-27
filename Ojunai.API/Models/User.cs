@@ -52,6 +52,15 @@ public class User
     /// </summary>
     public string AlertChannel { get; set; } = Common.AlertChannels.None;
 
+    /// <summary>
+    /// Multi-location: the branch this user is currently "working at" over the WhatsApp/Telegram bot, set via
+    /// the "branches" command. The bot pins their bot-recorded sales/stock to this location. Null = no explicit
+    /// selection ⇒ the default location (single-location businesses ignore it entirely). For restricted staff
+    /// it's only honored if it's one of their assigned locations (enforced via LocationAccessService), so it
+    /// can't widen access. Additive — dashboard uses the per-request X-Location-Id header instead.
+    /// </summary>
+    public Guid? SelectedLocationId { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     public Business Business { get; set; } = null!;

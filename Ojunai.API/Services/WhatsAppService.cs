@@ -74,6 +74,12 @@ public class WhatsAppService : IWhatsAppService
         @"^(thanks|thank\s*you|thx|ty|much\s*appreciated|appreciated|gracias)[!\.\s]*$",
         System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
 
+    // Multi-location: a deterministic (off-Claude) trigger for the branch picker — "branches", "locations",
+    // "my branches", "switch branch", "which location", "change branch", etc.
+    private static readonly System.Text.RegularExpressions.Regex BranchCommandRegex = new(
+        @"^\s*(switch|change|list|show|view|see|my|which|what)?\s*(branch(es)?|location(s)?)\s*[\?!\.]*$",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
     /// <summary>
     /// If the message is an unambiguous greeting or thanks AND there's no pending question from the bot,
     /// returns a canned reply. Otherwise returns null so the caller falls through to Claude parsing.
@@ -256,6 +262,7 @@ public class WhatsAppService : IWhatsAppService
     private readonly IReportService _reports;
     private readonly IStockHoldService _holds;
     private readonly PlanGuard _planGuard;
+    private readonly LocationAccessService _access;
     private readonly IServiceProvider _serviceProvider;
     private readonly IConfiguration _config;
     private readonly IUsageService _usage;
@@ -274,6 +281,7 @@ public class WhatsAppService : IWhatsAppService
         IReportService reports,
         IStockHoldService holds,
         PlanGuard planGuard,
+        LocationAccessService access,
         IServiceProvider serviceProvider,
         IConfiguration config,
         IUsageService usage,
@@ -291,6 +299,7 @@ public class WhatsAppService : IWhatsAppService
         _reports = reports;
         _holds = holds;
         _planGuard = planGuard;
+        _access = access;
         _serviceProvider = serviceProvider;
         _config = config;
         _usage = usage;
@@ -373,6 +382,14 @@ public class WhatsAppService : IWhatsAppService
         // Attribute any auditable action taken in this bot scope to the sender, via WhatsApp.
         // (Telegram/Messenger set their own actor before delegating to this service.)
         _currentActor.Set(user.Id, user.FullName, "whatsapp");
+
+        // Multi-location: pin this sender's bot-recorded sales/stock to their effective location (the same
+        // ambient LocationScope the dashboard uses). Owner/Admin → the branch they picked via "branches"
+        // (null = default); restricted staff → their assigned branch regardless of what they picked (can't
+        // widen access). Single-location businesses resolve to null ⇒ default location, byte-for-byte
+        // unchanged. Cleared in the finally below so it never leaks across pooled Hangfire threads.
+        LocationScope.Current = await _access.ResolveEffectiveLocationAsync(
+            user.BusinessId, user.Id, user.Role, user.SelectedLocationId);
 
         // ── WhatsApp paywall gate ─────────────────────────────────────────────
         // Phase 2.5 introduced WhatsApp packs as a paid add-on. This gate enforces the
@@ -512,6 +529,18 @@ public class WhatsAppService : IWhatsAppService
             return;
         }
 
+        // Multi-location: "branches"/"locations" — list the sender's branches and let them switch. Deterministic
+        // and off the paid Claude path. Single-location / unentitled businesses get a friendly one-liner.
+        if (BranchCommandRegex.IsMatch(text))
+        {
+            var picker = await BuildBranchPickerAsync(user);
+            await SendMessageAsync(from, picker, user.BusinessId, user.Id);
+            log.ProcessingStatus = MessageProcessingStatus.Executed;
+            log.ParsedIntent = "list_locations";
+            await _db.SaveChangesAsync();
+            return;
+        }
+
         // Check for a pending action — a prior message where the bot asked for specific info that wasn't
         // provided. If the user's reply is an explicit cancellation, abandon it. Otherwise the pending
         // action is passed to Claude as extra context so it can merge the answer into the partial payload.
@@ -553,6 +582,23 @@ public class WhatsAppService : IWhatsAppService
                 }
                 await _db.SaveChangesAsync();
                 return;
+            }
+
+            // Multi-location: a reply to the branch picker (a number, or a branch name) switches branch.
+            if (pending.Intent == "select_location")
+            {
+                var selReply = await TryApplyBranchSelectionAsync(user, trimmedText, pending);
+                if (selReply != null)
+                {
+                    await SendMessageAsync(from, selReply, user.BusinessId, user.Id);
+                    log.ProcessingStatus = MessageProcessingStatus.Executed;
+                    log.ParsedIntent = "select_location";
+                    await _db.SaveChangesAsync();
+                    return;
+                }
+                // Unrecognized reply → abandon the picker and treat this message as a fresh request below.
+                await ClearPendingActionAsync(user.BusinessId, user.Id);
+                pending = null;
             }
         }
 
@@ -694,8 +740,91 @@ public class WhatsAppService : IWhatsAppService
         } // end try (phoneLock)
         finally
         {
+            LocationScope.Current = null; // never leak the bot's location scope across pooled Hangfire threads
             phoneLock.Release();
         }
+    }
+
+    // ── Multi-location branch switching (bot) ─────────────────────────────────────────────────────────
+    private sealed record BranchOption(Guid Id, string Name);
+
+    /// <summary>
+    /// Build the "branches" reply: a numbered picker of the sender's accessible locations (their current one
+    /// marked), stashed as a <c>select_location</c> pending action so a numeric/name reply resolves it without
+    /// hitting Claude. Friendly one-liner for single-location / unentitled businesses and for staff who can
+    /// reach only one branch (they're already pinned there).
+    /// </summary>
+    private async Task<string> BuildBranchPickerAsync(User user)
+    {
+        if (!await _planGuard.CanUseMultiLocationAsync(user.BusinessId))
+            return "📍 You're running a single location, so there's nothing to switch. Multi-location is available on the *Scale* plan (or as an add-on).";
+
+        var accessibleIds = await _access.AccessibleLocationIdsAsync(user.BusinessId, user.Id, user.Role);
+        var locations = await _db.Locations
+            .Where(l => l.BusinessId == user.BusinessId && l.IsActive && accessibleIds.Contains(l.Id))
+            .OrderByDescending(l => l.IsDefault).ThenBy(l => l.CreatedAtUtc)
+            .Select(l => new { l.Id, l.Name })
+            .ToListAsync();
+
+        if (locations.Count <= 1)
+        {
+            var only = locations.FirstOrDefault();
+            return only == null
+                ? "📍 You don't have any active locations yet."
+                : $"📍 You're set up at *{only.Name}*. All your entries go there.";
+        }
+
+        // Mark the branch the sender is currently effectively recording to.
+        var current = await _access.ResolveEffectiveLocationAsync(user.BusinessId, user.Id, user.Role, user.SelectedLocationId);
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append("📍 *Your branches* — reply with a number to switch:\n\n");
+        for (int i = 0; i < locations.Count; i++)
+            sb.Append($"{i + 1}. {locations[i].Name}{(locations[i].Id == current ? " ✅ (current)" : "")}\n");
+        sb.Append("\nEverything you record (sales, stock) goes to the branch you pick, until you switch again.");
+
+        var payload = JsonSerializer.Serialize(locations.Select(l => new { l.Id, l.Name }));
+        await SetPendingActionAsync(user.BusinessId, user.Id, "select_location", payload, "locationChoice",
+            "Which branch? Reply with the number.");
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Resolve a reply to the branch picker — a 1-based number, or a branch name (case-insensitive, prefix ok).
+    /// Persists <see cref="User.SelectedLocationId"/> and confirms. Returns a re-prompt for an out-of-range
+    /// number, or null when the reply isn't a recognizable choice (the caller then treats it as a fresh request).
+    /// </summary>
+    private async Task<string?> TryApplyBranchSelectionAsync(User user, string reply, PendingAction pending)
+    {
+        List<BranchOption>? options;
+        try { options = JsonSerializer.Deserialize<List<BranchOption>>(pending.PartialPayloadJson); }
+        catch { options = null; }
+        if (options == null || options.Count == 0) return null;
+
+        BranchOption? chosen;
+        var r = reply.Trim();
+        if (int.TryParse(r, out var n))
+        {
+            if (n < 1 || n > options.Count)
+                return $"That's not one of the options. Reply with a number between 1 and {options.Count}.";
+            chosen = options[n - 1];
+        }
+        else
+        {
+            chosen = options.FirstOrDefault(o => string.Equals(o.Name, r, StringComparison.OrdinalIgnoreCase))
+                  ?? options.FirstOrDefault(o => o.Name.StartsWith(r, StringComparison.OrdinalIgnoreCase));
+        }
+        if (chosen == null) return null; // not a recognizable choice → caller treats the message as a fresh request
+
+        // Defense-in-depth: confirm the chosen branch is actually accessible (guards a stale/foreign payload).
+        var effective = await _access.ResolveEffectiveLocationAsync(user.BusinessId, user.Id, user.Role, chosen.Id);
+        if (effective != chosen.Id)
+            return "Sorry, you don't have access to that branch. Reply *branches* to see your options.";
+
+        user.SelectedLocationId = chosen.Id; // user is tracked by _db (loaded in HandleInboundAsync)
+        await ClearPendingActionAsync(user.BusinessId, user.Id); // persists the pending removal + the user change
+        return $"✅ Switched to *{chosen.Name}*. Your sales & stock entries go here now. Reply *branches* anytime to switch.";
     }
 
     private async Task CheckAndSendAlertsAsync(string to, User user)
@@ -3002,6 +3131,7 @@ public class WhatsAppService : IWhatsAppService
         "📥 *Bulk restock:* \"Bought 10 rice, 5 juice, 3 shampoo\"\n" +
         "🛒 *Multi-sale:* \"Sold 3 rice and 2 beans at 5k each\"\n" +
         "✏️ *Corrections:* \"Cancel that\" / \"That was on credit\" / \"Add Ama to that\"\n" +
+        "📍 *Branches:* \"Branches\" to see your locations & switch which one you're recording to\n" +
         "📋 *Plans:* \"What plan am I on?\" / \"Plans\"\n\n" +
         "💡 *Tip:* Do multiple things at once!\n" +
         "\"Bought 3 yam at 2k, sold 2 toothpaste at 5k, NEPA bill 10k\"";
