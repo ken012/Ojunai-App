@@ -171,6 +171,11 @@ public class InventoryService : IInventoryService
             .Include(t => t.Product)
             .Where(t => t.BusinessId == businessId);
 
+        // When a location is selected (multi-location), show only that location's stock movements. Pre-existing
+        // movements have a null LocationId and surface only under "All locations".
+        if (await _locStock.SelectedLocationForAsync(businessId) is { } locId)
+            query = query.Where(t => t.LocationId == locId);
+
         if (productId.HasValue)
             query = query.Where(t => t.ProductId == productId.Value);
 

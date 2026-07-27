@@ -1,6 +1,6 @@
 namespace Ojunai.API.Models;
 
-public class LedgerEntry
+public class LedgerEntry : ILocationScoped
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid BusinessId { get; set; }

@@ -17,11 +17,13 @@ public class PurchaseOrderService : IPurchaseOrderService
 {
     private readonly AppDbContext _db;
     private readonly IActivityLogger _activity;
+    private readonly LocationStockService _locStock;
 
-    public PurchaseOrderService(AppDbContext db, IActivityLogger activity)
+    public PurchaseOrderService(AppDbContext db, IActivityLogger activity, LocationStockService locStock)
     {
         _db = db;
         _activity = activity;
+        _locStock = locStock;
     }
 
     public async Task<PurchaseOrderDto> CreateAsync(Guid businessId, CreatePurchaseOrderRequest request, Guid? userId, string? userName)
@@ -69,6 +71,10 @@ public class PurchaseOrderService : IPurchaseOrderService
     public async Task<PaginatedResult<PurchaseOrderDto>> ListAsync(Guid businessId, string? status, int page, int pageSize)
     {
         var query = _db.PurchaseOrders.Include(p => p.Items).Where(p => p.BusinessId == businessId);
+
+        // Scope to the selected location (multi-location); pre-existing POs (null LocationId) show under "All".
+        if (await _locStock.SelectedLocationForAsync(businessId) is { } locId)
+            query = query.Where(p => p.LocationId == locId);
 
         if (!string.IsNullOrWhiteSpace(status) && status != "all"
             && Enum.TryParse<PurchaseOrderStatus>(status, ignoreCase: true, out var st))

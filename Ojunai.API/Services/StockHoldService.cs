@@ -12,11 +12,13 @@ public class StockHoldService : IStockHoldService
 {
     private readonly AppDbContext _db;
     private readonly ISalesService _sales;
+    private readonly LocationStockService _locStock;
 
-    public StockHoldService(AppDbContext db, ISalesService sales)
+    public StockHoldService(AppDbContext db, ISalesService sales, LocationStockService locStock)
     {
         _db = db;
         _sales = sales;
+        _locStock = locStock;
     }
 
     public async Task<StockHoldDto> CreateHoldAsync(Guid businessId, Guid productId, string contactName, decimal quantity, string? notes = null, string source = "Manual")
@@ -121,9 +123,13 @@ public class StockHoldService : IStockHoldService
 
     public async Task<List<StockHoldDto>> GetActiveHoldsAsync(Guid businessId)
     {
-        return await _db.Set<StockHold>()
+        var activeQuery = _db.Set<StockHold>()
             .Include(h => h.Product)
-            .Where(h => h.BusinessId == businessId && h.Status == HoldStatus.Active)
+            .Where(h => h.BusinessId == businessId && h.Status == HoldStatus.Active);
+        // Scope to the selected location (multi-location); pre-existing holds (null LocationId) show under "All".
+        if (await _locStock.SelectedLocationForAsync(businessId) is { } activeLocId)
+            activeQuery = activeQuery.Where(h => h.LocationId == activeLocId);
+        return await activeQuery
             .OrderByDescending(h => h.CreatedAtUtc)
             .Select(h => new StockHoldDto
             {
@@ -146,6 +152,10 @@ public class StockHoldService : IStockHoldService
         var query = _db.Set<StockHold>()
             .Include(h => h.Product)
             .Where(h => h.BusinessId == businessId);
+
+        // Scope to the selected location (multi-location); pre-existing holds (null LocationId) show under "All".
+        if (await _locStock.SelectedLocationForAsync(businessId) is { } locId)
+            query = query.Where(h => h.LocationId == locId);
 
         if (!string.IsNullOrEmpty(status) && Enum.TryParse<HoldStatus>(status, true, out var hs))
             query = query.Where(h => h.Status == hs);

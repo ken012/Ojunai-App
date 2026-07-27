@@ -735,14 +735,56 @@ public class AppDbContext : DbContext
     {
         // No SynchronizationContext under ASP.NET Core → GetResult() is deadlock-safe. The only sync
         // SaveChanges caller is admin audit logging (no Product/Business changes), so this no-ops there.
+        StampLocationScopedEntitiesAsync(CancellationToken.None).GetAwaiter().GetResult();
         MirrorMultiLocationAsync(CancellationToken.None).GetAwaiter().GetResult();
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
+        await StampLocationScopedEntitiesAsync(cancellationToken);
         await MirrorMultiLocationAsync(cancellationToken);
         return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    /// <summary>
+    /// Multi-location attribution: stamp <see cref="ILocationScoped"/> rows being INSERTED with the ambient
+    /// selected location — but ONLY when the business is genuinely multi-location (&gt;1 active location) and
+    /// the selected location is one of its active ones. Exactly the <c>SelectedLocationForAsync</c> gate, so
+    /// single-location businesses, "All locations", and bot/background saves leave LocationId null =
+    /// business-wide, byte-for-byte as before. Best-effort: attribution is a convenience, never a reason to
+    /// break a primary save — any failure leaves rows unstamped (null = business-wide, the safe fallback).
+    /// Runs before base.SaveChanges so the value rides the INSERT. Only touches rows whose LocationId is still
+    /// null, so anything a service stamped explicitly (Sale/Expense) is left as-is.
+    /// </summary>
+    private async Task StampLocationScopedEntitiesAsync(CancellationToken ct)
+    {
+        try
+        {
+            if (LocationScope.Current is not { } ambient) return; // nothing selected → business-wide, unchanged
+
+            var pending = ChangeTracker.Entries<ILocationScoped>()
+                .Where(e => e.State == EntityState.Added && e.Entity.LocationId == null && e.Entity.BusinessId != Guid.Empty)
+                .Select(e => e.Entity)
+                .ToList();
+            if (pending.Count == 0) return;
+
+            var bizIds = pending.Select(e => e.BusinessId).Distinct().ToList();
+            var activeByBiz = (await Locations
+                    .Where(l => bizIds.Contains(l.BusinessId) && l.IsActive)
+                    .Select(l => new { l.BusinessId, l.Id })
+                    .ToListAsync(ct))
+                .GroupBy(x => x.BusinessId)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.Id).ToHashSet());
+
+            foreach (var e in pending)
+                if (activeByBiz.TryGetValue(e.BusinessId, out var ids) && ids.Count > 1 && ids.Contains(ambient))
+                    e.LocationId = ambient;
+        }
+        catch
+        {
+            // Best-effort — see summary. Unstamped rows fall back to business-wide (null), never a broken save.
+        }
     }
 
     private async Task MirrorMultiLocationAsync(CancellationToken ct)

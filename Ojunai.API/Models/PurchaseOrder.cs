@@ -6,7 +6,7 @@ namespace Ojunai.API.Models;
 /// (if a supplier is set) creates a payable ledger entry — atomically. Additive feature; nothing
 /// else in the system depends on it.
 /// </summary>
-public class PurchaseOrder
+public class PurchaseOrder : ILocationScoped
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid BusinessId { get; set; }

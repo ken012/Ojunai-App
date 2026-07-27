@@ -71,6 +71,10 @@ public class StocktakeService : IStocktakeService
     {
         var query = _db.Stocktakes.Include(s => s.Items).Where(s => s.BusinessId == businessId);
 
+        // Scope to the selected location (multi-location); pre-existing counts (null LocationId) show under "All".
+        if (await _locStock.SelectedLocationForAsync(businessId) is { } locId)
+            query = query.Where(s => s.LocationId == locId);
+
         if (!string.IsNullOrWhiteSpace(status) && status != "all"
             && Enum.TryParse<StocktakeStatus>(status, ignoreCase: true, out var st))
             query = query.Where(s => s.Status == st);

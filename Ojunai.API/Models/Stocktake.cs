@@ -6,7 +6,7 @@ namespace Ojunai.API.Models;
 /// quantity via an Adjustment inventory transaction (same mechanic as a manual adjust — just batched
 /// and auditable). Additive feature; the only stock mutation happens on Complete, transactionally.
 /// </summary>
-public class Stocktake
+public class Stocktake : ILocationScoped
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid BusinessId { get; set; }

@@ -1,6 +1,6 @@
 namespace Ojunai.API.Models;
 
-public class InventoryTransaction
+public class InventoryTransaction : ILocationScoped
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid BusinessId { get; set; }
