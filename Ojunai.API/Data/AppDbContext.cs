@@ -598,7 +598,8 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.BusinessId, x.LocationId });
             e.Property(x => x.CurrentStock).HasPrecision(18, 4);
             e.Property(x => x.LowStockThreshold).HasPrecision(18, 4);
-            e.Property(x => x.Version).IsRowVersion();
+            // No rowversion in Phase 1 — see ProductLocationStock.cs; the mirror is last-write-wins so it
+            // can never fail a primary save with a concurrency exception.
             e.ToTable(t => t.HasCheckConstraint("CK_ProductLocationStock_CurrentStock_NonNegative", "\"CurrentStock\" >= 0"));
             e.HasOne(x => x.Product)
              .WithMany()
@@ -713,5 +714,127 @@ public class AppDbContext : DbContext
             // Email is normalized lowercase at write time — a plain unique index is enough.
             e.HasIndex(x => x.Email).IsUnique();
         });
+    }
+
+    // ── Multi-location dual-write (Phase 1) ──────────────────────────────────────
+    // Best-effort mirror of Product.CurrentStock into the default-location ProductLocationStock, plus a
+    // default "Main" Location for every new Business. Product.CurrentStock stays the AUTHORITATIVE source
+    // for every read (nothing reads ProductLocationStock yet — Phase 2 flips that); this just keeps the
+    // per-location rows in sync FROM Phase 1 on, so the Phase 2 read-cutover is race-free. Single-location
+    // today (location creation is Phase 2), so a product's one PLS row mirrors its CurrentStock — except a
+    // product whose business isn't backfilled yet (DefaultLocationId still null) is skipped, which the
+    // backfill/reconciliation later repairs.
+    //
+    // CRITICAL — the mirror can NEVER break the primary save: it reads/computes first (guarded by
+    // try/catch, touching the context via reads only), then applies pure in-memory changes that cannot
+    // throw. On ANY failure it skips silently — the worst case is ProductLocationStock drift, which the
+    // idempotent backfill/reconciliation (scripts/backfill-multi-location.sql) detects and repairs.
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        // No SynchronizationContext under ASP.NET Core → GetResult() is deadlock-safe. The only sync
+        // SaveChanges caller is admin audit logging (no Product/Business changes), so this no-ops there.
+        MirrorMultiLocationAsync(CancellationToken.None).GetAwaiter().GetResult();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        await MirrorMultiLocationAsync(cancellationToken);
+        return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private async Task MirrorMultiLocationAsync(CancellationToken ct)
+    {
+        var newLocations = new List<(Business biz, Location loc)>();
+        var stockToAdd = new List<ProductLocationStock>();
+        var stockToUpdate = new List<(ProductLocationStock pls, decimal newStock)>();
+        try
+        {
+            // New businesses get a default "Main" location (receipt counter/prefix seeded from the business).
+            foreach (var b in ChangeTracker.Entries<Business>()
+                         .Where(e => e.State == EntityState.Added && e.Entity.DefaultLocationId == null)
+                         .Select(e => e.Entity))
+            {
+                newLocations.Add((b, new Location
+                {
+                    BusinessId = b.Id, Name = "Main", Type = "branch", IsDefault = true, IsActive = true,
+                    NextReceiptNumber = b.NextReceiptNumber, ReceiptPrefix = b.ReceiptPrefix,
+                }));
+            }
+            var pendingBizDefault = newLocations.ToDictionary(x => x.biz.Id, x => (Guid?)x.loc.Id);
+
+            // Products that were added, or whose CurrentStock changed, mirror into their default location.
+            var products = ChangeTracker.Entries<Product>()
+                .Where(e => e.State == EntityState.Added
+                    || (e.State == EntityState.Modified && e.Property(p => p.CurrentStock).IsModified))
+                .Select(e => e.Entity)
+                .ToList();
+            if (products.Count == 0 && newLocations.Count == 0) return;
+
+            // Batch-resolve default locations for the involved existing businesses (one query).
+            var existingBizIds = products.Select(p => p.BusinessId).Distinct()
+                .Where(id => !pendingBizDefault.ContainsKey(id)).ToList();
+            var dbDefaults = existingBizIds.Count == 0
+                ? new Dictionary<Guid, Guid?>()
+                : await Businesses.Where(b => existingBizIds.Contains(b.Id))
+                    .Select(b => new { b.Id, b.DefaultLocationId })
+                    .ToDictionaryAsync(x => x.Id, x => x.DefaultLocationId, ct);
+
+            // Batch-load existing per-location stock rows for the involved products (one query).
+            var productIds = products.Select(p => p.Id).ToList();
+            var existing = productIds.Count == 0
+                ? new List<ProductLocationStock>()
+                : await ProductLocationStocks.Where(x => productIds.Contains(x.ProductId)).ToListAsync(ct);
+            var byKey = existing.ToDictionary(x => (x.ProductId, x.LocationId));
+            foreach (var pls in ProductLocationStocks.Local) byKey.TryAdd((pls.ProductId, pls.LocationId), pls);
+
+            foreach (var p in products)
+            {
+                var locationId = pendingBizDefault.TryGetValue(p.BusinessId, out var pend)
+                    ? pend
+                    : (dbDefaults.TryGetValue(p.BusinessId, out var d) ? d : null);
+                if (locationId is not { } locId) continue; // business not backfilled → skip (drift-tolerant)
+
+                if (byKey.TryGetValue((p.Id, locId), out var row))
+                {
+                    stockToUpdate.Add((row, p.CurrentStock));
+                }
+                else
+                {
+                    var added = new ProductLocationStock
+                    {
+                        BusinessId = p.BusinessId, ProductId = p.Id, LocationId = locId, CurrentStock = p.CurrentStock,
+                    };
+                    stockToAdd.Add(added);
+                    byKey[(p.Id, locId)] = added; // guard against a duplicate within this same save
+                }
+            }
+        }
+        catch
+        {
+            // Best-effort: never let the mirror break the primary save. Phase B below has not run, so the
+            // change tracker holds no mirror mutations — the primary save proceeds untouched.
+            return;
+        }
+
+        // Apply. Structurally non-throwing (fresh Guid Ids can't collide with tracked entities; the
+        // per-(product,location) dedup above prevents duplicate adds; setting a property is total). Still
+        // wrapped defensively so that even an impossible failure fully detaches the mirror's own additions
+        // and reverts the DefaultLocationId it set — the caller's primary save is never corrupted.
+        try
+        {
+            foreach (var (biz, loc) in newLocations) { Locations.Add(loc); biz.DefaultLocationId = loc.Id; }
+            foreach (var pls in stockToAdd) ProductLocationStocks.Add(pls);
+            foreach (var (pls, newStock) in stockToUpdate) pls.CurrentStock = newStock;
+        }
+        catch
+        {
+            foreach (var en in ChangeTracker.Entries<ProductLocationStock>().Where(en => en.State == EntityState.Added).ToList())
+                en.State = EntityState.Detached;
+            foreach (var en in ChangeTracker.Entries<Location>().Where(en => en.State == EntityState.Added).ToList())
+                en.State = EntityState.Detached;
+            foreach (var (biz, _) in newLocations) biz.DefaultLocationId = null;
+        }
     }
 }

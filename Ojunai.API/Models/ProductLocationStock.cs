@@ -19,8 +19,11 @@ public class ProductLocationStock
     /// <summary>Per-location override; null falls back to <see cref="Product.LowStockThreshold"/>.</summary>
     public decimal? LowStockThreshold { get; set; }
 
-    /// <summary>Optimistic-concurrency token, mirroring <see cref="Product.Version"/>.</summary>
-    public uint Version { get; set; }
+    // NOTE: intentionally NO optimistic-concurrency token in Phase 1. This row is a passive mirror of the
+    // authoritative Product.CurrentStock (whose own rowversion already serializes concurrent stock writes),
+    // so the mirror's update is last-write-wins and can never throw DbUpdateConcurrencyException — keeping
+    // the best-effort dual-write from ever failing a primary sale/inventory operation. Phase 2, when the
+    // per-location row becomes independently authoritative, adds proper concurrency control here.
 
     public Product Product { get; set; } = null!;
     public Location Location { get; set; } = null!;
