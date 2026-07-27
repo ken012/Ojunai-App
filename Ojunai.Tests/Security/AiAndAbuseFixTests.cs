@@ -26,6 +26,39 @@ public class AiAndAbuseFixTests
         Assert.NotNull(DestructiveIntentGuard.DescribeIfDestructive(intent, Payload(json)));
     }
 
+    // ── N-2 (2026-07-15): bulk zero-out via items[] must require confirmation ─────────────────────
+    // The guard previously only inspected the zeroAll flag, but remove_inventory's items[] handler
+    // zeroes the full stock of every listed product. "zero out rice, beans, oil" parses to an items[]
+    // array with NO zeroAll, so it wiped stock for every product with no confirmation.
+
+    [Theory]
+    [InlineData("{\"items\":[{\"productName\":\"rice\",\"zeroOut\":\"true\"},{\"productName\":\"beans\",\"zeroOut\":\"true\"}]}")]
+    [InlineData("{\"items\":[{\"productName\":\"rice\"},{\"productName\":\"beans\"},{\"productName\":\"oil\"}]}")]
+    public void RemoveInventory_ItemsArray_RequiresConfirmation(string json)
+    {
+        Assert.True(DestructiveIntentGuard.RequiresConfirmation("remove_inventory", Payload(json)));
+        var desc = DestructiveIntentGuard.DescribeIfDestructive("remove_inventory", Payload(json));
+        Assert.NotNull(desc);
+        Assert.Contains("zero", desc);
+    }
+
+    [Fact]
+    public void BatchAction_WithItemsZeroOutSubAction_RequiresConfirmation()
+    {
+        // Same bypass smuggled inside a batch must also be caught by the batch recursion.
+        var json = "{\"complete\":[{\"intent\":\"create_sale\",\"items\":[]},"
+                 + "{\"intent\":\"remove_inventory\",\"items\":[{\"productName\":\"rice\"},{\"productName\":\"beans\"}]}]}";
+        Assert.True(DestructiveIntentGuard.RequiresConfirmation("batch_action", Payload(json)));
+    }
+
+    [Theory]
+    [InlineData("{\"productName\":\"rice\",\"quantity\":\"5\"}")]  // single partial removal — NOT gated
+    [InlineData("{\"items\":[]}")]                                    // empty items — NOT gated
+    public void RemoveInventory_SingleOrEmpty_DoesNotRequireConfirmation(string json)
+    {
+        Assert.False(DestructiveIntentGuard.RequiresConfirmation("remove_inventory", Payload(json)));
+    }
+
     // ── OJ-13: add_staff must require confirmation and echo who/role ─────────────────────────────
 
     [Fact]

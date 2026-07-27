@@ -838,6 +838,7 @@ public class WhatsAppService : IWhatsAppService
         ["add_inventory"] = Permission.ManageStock,
         ["remove_inventory"] = Permission.ManageStock,
         ["mark_damaged_inventory"] = Permission.ManageStock,
+        ["create_contact"] = Permission.ManageDebts,
         ["create_receivable"] = Permission.ManageDebts,
         ["create_payable"] = Permission.ManageDebts,
         ["record_receivable_payment"] = Permission.ManageDebts,

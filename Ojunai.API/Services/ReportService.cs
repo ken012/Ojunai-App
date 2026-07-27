@@ -421,6 +421,13 @@ public partial class ReportService : IReportService
         var cs = BillingConfig.Symbol(business?.Currency);
         var activities = new List<ActivityFeedDto>();
 
+        // Bound each source query so a single feed request (default view supplies no date filter) can't
+        // drag a high-volume tenant's ENTIRE history into memory and OOM the shared process (N-6). Each
+        // source is already ordered newest-first, so this keeps the most recent rows — far more than any
+        // realistic page depth. Deep historical paging beyond this window requires a date filter, which
+        // is pushed into SQL above. The audit-actions source already caps at 500.
+        const int MaxRowsPerSource = 2000;
+
         // Date window pushed into each SQL query so a date-filtered feed view doesn't drag the
         // business's entire history into memory. These mirror the exact in-memory bounds applied
         // below (which remain the authoritative arbiter), so the SQL prefilter is only ever a
@@ -458,6 +465,7 @@ public partial class ReportService : IReportService
                 salesQ = salesQ.Where(s => s.CreatedAtUtc < hi.Value || (s.DeletedAtUtc != null && s.DeletedAtUtc < hi.Value));
             var salesRaw = await salesQ
                 .OrderByDescending(s => s.CreatedAtUtc)
+                .Take(MaxRowsPerSource)
                 .ToListAsync();
 
             foreach (var s in salesRaw)
@@ -520,6 +528,7 @@ public partial class ReportService : IReportService
             if (hi.HasValue) expensesQ = expensesQ.Where(e => e.CreatedAtUtc < hi.Value);
             var expenses = await expensesQ
                 .OrderByDescending(e => e.CreatedAtUtc)
+                .Take(MaxRowsPerSource)
                 .ToListAsync();
 
             activities.AddRange(expenses.Select(e => new ActivityFeedDto
@@ -547,6 +556,7 @@ public partial class ReportService : IReportService
             if (hi.HasValue) inventoryQ = inventoryQ.Where(t => t.CreatedAtUtc < hi.Value);
             var inventory = await inventoryQ
                 .OrderByDescending(t => t.CreatedAtUtc)
+                .Take(MaxRowsPerSource)
                 .ToListAsync();
 
             activities.AddRange(inventory.Select(t => new ActivityFeedDto
@@ -580,6 +590,7 @@ public partial class ReportService : IReportService
             if (hi.HasValue) ledgerQ = ledgerQ.Where(e => e.CreatedAtUtc < hi.Value);
             var ledgerRaw = await ledgerQ
                 .OrderByDescending(e => e.CreatedAtUtc)
+                .Take(MaxRowsPerSource)
                 .ToListAsync();
 
             foreach (var e in ledgerRaw)

@@ -31,6 +31,31 @@ public static class DestructiveIntentGuard
                 ? el.GetString()
                 : null;
 
+        // The product names carried by a non-empty `items[]` array, or null when absent/empty.
+        // remove_inventory's items[] handler zeroes the FULL current stock of every listed product
+        // unconditionally (WhatsAppService HandleRemoveInventoryAsync), so any non-empty items[] under
+        // remove_inventory is a bulk irreversible wipe — regardless of whether each element also
+        // carries zeroOut:"true". Confirmation must key off the destructive EFFECT (the array), not a
+        // single flag the model may or may not include.
+        List<string>? ItemNames()
+        {
+            if (ba.ValueKind != JsonValueKind.Object
+                || !ba.TryGetProperty("items", out var items)
+                || items.ValueKind != JsonValueKind.Array
+                || items.GetArrayLength() == 0)
+                return null;
+            var names = new List<string>();
+            foreach (var it in items.EnumerateArray())
+            {
+                if (it.ValueKind == JsonValueKind.Object
+                    && it.TryGetProperty("productName", out var pn)
+                    && pn.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(pn.GetString()))
+                    names.Add(pn.GetString()!);
+            }
+            return names.Count > 0 ? names : new List<string> { "the listed products" };
+        }
+
         switch (intent)
         {
             // A batch_action wraps sub-actions in its "complete" array; each element is itself the
@@ -64,8 +89,20 @@ public static class DestructiveIntentGuard
                 return "permanently delete ALL products from your catalogue";
             case "delete_product" when !string.IsNullOrWhiteSpace(Str("deleteCategory")):
                 return $"permanently delete ALL products in the \"{Str("deleteCategory")}\" category";
+
             case "remove_inventory" when Flag("zeroAll"):
                 return "set the stock of EVERY product to zero";
+            // Bulk zero-out via items[] — the confirmation-gate bypass (N-2, HIGH). The guard previously
+            // only inspected the zeroAll flag, but remove_inventory's items[] handler zeroes the FULL
+            // current stock of every listed product unconditionally, so "zero out rice, beans, oil"
+            // (parsed to an items[] array with no zeroAll) wiped every listed product's stock with no
+            // confirmation. This closes that hole while leaving single-product removals ungated, matching
+            // the established product decision that only BULK operations are confirmed.
+            case "remove_inventory" when ItemNames() is { Count: > 0 } names:
+                return names.Count <= 6
+                    ? $"set the stock of these {names.Count} products to zero: {string.Join(", ", names)}"
+                    : $"set the stock of these {names.Count} products to zero";
+
             case "record_receivable_payment" when Flag("clearAllDebts"):
                 return "clear ALL customer debts (mark every customer as fully paid)";
             case "record_payable_payment" when Flag("clearAllDebts"):

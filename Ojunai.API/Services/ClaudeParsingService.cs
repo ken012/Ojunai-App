@@ -301,10 +301,15 @@ public class ClaudeParsingService : IClaudeParsingService
         return doc.RootElement.Clone();
     }
 
-    internal static string SanitizeForPrompt(string? input)
+    internal static string SanitizeForPrompt(string? input) => SanitizeForPrompt(input, 100);
+
+    // maxLen is a parameter because short catalogue/contact names fit comfortably in 100 chars, but the
+    // pending-action PartialPayloadJson (a serialized prior intent) legitimately runs longer and would be
+    // corrupted by a 100-char clip. The character-stripping fence/header defense is identical either way.
+    internal static string SanitizeForPrompt(string? input, int maxLen)
     {
         if (string.IsNullOrEmpty(input)) return "";
-        var sb = new System.Text.StringBuilder(Math.Min(input.Length, 100));
+        var sb = new System.Text.StringBuilder(Math.Min(input.Length, maxLen));
         foreach (var c in input)
         {
             if (char.IsControl(c)
@@ -318,7 +323,7 @@ public class ClaudeParsingService : IClaudeParsingService
             if (c is '[' or ']' || (c >= '\u2500' && c <= '\u257F'))
                 continue;
             sb.Append(c);
-            if (sb.Length >= 100) break;
+            if (sb.Length >= maxLen) break;
         }
         return sb.ToString();
     }
@@ -346,10 +351,10 @@ public class ClaudeParsingService : IClaudeParsingService
 ═══════════════════════════════════════════════════
 PENDING ACTION (authoritative context)
 ═══════════════════════════════════════════════════
-You previously asked the user: "{{context.PendingAction.QuestionText}}"
+You previously asked the user: "{{SanitizeForPrompt(context.PendingAction.QuestionText, 300)}}"
 You are waiting on: {{context.PendingAction.AwaitingField}}
 Partial intent: {{context.PendingAction.Intent}}
-Partial payload: {{context.PendingAction.PartialPayloadJson}}
+Partial payload: {{SanitizeForPrompt(context.PendingAction.PartialPayloadJson, 2000)}}
 
 RULES FOR HANDLING THIS REPLY:
 1. If the user's reply provides the awaiting field (e.g. a number when awaiting a price, a name when awaiting a customer), emit the FULL {{context.PendingAction.Intent}} intent with the partial payload merged with the new value. Confidence >= 0.95.

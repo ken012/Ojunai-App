@@ -43,6 +43,31 @@ public class SecurityFixTests
         Assert.True(FlutterwaveService.IsPaidAmountAcceptable((decimal)expected, (decimal)paid, 0.5m));
     }
 
+    // ── N-1 (2026-07-15): Flutterwave verify path must PIN CURRENCY, not just amount ─────────────
+    // Before the fix, the verify endpoint compared the transaction's raw `amount` to the plan price in
+    // the EXPECTED currency without reading the transaction's `currency`. A merchant could pay 30 KES
+    // (~$0.23) against a 30 USD plan and pass the numeric check → underpaid Pro plan.
+
+    [Theory]
+    [InlineData("KES", "USD")]    // the exploit: cheap currency vs USD-priced plan
+    [InlineData("NGN", "USD")]
+    [InlineData(null, "USD")]     // missing currency must fail closed
+    [InlineData("", "USD")]
+    [InlineData("USD", null)]     // missing expected must fail closed
+    public void CurrencyMismatch_IsRejected(string? paid, string? expected)
+    {
+        Assert.False(FlutterwaveService.CurrencyMatches(paid, expected));
+    }
+
+    [Theory]
+    [InlineData("USD", "USD")]
+    [InlineData("usd", "USD")]    // case-insensitive
+    [InlineData("NGN", "ngn")]
+    public void CurrencyMatch_IsAccepted(string paid, string expected)
+    {
+        Assert.True(FlutterwaveService.CurrencyMatches(paid, expected));
+    }
+
     [Fact]
     public void BillingConfig_UnsupportedCurrency_ReturnsNull_ProvingFailOpenPrecondition()
     {
