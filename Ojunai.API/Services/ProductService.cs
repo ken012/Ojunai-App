@@ -84,6 +84,7 @@ public class ProductService : IProductService
             .ToListAsync();
 
         await OverlayLocationStockAsync(businessId, items);
+        await AttachStockByLocationAsync(businessId, items);
 
         return new PaginatedResult<ProductDto>
         {
@@ -92,6 +93,45 @@ public class ProductService : IProductService
             Page = page,
             PageSize = pageSize
         };
+    }
+
+    /// <summary>
+    /// Attaches a per-branch stock breakdown to each product for MULTI-location businesses so the inventory
+    /// list can show "where is this stock" at a glance, independent of the selected-location filter. Single-
+    /// location businesses (one active location) get null — no breakdown, no wasted payload. One small
+    /// Locations query + one ProductLocationStocks query for the page's products (0 where a branch has no row).
+    /// </summary>
+    private async Task AttachStockByLocationAsync(Guid businessId, List<ProductDto> items)
+    {
+        if (items.Count == 0) return;
+
+        var locations = await _db.Locations
+            .Where(l => l.BusinessId == businessId && l.IsActive)
+            .OrderByDescending(l => l.IsDefault).ThenBy(l => l.CreatedAtUtc)
+            .Select(l => new { l.Id, l.Name, l.IsDefault })
+            .ToListAsync();
+        if (locations.Count <= 1) return; // single-location → nothing to break down
+
+        var ids = items.Where(i => !i.IsBundle).Select(i => i.Id).ToList();
+        var byKey = (await _db.ProductLocationStocks
+                .Where(x => x.BusinessId == businessId && ids.Contains(x.ProductId))
+                .Select(x => new { x.ProductId, x.LocationId, x.CurrentStock })
+                .ToListAsync())
+            .ToDictionary(x => (x.ProductId, x.LocationId), x => x.CurrentStock);
+
+        foreach (var item in items)
+        {
+            if (item.IsBundle) continue; // bundles hold no stock of their own
+            item.StockByLocation = locations
+                .Select(l => new LocationStockDto
+                {
+                    LocationId = l.Id,
+                    LocationName = l.Name,
+                    IsDefault = l.IsDefault,
+                    Stock = byKey.GetValueOrDefault((item.Id, l.Id), 0m),
+                })
+                .ToList();
+        }
     }
 
     /// <summary>

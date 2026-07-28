@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { Drawer, DrawerHeader, DrawerBody, DrawerFooter } from "@/components/ui/drawer";
 import { useToast } from "@/components/toast";
-import { AlertTriangle, Package, Pencil, Trash2, Minus, Plus, Lock, Unlock, ShoppingCart, Ban, Search, X, LayoutList, LayoutGrid, ScanLine, ClipboardCheck, Layers, CalendarClock, ArrowLeftRight } from "lucide-react";
+import { AlertTriangle, Package, Pencil, Trash2, Minus, Plus, Lock, Unlock, ShoppingCart, Ban, Search, X, LayoutList, LayoutGrid, ScanLine, ClipboardCheck, Layers, CalendarClock, ArrowLeftRight, MapPin } from "lucide-react";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import type { ContactDto, BundleDto } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
@@ -228,6 +228,29 @@ function ProductCard({
             </div>
           );
         })()}
+
+        {/* Per-branch stock breakdown (multi-location only) — see where this product's stock actually sits,
+            independent of the top location filter. Non-zero branches stand out; empty branches are muted. */}
+        {!product.isBundle && product.stockByLocation && product.stockByLocation.length > 1 && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-1">
+            <MapPin size={12} className="text-slate-400 dark:text-slate-500 mr-0.5 shrink-0" />
+            {product.stockByLocation.map((loc) => (
+              <span
+                key={loc.locationId}
+                title={`${loc.locationName}: ${loc.stock} ${pluralUnit(loc.stock, product.unit)}`}
+                className={
+                  "inline-flex items-baseline gap-1 rounded-md px-1.5 py-0.5 text-[11px] tabular-nums ring-1 ring-inset " +
+                  (loc.stock > 0
+                    ? "bg-slate-50 text-slate-600 ring-slate-200 dark:bg-slate-800/60 dark:text-slate-300 dark:ring-slate-700"
+                    : "text-slate-300 ring-slate-100 dark:text-slate-600 dark:ring-slate-800/60")
+                }
+              >
+                <span className="truncate max-w-[90px]">{loc.locationName}</span>
+                <span className="font-semibold">{loc.stock}</span>
+              </span>
+            ))}
+          </div>
+        )}
 
         <div className="mt-2 flex items-center gap-2 flex-wrap">
           {product.isLowStock && (

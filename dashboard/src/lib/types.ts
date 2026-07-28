@@ -132,6 +132,8 @@ export interface ProductDto {
   isBundle?: boolean;
   tracksBatches?: boolean;
   createdAtUtc: string;
+  /** Per-branch stock breakdown, default-branch first. Only present for multi-location businesses. */
+  stockByLocation?: { locationId: string; locationName: string; stock: number; isDefault: boolean }[];
 }
 
 export interface ProductBatchDto {

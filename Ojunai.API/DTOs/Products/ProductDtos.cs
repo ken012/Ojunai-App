@@ -75,6 +75,18 @@ public class ProductDto
     public bool IsBundle { get; set; }
     public bool TracksBatches { get; set; }
     public DateTime CreatedAtUtc { get; set; }
+    /// <summary>Per-branch stock breakdown, default-branch first. Only populated for multi-location businesses
+    /// (null otherwise, so single-location stays clean). Independent of the selected-location filter — always
+    /// lists every active branch so the owner can see where stock sits at a glance.</summary>
+    public List<LocationStockDto>? StockByLocation { get; set; }
+}
+
+public class LocationStockDto
+{
+    public Guid LocationId { get; set; }
+    public string LocationName { get; set; } = string.Empty;
+    public decimal Stock { get; set; }
+    public bool IsDefault { get; set; }
 }
 
 // ── Bundles / kits ───────────────────────────────────────────
