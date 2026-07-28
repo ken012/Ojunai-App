@@ -102,6 +102,34 @@ function CategoryPicker({
 }
 
 // ─── Product card ────────────────────────────────────────────────────────────
+// Per-branch stock breakdown — shown on BOTH the grid card and the list row for multi-location
+// businesses. Always lists every active branch (default first) so you can see where stock sits at a
+// glance, independent of the top location filter. Non-zero branches stand out; empty branches are muted.
+// `dense` is the tighter list-row variant. Renders nothing for single-location businesses or bundles.
+function StockByBranch({ product, dense = false, className = "" }: { product: ProductDto; dense?: boolean; className?: string }) {
+  if (product.isBundle || !product.stockByLocation || product.stockByLocation.length <= 1) return null;
+  return (
+    <div className={`flex flex-wrap items-center gap-1 ${className}`}>
+      <MapPin size={dense ? 11 : 12} className="text-slate-400 dark:text-slate-500 mr-0.5 shrink-0" />
+      {product.stockByLocation.map((loc) => (
+        <span
+          key={loc.locationId}
+          title={`${loc.locationName}: ${loc.stock} ${pluralUnit(loc.stock, product.unit)}`}
+          className={
+            `inline-flex items-baseline gap-1 rounded-md px-1.5 py-0.5 tabular-nums ring-1 ring-inset ${dense ? "text-[10px]" : "text-[11px]"} ` +
+            (loc.stock > 0
+              ? "bg-slate-50 text-slate-600 ring-slate-200 dark:bg-slate-800/60 dark:text-slate-300 dark:ring-slate-700"
+              : "text-slate-300 ring-slate-100 dark:text-slate-600 dark:ring-slate-800/60")
+          }
+        >
+          <span className="truncate max-w-[90px]">{loc.locationName}</span>
+          <span className="font-semibold">{loc.stock}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 // ─── Legacy product card (used when the user toggles to grid view) ──────────
 function ProductCard({
   product,
@@ -229,28 +257,8 @@ function ProductCard({
           );
         })()}
 
-        {/* Per-branch stock breakdown (multi-location only) — see where this product's stock actually sits,
-            independent of the top location filter. Non-zero branches stand out; empty branches are muted. */}
-        {!product.isBundle && product.stockByLocation && product.stockByLocation.length > 1 && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-1">
-            <MapPin size={12} className="text-slate-400 dark:text-slate-500 mr-0.5 shrink-0" />
-            {product.stockByLocation.map((loc) => (
-              <span
-                key={loc.locationId}
-                title={`${loc.locationName}: ${loc.stock} ${pluralUnit(loc.stock, product.unit)}`}
-                className={
-                  "inline-flex items-baseline gap-1 rounded-md px-1.5 py-0.5 text-[11px] tabular-nums ring-1 ring-inset " +
-                  (loc.stock > 0
-                    ? "bg-slate-50 text-slate-600 ring-slate-200 dark:bg-slate-800/60 dark:text-slate-300 dark:ring-slate-700"
-                    : "text-slate-300 ring-slate-100 dark:text-slate-600 dark:ring-slate-800/60")
-                }
-              >
-                <span className="truncate max-w-[90px]">{loc.locationName}</span>
-                <span className="font-semibold">{loc.stock}</span>
-              </span>
-            ))}
-          </div>
-        )}
+        {/* Per-branch stock breakdown (multi-location only) — where this product's stock actually sits. */}
+        <StockByBranch product={product} className="mt-2.5" />
 
         <div className="mt-2 flex items-center gap-2 flex-wrap">
           {product.isLowStock && (
@@ -1577,6 +1585,7 @@ function ProductRow({
           <StatusPill s={status} />
         </div>
         {product.sku && <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">SKU {product.sku}</p>}
+        <StockByBranch product={product} dense className="mt-1" />
       </div>
       <div className="hidden sm:block">
         <StatusPill s={status} />
@@ -2273,9 +2282,34 @@ export default function InventoryPage() {
                 </>
               );
               return viewMode === "grid" ? (
+                // Grid variant styles get a proper VERTICAL card (like the product cards) — the shared
+                // horizontal `content` layout crammed into a narrow grid cell rendered badly.
                 <button key={g.id} onClick={() => router.push("/variants")}
-                  className="flex items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 hover:border-violet-300 dark:hover:border-violet-800 transition-colors">
-                  {content}
+                  className="flex flex-col text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 hover:border-violet-300 dark:hover:border-violet-800 transition-colors">
+                  <div className="flex items-start justify-between gap-2 min-w-0">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">{g.name}</p>
+                      {g.category && <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">{g.category}</p>}
+                    </div>
+                    <span className="inline-flex items-center gap-1 shrink-0 rounded-full bg-violet-50 dark:bg-violet-950/30 text-violet-600 dark:text-violet-400 text-[10px] font-medium px-1.5 py-0.5">
+                      <Layers size={10} /> {g.variantCount}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-end justify-between">
+                    <div>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider">Total stock</p>
+                      <p className="text-2xl font-bold text-slate-900 dark:text-slate-50 tabular-nums">{g.totalStock}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-wider">Price</p>
+                      <p className="text-sm text-slate-700 dark:text-slate-300 tabular-nums">{priceLabel}</p>
+                    </div>
+                  </div>
+                  {g.lowStockCount > 0 && (
+                    <span className="mt-2 self-start rounded-full bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 text-[10px] font-medium px-1.5 py-0.5">
+                      {g.lowStockCount} low
+                    </span>
+                  )}
                 </button>
               ) : (
                 <button key={g.id} onClick={() => router.push("/variants")}
