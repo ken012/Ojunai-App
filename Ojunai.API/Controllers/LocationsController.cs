@@ -20,15 +20,18 @@ public class LocationsController : OjunaiBaseController
     private readonly AppDbContext _db;
     private readonly PlanGuard _planGuard;
     private readonly IActivityLogger _activity;
+    private readonly Services.LocationAccessService _access;
 
-    public LocationsController(AppDbContext db, PlanGuard planGuard, IActivityLogger activity)
+    public LocationsController(AppDbContext db, PlanGuard planGuard, IActivityLogger activity, Services.LocationAccessService access)
     {
         _db = db;
         _planGuard = planGuard;
         _activity = activity;
+        _access = access;
     }
 
-    /// <summary>All of the business's locations (default first). Any authenticated member may view.</summary>
+    /// <summary>The business's locations (default first). Owner/Admin see all (incl. inactive, for management);
+    /// restricted staff see only the locations they're allowed to access, so branch names aren't disclosed.</summary>
     [HttpGet]
     public async Task<ActionResult<ApiResponse<List<LocationDto>>>> List()
     {
@@ -37,6 +40,12 @@ public class LocationsController : OjunaiBaseController
             .OrderByDescending(l => l.IsDefault).ThenBy(l => l.CreatedAtUtc)
             .Select(l => new LocationDto { Id = l.Id, Name = l.Name, Type = l.Type, IsDefault = l.IsDefault, IsActive = l.IsActive })
             .ToListAsync();
+
+        if (User.GetRole() is not (UserRole.Owner or UserRole.Admin))
+        {
+            var accessible = (await _access.AccessibleLocationIdsAsync(BusinessId, UserId, User.GetRole())).ToHashSet();
+            locations = locations.Where(l => accessible.Contains(l.Id)).ToList();
+        }
         return Ok(ApiResponse<List<LocationDto>>.Ok(locations));
     }
 
