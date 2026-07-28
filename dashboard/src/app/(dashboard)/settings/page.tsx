@@ -1083,6 +1083,7 @@ type BusinessShape = {
   alertLowStock?: boolean;
   alertDailySummary?: boolean;
   alertLargeSale?: boolean;
+  alertDailyNudges?: boolean;
   largeSaleAlertWhatsApp?: boolean;
   largeSaleAlertTelegram?: boolean;
   largeSaleAlertMessenger?: boolean;
@@ -1319,6 +1320,19 @@ function AlertTypeToggles({
           </div>
         </label>
       ))}
+
+      <label className="flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          className="mt-1 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-cyan-600 focus:ring-cyan-500"
+          checked={business?.alertDailyNudges ?? false}
+          onChange={(e) => save({ alertDailyNudges: e.target.checked })}
+        />
+        <div>
+          <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Morning Nudges</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500">A short &ldquo;act on this today&rdquo; message each morning — products about to run out (with a reorder amount) and overdue debts. Only sent when there&rsquo;s something to act on.</p>
+        </div>
+      </label>
 
       <label className="flex items-start gap-3 cursor-pointer">
         <input

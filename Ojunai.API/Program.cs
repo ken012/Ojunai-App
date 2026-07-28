@@ -240,6 +240,7 @@ builder.Services.AddScoped<Ojunai.API.Services.Channels.Messenger.IMessengerInte
 builder.Services.AddScoped<Ojunai.API.Services.Channels.IConversationOrchestrator, Ojunai.API.Services.Channels.ConversationOrchestrator>();
 builder.Services.AddScoped<OnboardingService>();
 builder.Services.AddScoped<SummaryJobService>();
+builder.Services.AddScoped<DailyNudgeJobService>();
 builder.Services.AddScoped<TrialReminderJobService>();
 builder.Services.AddScoped<TrialRevertJobService>();
 builder.Services.AddScoped<LocationQuotaReconcileJobService>(); // multi-location: soft-deactivate over-quota locations after a downgrade
@@ -512,6 +513,13 @@ RecurringJob.AddOrUpdate<SummaryJobService>(
 RecurringJob.AddOrUpdate<SummaryJobService>(
     "weekly-summary",
     svc => svc.RunWeeklySummaryAsync(),
+    "0 * * * *");
+
+// Opt-in morning actionable nudge. Hourly tick; each business self-filters to ~8 AM local and is
+// deduped once per local day. No-op for businesses that haven't opted in (AlertDailyNudges).
+RecurringJob.AddOrUpdate<DailyNudgeJobService>(
+    "daily-nudges",
+    svc => svc.RunAsync(),
     "0 * * * *");
 
 RecurringJob.AddOrUpdate<TrialReminderJobService>(

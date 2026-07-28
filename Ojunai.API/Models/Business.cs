@@ -35,6 +35,14 @@ public class Business
     public bool AlertLowStock { get; set; } = true;
     public bool AlertDailySummary { get; set; } = true;
     public bool AlertLargeSale { get; set; } = true;
+    // Opt-in morning nudge: an actionable "act on this today" WhatsApp/channel message (products about to
+    // stock out with a suggested reorder qty, the most overdue debtor). OFF by default — it's an extra
+    // proactive message on top of the evening summary, so existing owners aren't opted in without asking.
+    // Delivery still respects User.AlertChannel (none = nothing) and the WhatsApp pack gate. Nudges are
+    // only sent when there's something actionable — a quiet day stays silent. LastDailyNudgeOn is the
+    // once-per-day guard (the sender's LOCAL date we last nudged) so an hourly re-tick can't double-send.
+    public bool AlertDailyNudges { get; set; } = false;
+    public DateOnly? LastDailyNudgeOn { get; set; }
     // Large-sale confirmation gate, per messaging channel. When enabled, the bot asks the owner
     // to confirm before recording a sale at/above the threshold. ConfirmLargeSales(+Threshold) is
     // the WhatsApp one (kept for back-compat); Telegram/Messenger have their own independent gates.

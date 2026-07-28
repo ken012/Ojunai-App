@@ -53,6 +53,7 @@ public class BusinessService : IBusinessService
         if (request.AlertLowStock.HasValue) business.AlertLowStock = request.AlertLowStock.Value;
         if (request.AlertDailySummary.HasValue) business.AlertDailySummary = request.AlertDailySummary.Value;
         if (request.AlertLargeSale.HasValue) business.AlertLargeSale = request.AlertLargeSale.Value;
+        if (request.AlertDailyNudges.HasValue) business.AlertDailyNudges = request.AlertDailyNudges.Value;
         if (request.ConfirmLargeSales.HasValue) business.ConfirmLargeSales = request.ConfirmLargeSales.Value;
         if (request.ConfirmLargeSaleThreshold.HasValue) business.ConfirmLargeSaleThreshold = request.ConfirmLargeSaleThreshold.Value;
         if (request.ConfirmLargeSalesTelegram.HasValue) business.ConfirmLargeSalesTelegram = request.ConfirmLargeSalesTelegram.Value;
@@ -130,6 +131,7 @@ public class BusinessService : IBusinessService
         AlertLowStock = b.AlertLowStock,
         AlertDailySummary = b.AlertDailySummary,
         AlertLargeSale = b.AlertLargeSale,
+        AlertDailyNudges = b.AlertDailyNudges,
         ConfirmLargeSales = b.ConfirmLargeSales,
         ConfirmLargeSaleThreshold = b.ConfirmLargeSaleThreshold,
         ConfirmLargeSalesTelegram = b.ConfirmLargeSalesTelegram,

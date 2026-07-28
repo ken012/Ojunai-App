@@ -56,6 +56,7 @@ export interface BusinessDto {
   alertLowStock?: boolean;
   alertDailySummary?: boolean;
   alertLargeSale?: boolean;
+  alertDailyNudges?: boolean;
   alertDashboardLowStock?: boolean;
   alertDashboardDailySummary?: boolean;
   alertDashboardLargeSale?: boolean;
