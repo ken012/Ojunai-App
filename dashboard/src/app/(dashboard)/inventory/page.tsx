@@ -825,6 +825,16 @@ function TransferStockDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  type TransferRow = { id: string; productName: string; unit: string; fromLocationName: string; toLocationName: string; quantity: number; createdAtUtc: string };
+  const { data: transfers } = useQuery({
+    queryKey: ["stock-transfers"],
+    queryFn: async () => {
+      const { data } = await api.get<{ data: PaginatedResult<TransferRow> }>("/inventory/transfers?pageSize=8");
+      return data.data!.items;
+    },
+    enabled: open,
+  });
+
   async function handleSave() {
     setSaving(true);
     setError(null);
@@ -838,7 +848,8 @@ function TransferStockDialog({
       });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["stock-transfers"] });
-      handleClose();
+      // Keep the dialog open + clear the form so the new transfer shows in the list below.
+      setForm({ productId: "", fromLocationId: "", toLocationId: "", quantity: "", notes: "" });
     } catch (err: unknown) {
       const ax = err as { response?: { data?: { errors?: string[] } } };
       setError(ax.response?.data?.errors?.[0] ?? "Failed to transfer stock");
@@ -923,9 +934,25 @@ function TransferStockDialog({
           </div>
           {sameLoc && <p className="text-xs text-amber-600">Pick two different branches.</p>}
           {error && <p className="text-xs text-red-500">{error}</p>}
+
+          {transfers && transfers.length > 0 && (
+            <div className="mt-1 border-t border-slate-100 dark:border-slate-800 pt-3">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Recent transfers</p>
+              <ul className="space-y-1 max-h-40 overflow-auto">
+                {transfers.map((t) => (
+                  <li key={t.id} className="flex justify-between gap-2 text-xs text-slate-600 dark:text-slate-300">
+                    <span className="truncate">
+                      {t.quantity} {pluralUnit(t.quantity, t.unit)} {t.productName} · {t.fromLocationName} → {t.toLocationName}
+                    </span>
+                    <span className="shrink-0 text-slate-400">{formatDateTime(t.createdAtUtc)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={saving}>Cancel</Button>
+          <Button variant="outline" onClick={handleClose} disabled={saving}>Close</Button>
           <Button onClick={handleSave} disabled={saving || !canSave}>
             {saving ? "Transferring…" : "Transfer"}
           </Button>
