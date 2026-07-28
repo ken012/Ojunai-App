@@ -355,7 +355,10 @@ public class SalesService : ISalesService
     }
 
     public async Task VoidAsync(Guid businessId, Guid saleId, Guid? voidedByUserId = null, string? voidedByName = null)
+        => await DbRetry.SerializableAsync(_db, async () =>
     {
+        // Serializable (+ retry, via DbRetry) so the restock serializes against a concurrent stock transfer on
+        // the shared per-location stock row. On any failure the transaction rolls back (DbRetry's await using).
         var sale = await _db.Sales
             .Include(s => s.Items)
             .FirstOrDefaultAsync(s => s.Id == saleId && s.BusinessId == businessId)
@@ -364,9 +367,6 @@ public class SalesService : ISalesService
         if (sale.IsDeleted)
             throw new InvalidOperationException("Sale is already voided.");
 
-        await using var tx = await _db.Database.BeginTransactionAsync();
-        try
-        {
             var productIds = sale.Items.Select(i => i.ProductId).ToList();
             var products = await _db.Products
                 .Where(p => productIds.Contains(p.Id) && p.BusinessId == businessId)
@@ -419,16 +419,10 @@ public class SalesService : ISalesService
             sale.DeletedAtUtc = DateTime.UtcNow;
 
             await _db.SaveChangesAsync();
-            await tx.CommitAsync();
-        }
-        catch
-        {
-            await tx.RollbackAsync();
-            throw;
-        }
-    }
+    });
 
     public async Task ReturnAsync(Guid businessId, Guid saleId, Guid? returnedByUserId = null, string? returnedByName = null)
+        => await DbRetry.SerializableAsync(_db, async () =>
     {
         var sale = await _db.Sales
             .Include(s => s.Items)
@@ -439,9 +433,6 @@ public class SalesService : ISalesService
         if (sale.IsDeleted)
             throw new InvalidOperationException("Sale is already voided or returned.");
 
-        await using var tx = await _db.Database.BeginTransactionAsync();
-        try
-        {
             var productIds = sale.Items.Select(i => i.ProductId).ToList();
             var products = await _db.Products
                 .Where(p => productIds.Contains(p.Id) && p.BusinessId == businessId)
@@ -493,14 +484,7 @@ public class SalesService : ISalesService
             sale.DeletedAtUtc = DateTime.UtcNow;
 
             await _db.SaveChangesAsync();
-            await tx.CommitAsync();
-        }
-        catch
-        {
-            await tx.RollbackAsync();
-            throw;
-        }
-    }
+    });
 
     public async Task<PaginatedResult<SaleSummaryDto>> GetVoidedAsync(Guid businessId, int page, int pageSize)
     {

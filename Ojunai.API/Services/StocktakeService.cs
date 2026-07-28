@@ -116,6 +116,7 @@ public class StocktakeService : IStocktakeService
     }
 
     public async Task<StocktakeDto> CompleteAsync(Guid businessId, Guid id, Guid? userId, string? userName)
+        => await DbRetry.SerializableAsync(_db, async () =>
     {
         var st = await LoadAsync(businessId, id);
         if (st.Status != StocktakeStatus.Draft)
@@ -127,9 +128,7 @@ public class StocktakeService : IStocktakeService
 
         var now = DateTime.UtcNow;
 
-        // One transaction: all adjustments + status commit together, or none do.
-        await using var tx = await _db.Database.BeginTransactionAsync();
-
+        // All adjustments + status commit together in one (Serializable, DbRetry-owned) transaction, or none do.
         // Multi-location: when a specific location is selected, the count reconciles THAT location's stock;
         // otherwise the whole product (single-location / All locations = unchanged behaviour).
         var stkLoc = await _locStock.SelectedLocationForAsync(businessId);
@@ -174,9 +173,8 @@ public class StocktakeService : IStocktakeService
         await _activity.LogAsync(businessId, "stocktake.completed", "Stocktake", st.Id, st.Reference,
             $"completed a stock count ({adjustmentCount} adjustment{(adjustmentCount == 1 ? "" : "s")})");
         await _db.SaveChangesAsync();
-        await tx.CommitAsync();
         return ToDto(st);
-    }
+    });
 
     public async Task<StocktakeDto> CancelAsync(Guid businessId, Guid id)
     {

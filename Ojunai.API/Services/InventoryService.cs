@@ -19,6 +19,7 @@ public class InventoryService : IInventoryService
     }
 
     public async Task<InventoryTransactionDto> StockInAsync(Guid businessId, StockInRequest request, Guid? recordedByUserId = null, string? recordedByName = null, DateTime? createdAtUtc = null)
+        => await DbRetry.SerializableAsync(_db, async () =>
     {
         var product = await GetProductAsync(businessId, request.ProductId);
 
@@ -56,9 +57,10 @@ public class InventoryService : IInventoryService
         _db.InventoryTransactions.Add(txn);
         await _db.SaveChangesAsync();
         return ToDto(txn, product.Name, product.Unit);
-    }
+    });
 
     public async Task<InventoryTransactionDto> StockOutAsync(Guid businessId, StockOutRequest request, Guid? recordedByUserId = null, string? recordedByName = null)
+        => await DbRetry.SerializableAsync(_db, async () =>
     {
         var product = await GetProductAsync(businessId, request.ProductId);
 
@@ -82,9 +84,10 @@ public class InventoryService : IInventoryService
         _db.InventoryTransactions.Add(txn);
         await _db.SaveChangesAsync();
         return ToDto(txn, product.Name, product.Unit);
-    }
+    });
 
     public async Task<InventoryTransactionDto> AdjustAsync(Guid businessId, AdjustmentRequest request, Guid? recordedByUserId = null, string? recordedByName = null)
+        => await DbRetry.SerializableAsync(_db, async () =>
     {
         var product = await GetProductAsync(businessId, request.ProductId);
         // Absolute set. For a specific location, "set stock to N" means set THAT location's stock; otherwise
@@ -110,9 +113,10 @@ public class InventoryService : IInventoryService
         _db.InventoryTransactions.Add(txn);
         await _db.SaveChangesAsync();
         return ToDto(txn, product.Name, product.Unit);
-    }
+    });
 
     public async Task<InventoryTransactionDto> MarkDamagedAsync(Guid businessId, DamagedRequest request, Guid? recordedByUserId = null, string? recordedByName = null)
+        => await DbRetry.SerializableAsync(_db, async () =>
     {
         var product = await GetProductAsync(businessId, request.ProductId);
 
@@ -136,9 +140,10 @@ public class InventoryService : IInventoryService
         _db.InventoryTransactions.Add(txn);
         await _db.SaveChangesAsync();
         return ToDto(txn, product.Name, product.Unit);
-    }
+    });
 
     public async Task<InventoryTransactionDto> MarkWastageAsync(Guid businessId, DamagedRequest request, Guid? recordedByUserId = null, string? recordedByName = null)
+        => await DbRetry.SerializableAsync(_db, async () =>
     {
         var product = await GetProductAsync(businessId, request.ProductId);
 
@@ -162,7 +167,7 @@ public class InventoryService : IInventoryService
         _db.InventoryTransactions.Add(txn);
         await _db.SaveChangesAsync();
         return ToDto(txn, product.Name, product.Unit);
-    }
+    });
 
     public async Task<PaginatedResult<InventoryTransactionDto>> GetTransactionsAsync(
         Guid businessId, Guid? productId, int page, int pageSize)

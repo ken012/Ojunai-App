@@ -19,7 +19,10 @@ public class MultiLocationHardeningTests
 {
     private static AppDbContext NewContext() =>
         new(new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase("mlhard-" + Guid.NewGuid()).Options);
+            .UseInMemoryDatabase("mlhard-" + Guid.NewGuid())
+            // InventoryService/StocktakeService now wrap their writes in a (Serializable) transaction via DbRetry;
+            // the InMemory provider ignores transactions, so silence that benign warning.
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning)).Options);
 
     private static InventoryService Inv(AppDbContext db) => new(db, new LocationStockService(db));
 
