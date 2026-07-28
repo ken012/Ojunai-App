@@ -200,6 +200,7 @@ builder.Services.AddScoped<IStocktakeService, StocktakeService>();
 builder.Services.AddScoped<IStockTransferService, StockTransferService>(); // multi-location Phase 3: branch transfers
 builder.Services.AddScoped<LocationStockService>(); // multi-location Phase 2 hardening (gated per-location writes)
 builder.Services.AddScoped<LocationAccessService>(); // multi-location: user→location access scoping/enforcement
+builder.Services.AddScoped<Ojunai.API.Services.Channels.LocationChatService>(); // multi-location: Telegram/Messenger branch picker + switch (parity with WhatsApp)
 builder.Services.AddScoped<IVariantGroupService, VariantGroupService>();
 builder.Services.AddScoped<IProductBatchService, ProductBatchService>();
 builder.Services.AddScoped<IContactService, ContactService>();

@@ -47,6 +47,8 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
     private readonly IAlertService _alerts;
     private readonly IUsageService _usage;
     private readonly ICurrentActor _currentActor;
+    private readonly LocationAccessService _access;
+    private readonly LocationChatService _location;
     private readonly ILogger<MessengerIntentHandler> _logger;
 
     public MessengerIntentHandler(
@@ -63,6 +65,8 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         IAlertService alerts,
         IUsageService usage,
         ICurrentActor currentActor,
+        LocationAccessService access,
+        LocationChatService location,
         ILogger<MessengerIntentHandler> logger)
     {
         _db = db;
@@ -78,6 +82,8 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         _alerts = alerts;
         _usage = usage;
         _currentActor = currentActor;
+        _access = access;
+        _location = location;
         _logger = logger;
     }
 
@@ -106,6 +112,7 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         "show_roles", "show_reports",
         "help", "greet",
         "add_inventory", "remove_inventory", "mark_damaged_inventory",
+        "transfer_stock", // multi-location: HandleTransferStockAsync is a pure string handler (no send / pending), safe to delegate
         "create_product", "update_product_price", "delete_product",
         "create_receivable", "create_payable", "record_payable_payment",
         "correct_last_sale", "update_last_sale", "correct_last_expense",
@@ -134,6 +141,18 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         // quick-reply / postback taps bump the counter — same rationale as Telegram.
         await _usage.RecordActionAsync(businessId, AssistantChannel.Messenger, ct);
 
+        // Attribute this sender's bot actions to their EFFECTIVE branch for the rest of this message —
+        // parity with Telegram/WhatsApp. Null for single-location businesses & Owner/Admin "All" views, so
+        // behaviour there is byte-for-byte unchanged. Covers callback resumes and fresh messages; the
+        // `using` restores the prior scope on exit so a branch can't leak into the next pooled job.
+        var actor = await _db.Users.AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => new { u.Role, u.SelectedLocationId })
+            .FirstOrDefaultAsync(ct);
+        using var _locScope = LocationScope.Push(actor is null
+            ? (Guid?)null
+            : await _access.ResolveEffectiveLocationAsync(businessId, userId, actor.Role, actor.SelectedLocationId));
+
         // Quick-reply / postback taps surface as ConversationMessage.Text set to the button's
         // payload string (MessengerAdapter pulls it from quick_reply.payload or postback.payload).
         // Same convention as Telegram: "pa:yes:<token>" / "pa:no:<token>".
@@ -153,6 +172,14 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
             return;
         }
         rawText = Common.ChannelRateLimiter.CapLength(rawText);
+
+        // Branch switch ("branches"/"locations") — deterministic quick-reply picker, no Claude call.
+        // Parity with the WhatsApp bot. Handled before the paid parse so it's instant and free.
+        if (LocationChatService.IsBranchCommand(rawText))
+        {
+            await SendBranchPickerAsync(businessId, userId, message, ct);
+            return;
+        }
 
         var context = await BuildBusinessContextAsync(businessId, ct);
         if (context is null)
@@ -816,6 +843,10 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
                 await ResumeConfirmDestructiveAsync(consumed, inbound, ct);
                 break;
 
+            case "select_location":
+                await ResumeSelectLocationAsync(consumed, inbound, ct);
+                break;
+
             default:
                 _logger.LogWarning("Unknown pending action type: {Type}", consumed.ActionType);
                 await Reply(inbound, "I forgot what this was about. Try again.", ct);
@@ -834,6 +865,64 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         var ba = payload.GetProperty("payload");
         var parsed = new ParsedMessage { Intent = intent, BusinessAction = ba, Confidence = 1.0 };
         await DelegateToWhatsAppDispatcherAsync(parsed, consumed.UserId, inbound, ct);
+    }
+
+    // ── Branch (location) switching ────────────────────────────────────────────
+
+    /// <summary>
+    /// Sends the branch picker as quick replies. Each branch is backed by its own <c>select_location</c>
+    /// pending token so a tap resumes with exactly that branch id. Single-location / unentitled businesses
+    /// get a plain one-liner with no buttons. Quick-reply titles are capped at Messenger's 20-char limit.
+    /// </summary>
+    private async Task SendBranchPickerAsync(Guid businessId, Guid userId, ConversationMessage inbound, CancellationToken ct)
+    {
+        var role = await _db.Users.AsNoTracking()
+            .Where(u => u.Id == userId).Select(u => u.Role).FirstOrDefaultAsync(ct);
+        var picker = await _location.BuildPickerAsync(businessId, userId, role);
+        if (picker.Options.Count == 0)
+        {
+            await Reply(inbound, picker.Text, ct);
+            return;
+        }
+
+        var buttons = new List<QuickReply>();
+        foreach (var opt in picker.Options)
+        {
+            var token = await _pending.CreateAsync(
+                businessId, userId, inbound.SenderIdentity,
+                actionType: "select_location",
+                payloadJson: JsonSerializer.Serialize(new SelectLocationPayload { LocationId = opt.Id }),
+                ct);
+            var label = opt.IsCurrent ? $"✅ {opt.Name}" : opt.Name;
+            if (label.Length > 20)
+            {
+                var cut = 20;
+                if (char.IsHighSurrogate(label[cut - 1])) cut--; // don't split an astral char (e.g. emoji in a branch name)
+                label = label[..cut]; // Messenger quick-reply title cap
+            }
+            buttons.Add(new QuickReply(label, $"pa:yes:{token}"));
+        }
+
+        await _messenger.SendAsync(inbound.SenderIdentity, new ReplyComposition
+        {
+            Text = picker.Text,
+            QuickReplies = buttons,
+        }, ct);
+    }
+
+    /// <summary>Resume handler for a branch quick-reply tap: persists the sender's selected branch.</summary>
+    private async Task ResumeSelectLocationAsync(PendingActionConsumeResult consumed, ConversationMessage inbound, CancellationToken ct)
+    {
+        var payload = JsonSerializer.Deserialize<SelectLocationPayload>(consumed.PayloadJson);
+        if (payload is null || payload.LocationId == Guid.Empty)
+        {
+            await Reply(inbound, "Couldn't read which branch to switch to. Send \"branches\" to try again.", ct);
+            return;
+        }
+        var role = await _db.Users.AsNoTracking()
+            .Where(u => u.Id == consumed.UserId).Select(u => u.Role).FirstOrDefaultAsync(ct);
+        var reply = await _location.ApplySelectionAsync(consumed.BusinessId, consumed.UserId, role, payload.LocationId);
+        await Reply(inbound, reply, ct);
     }
 
     private async Task ResumeAddProductAndSellAsync(PendingActionConsumeResult consumed, ConversationMessage inbound, CancellationToken ct)
@@ -942,5 +1031,10 @@ public sealed class MessengerIntentHandler : IMessengerIntentHandler
         public string ProductName { get; set; } = string.Empty;
         public decimal Quantity { get; set; }
         public decimal UnitPrice { get; set; }
+    }
+
+    private sealed class SelectLocationPayload
+    {
+        public Guid LocationId { get; set; }
     }
 }

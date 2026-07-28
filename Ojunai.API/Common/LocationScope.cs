@@ -21,4 +21,33 @@ public static class LocationScope
         get => _current.Value;
         set => _current.Value = value;
     }
+
+    /// <summary>
+    /// Sets <see cref="Current"/> for the lifetime of the returned scope and restores the previous
+    /// value on dispose. Preferred over a manual set/try-finally when a whole method (with many early
+    /// returns) should run under one ambient location — e.g. the Telegram/Messenger inbound handlers
+    /// stamping a sender's effective branch. The scope is always overwritten with the caller's value
+    /// before any DB write and always restored on dispose, so it can't bleed into later work in this
+    /// flow. (Restoring the PREVIOUS value keeps nesting correct; at a job entry point the previous
+    /// value is null, so dispose leaves the context clean.)
+    /// </summary>
+    public static IDisposable Push(Guid? value)
+    {
+        var previous = _current.Value;
+        _current.Value = value;
+        return new Scope(previous);
+    }
+
+    private sealed class Scope : IDisposable
+    {
+        private readonly Guid? _previous;
+        private bool _disposed;
+        public Scope(Guid? previous) => _previous = previous;
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _current.Value = _previous;
+        }
+    }
 }

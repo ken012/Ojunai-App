@@ -44,6 +44,8 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
     private readonly IPdfExportService _pdfExports;
     private readonly IUsageService _usage;
     private readonly ICurrentActor _currentActor;
+    private readonly LocationAccessService _access;
+    private readonly LocationChatService _location;
     private readonly ILogger<TelegramIntentHandler> _logger;
 
     public TelegramIntentHandler(
@@ -62,6 +64,8 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         IPdfExportService pdfExports,
         IUsageService usage,
         ICurrentActor currentActor,
+        LocationAccessService access,
+        LocationChatService location,
         ILogger<TelegramIntentHandler> logger)
     {
         _db = db;
@@ -79,6 +83,8 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         _pdfExports = pdfExports;
         _usage = usage;
         _currentActor = currentActor;
+        _access = access;
+        _location = location;
         _logger = logger;
     }
 
@@ -95,7 +101,8 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         "• \"sold 3 rice and 2 beans for 5000\" — multi-item sale\n" +
         "• \"paid 3000 for printing\" — log an expense\n" +
         "• \"Mary paid 5000\" — customer payment\n" +
-        "• \"bought 10 rice at 800\" — restock inventory\n\n" +
+        "• \"bought 10 rice at 800\" — restock inventory\n" +
+        "• \"transfer 10 rice to Ikeja\" — move stock between branches\n\n" +
         "*Ask*\n" +
         "• *stock* / *inventory* — current stock levels\n" +
         "• *low stock* — what's running low\n" +
@@ -106,6 +113,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         "• *summary* — full daily snapshot\n" +
         "• *who owes me* — outstanding receivables\n" +
         "• *who do i owe* — outstanding payables\n" +
+        "• *branches* — switch which location you're recording to\n" +
         "• *my plan* — current subscription\n\n" +
         "*Reports & exports (delivered as PDF documents)*\n" +
         "• *export sales* — last 30 days as PDF\n" +
@@ -156,6 +164,7 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         // — safe to delegate. Source-attribution for the ones that DO write a Source ("WhatsApp"
         // hardcoded in WhatsAppService) is a known limitation, fix in follow-up.
         "add_inventory", "remove_inventory", "mark_damaged_inventory",
+        "transfer_stock", // multi-location: HandleTransferStockAsync is a pure string handler (no Twilio send / pending), safe to delegate
         "create_product", "update_product_price", "delete_product",
         "create_receivable", "create_payable", "record_payable_payment",
         "correct_last_sale", "update_last_sale", "correct_last_expense",
@@ -185,6 +194,20 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         // and intent execution, and merchants think of them as "actions" too.
         await _usage.RecordActionAsync(businessId, AssistantChannel.Telegram, ct);
 
+        // Attribute this sender's bot actions (sales, stock writes, transfers) to their EFFECTIVE branch
+        // for the rest of this message — the parity fix that makes multi-location attribution work off
+        // WhatsApp. ResolveEffectiveLocationAsync returns null for single-location businesses (and Owner/
+        // Admin "All" views), so LocationScope stays null and behaviour there is byte-for-byte unchanged.
+        // This covers BOTH the button-callback resume path and fresh messages; the `using` restores the
+        // prior scope on every exit so a leaked branch can't cross into the next pooled Hangfire job.
+        var actor = await _db.Users.AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => new { u.Role, u.SelectedLocationId })
+            .FirstOrDefaultAsync(ct);
+        using var _locScope = LocationScope.Push(actor is null
+            ? (Guid?)null
+            : await _access.ResolveEffectiveLocationAsync(businessId, userId, actor.Role, actor.SelectedLocationId));
+
         // ── 0. Inline-keyboard callbacks ─────────────────────────────────────────
         // Callbacks come through as ConversationMessage.Text = the callback_data string we set
         // on the inline-keyboard button. We use "pa:yes:<token>" and "pa:no:<token>" as our
@@ -209,6 +232,15 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         }
         // Bound the input sent to the model so one huge message can't inflate token spend.
         rawText = Common.ChannelRateLimiter.CapLength(rawText);
+
+        // ── Branch switch ("branches"/"locations") — deterministic, no Claude call ───────────────
+        // Native quick-reply picker; parity with the WhatsApp bot's numbered picker. Handled here (before
+        // the paid Claude parse) so it's instant and free, exactly like WhatsApp's pre-parse regex.
+        if (LocationChatService.IsBranchCommand(rawText))
+        {
+            await SendBranchPickerAsync(businessId, userId, message, ct);
+            return;
+        }
 
         // ── 1. Load context Claude needs (business, products, contacts) ──────────
         var context = await BuildBusinessContextAsync(businessId, ct);
@@ -628,6 +660,58 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         var ba = payload.GetProperty("payload");
         var parsed = new ParsedMessage { Intent = intent, BusinessAction = ba, Confidence = 1.0 };
         await DelegateToWhatsAppDispatcherAsync(parsed, consumed.UserId, inbound, ct);
+    }
+
+    // ── Branch (location) switching ────────────────────────────────────────────
+
+    /// <summary>
+    /// Sends the branch picker as inline-keyboard buttons. Each branch is backed by its own
+    /// <c>select_location</c> pending token so a tap resumes with exactly that branch id (the 64-byte
+    /// callback_data only carries the token). Single-location / unentitled businesses get a plain
+    /// one-liner with no buttons.
+    /// </summary>
+    private async Task SendBranchPickerAsync(Guid businessId, Guid userId, ConversationMessage inbound, CancellationToken ct)
+    {
+        var role = await _db.Users.AsNoTracking()
+            .Where(u => u.Id == userId).Select(u => u.Role).FirstOrDefaultAsync(ct);
+        var picker = await _location.BuildPickerAsync(businessId, userId, role);
+        if (picker.Options.Count == 0)
+        {
+            await Reply(inbound, picker.Text, ct);
+            return;
+        }
+
+        var buttons = new List<QuickReply>();
+        foreach (var opt in picker.Options)
+        {
+            var token = await _pending.CreateAsync(
+                businessId, userId, inbound.SenderIdentity,
+                actionType: "select_location",
+                payloadJson: JsonSerializer.Serialize(new SelectLocationPayload { LocationId = opt.Id }),
+                ct);
+            buttons.Add(new QuickReply(opt.IsCurrent ? $"✅ {opt.Name}" : opt.Name, $"pa:yes:{token}"));
+        }
+
+        await _telegram.SendAsync(inbound.SenderIdentity, new ReplyComposition
+        {
+            Text = picker.Text,
+            QuickReplies = buttons,
+        }, ct);
+    }
+
+    /// <summary>Resume handler for a branch button tap: persists the sender's selected branch.</summary>
+    private async Task ResumeSelectLocationAsync(PendingActionConsumeResult consumed, ConversationMessage inbound, CancellationToken ct)
+    {
+        var payload = JsonSerializer.Deserialize<SelectLocationPayload>(consumed.PayloadJson);
+        if (payload is null || payload.LocationId == Guid.Empty)
+        {
+            await Reply(inbound, "Couldn't read which branch to switch to. Send *branches* to try again.", ct);
+            return;
+        }
+        var role = await _db.Users.AsNoTracking()
+            .Where(u => u.Id == consumed.UserId).Select(u => u.Role).FirstOrDefaultAsync(ct);
+        var reply = await _location.ApplySelectionAsync(consumed.BusinessId, consumed.UserId, role, payload.LocationId);
+        await Reply(inbound, reply, ct);
     }
 
     /// <summary>
@@ -1143,6 +1227,10 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
                 await ResumeConfirmDestructiveAsync(consumed, inbound, ct);
                 break;
 
+            case "select_location":
+                await ResumeSelectLocationAsync(consumed, inbound, ct);
+                break;
+
             default:
                 _logger.LogWarning("Unknown PendingTelegramAction type: {Type}", consumed.ActionType);
                 await Reply(inbound, "I forgot what this was about. Try again.", ct);
@@ -1316,5 +1404,10 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
     private sealed class SendReceiptPayload
     {
         public Guid SaleId { get; set; }
+    }
+
+    private sealed class SelectLocationPayload
+    {
+        public Guid LocationId { get; set; }
     }
 }
