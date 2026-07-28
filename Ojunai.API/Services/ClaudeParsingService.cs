@@ -412,6 +412,7 @@ Supported intents:
   If user names multiple products to zero out → use items[].
   If user says "delete/clear ALL stock" → set zeroAll="true".
 - mark_damaged_inventory: {productName, quantity, notes?}
+- transfer_stock: {productName, quantity, toLocation, fromLocation?, notes?} — MOVE stock between the business's OWN branches/warehouses (multi-location businesses only). The destination MUST be one of the owner's branches (a place/warehouse name), NEVER a person. toLocation required; fromLocation optional (defaults to the current branch). Prefer the verbs "transfer"/"move". Treat "send/give X to <name>" as create_sale UNLESS <name> is explicitly a branch/warehouse/store. If the recipient could be a customer, or the destination isn't clearly a branch, use create_sale — NOT transfer_stock. Examples: "transfer 10 rice from Main to Ikeja", "move 5 sugar to the warehouse".
 - delete_product: {productName?, deleteAll?, deleteCategory?} — permanently deactivate a product. Set deleteAll="true" to delete ALL products. Set deleteCategory="Beauty & Personal Care" to delete all products in that category.
 - get_today_expenses: {} — list today's spending
 - get_recent_expenses: {} — list last 7 days of spending
@@ -526,6 +527,8 @@ GLOBAL RULES
 - Grammar: "give me", "I need", "let me get" when said by owner about their own stock = remove_inventory or create_sale depending on context. Default to sale if price context exists.
 - "I found 3 extra rice" / "discovered extra stock" → add_inventory with notes:"found/extra"
 - "We lost 2 rice" / "2 rice missing" → remove_inventory with notes:"shrinkage"
+- "Transfer 10 rice from Main to Ikeja" / "move 5 bags sugar to the warehouse" / "transfer 20 cartons to the Lekki branch" → transfer_stock (productName, quantity, toLocation, and fromLocation if stated). This MOVES stock between the owner's OWN branches — NOT a sale, NOT a removal. Only for multi-location businesses.
+- COUNTER-EXAMPLES (do NOT use transfer_stock): "send 2 rice to Ama" / "give Ama 5 rice" → create_sale (Ama is a customer, not a branch). "shift 10 rice to the back" → remove_inventory or ask to clarify — "the back" is not a branch.
 - "This one is free for Ama" / "give Ama 2 rice free" / "na my friend" → create_sale with unitPrice:0 and contactName. Free/comp sales are valid.
 - "Same as before" / "same thing" → without context, set needsClarification: "What would you like me to repeat?"
 

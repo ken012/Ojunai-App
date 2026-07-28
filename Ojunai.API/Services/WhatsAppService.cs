@@ -261,6 +261,7 @@ public class WhatsAppService : IWhatsAppService
     private readonly ILedgerService _ledger;
     private readonly IReportService _reports;
     private readonly IStockHoldService _holds;
+    private readonly IStockTransferService _transfers;
     private readonly PlanGuard _planGuard;
     private readonly LocationAccessService _access;
     private readonly IServiceProvider _serviceProvider;
@@ -280,6 +281,7 @@ public class WhatsAppService : IWhatsAppService
         ILedgerService ledger,
         IReportService reports,
         IStockHoldService holds,
+        IStockTransferService transfers,
         PlanGuard planGuard,
         LocationAccessService access,
         IServiceProvider serviceProvider,
@@ -298,6 +300,7 @@ public class WhatsAppService : IWhatsAppService
         _ledger = ledger;
         _reports = reports;
         _holds = holds;
+        _transfers = transfers;
         _planGuard = planGuard;
         _access = access;
         _serviceProvider = serviceProvider;
@@ -967,6 +970,7 @@ public class WhatsAppService : IWhatsAppService
         ["add_inventory"] = Permission.ManageStock,
         ["remove_inventory"] = Permission.ManageStock,
         ["mark_damaged_inventory"] = Permission.ManageStock,
+        ["transfer_stock"] = Permission.ManageStock,
         ["create_contact"] = Permission.ManageDebts,
         ["create_receivable"] = Permission.ManageDebts,
         ["create_payable"] = Permission.ManageDebts,
@@ -1034,6 +1038,7 @@ public class WhatsAppService : IWhatsAppService
             "add_inventory" => await HandleAddInventoryAsync(businessId, ba, user),
             "remove_inventory" => await HandleRemoveInventoryAsync(businessId, ba, user),
             "mark_damaged_inventory" => await HandleMarkDamagedAsync(businessId, ba, user),
+            "transfer_stock" => await HandleTransferStockAsync(businessId, ba, user),
             "create_receivable" => await HandleCreateReceivableAsync(businessId, ba, user),
             "create_payable" => await HandleCreatePayableAsync(businessId, ba, user),
             "record_receivable_payment" => await HandleRecordPaymentAsync(businessId, ba, "receivable", user),
@@ -1760,6 +1765,95 @@ public class WhatsAppService : IWhatsAppService
         }, recordedBy?.Id, recordedBy?.FullName);
 
         return $"✅ {qty.Value:0.##} {UnitFormat.Plural(qty.Value, product.Unit)} of {product.Name} marked as damaged.\nRemaining: {(stockBefore - qty.Value):0.##} {UnitFormat.Plural((stockBefore - qty.Value), product.Unit)}";
+    }
+
+    /// <summary>
+    /// Multi-location: move stock of a product from one branch to another (e.g. "transfer 10 rice from Main to
+    /// Ikeja"). Gated by the multi-location entitlement AND ManageStock (via IntentPermissions → Owner/Admin,
+    /// who are all-access, so no per-branch access check is needed). fromLocation defaults to the sender's
+    /// currently-selected branch (set via "branches"), else the default location. Delegates to the same
+    /// StockTransferService the dashboard uses (Serializable move + retry; stock validated at the source).
+    /// </summary>
+    private async Task<string> HandleTransferStockAsync(Guid businessId, JsonElement ba, User? recordedBy = null)
+    {
+        if (!await _planGuard.CanUseMultiLocationAsync(businessId))
+            return "📍 You're running a single location, so there's nothing to transfer between. Multi-location is on the *Scale* plan (or as an add-on).";
+
+        var productName = ba.GetStringOrNull("productName");
+        var qty = ba.GetDecimalOrNull("quantity");
+        var toName = ba.GetStringOrNull("toLocation");
+        var fromName = ba.GetStringOrNull("fromLocation");
+
+        if (string.IsNullOrEmpty(productName) || !qty.HasValue)
+            return "Please tell me the product and quantity to transfer, e.g. \"transfer 10 rice from Main to Ikeja\".";
+        if (qty.Value <= 0) return "Transfer quantity must be greater than zero.";
+        if (string.IsNullOrWhiteSpace(toName))
+            return "Which branch should I transfer to? e.g. \"transfer 10 rice to Ikeja\".";
+
+        var (product, error) = await FindProductAsync(businessId, productName);
+        if (product == null) return error!;
+
+        var locations = await _db.Locations
+            .Where(l => l.BusinessId == businessId && l.IsActive)
+            .Select(l => new { l.Id, l.Name })
+            .ToListAsync();
+        var branchList = string.Join(", ", locations.Select(l => l.Name));
+
+        // Match a branch by name: exact (case-insensitive) first, then a unique prefix; else ambiguous → null.
+        Guid? Match(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            var n = name.Trim();
+            var exact = locations.FirstOrDefault(l => string.Equals(l.Name, n, StringComparison.OrdinalIgnoreCase));
+            if (exact != null) return exact.Id;
+            var prefix = locations.Where(l => l.Name.StartsWith(n, StringComparison.OrdinalIgnoreCase)).ToList();
+            return prefix.Count == 1 ? prefix[0].Id : (Guid?)null;
+        }
+
+        var toId = Match(toName);
+        if (toId == null)
+            return $"I couldn't find a branch called \"{toName}\". Your branches: {branchList}. Reply *branches* to see them.";
+
+        Guid fromId;
+        if (!string.IsNullOrWhiteSpace(fromName))
+        {
+            var f = Match(fromName);
+            if (f == null)
+                return $"I couldn't find a source branch called \"{fromName}\". Your branches: {branchList}.";
+            fromId = f.Value;
+        }
+        else
+        {
+            // Default the source to the sender's currently-selected branch (via "branches"), else the default —
+            // both validated against the active locations, so an inactive/stale one cleanly asks "from where?".
+            var def = await _db.Businesses.Where(b => b.Id == businessId).Select(b => b.DefaultLocationId).FirstOrDefaultAsync();
+            fromId = LocationScope.Current is { } cur && locations.Any(l => l.Id == cur) ? cur
+                   : (def is { } d && locations.Any(l => l.Id == d) ? d : Guid.Empty);
+            if (fromId == Guid.Empty)
+                return "Which branch should I transfer FROM? e.g. \"transfer 10 rice from Main to Ikeja\".";
+        }
+
+        if (fromId == toId.Value)
+            return "The source and destination branches must be different — tell me both, e.g. \"transfer 10 rice from Main to Ikeja\".";
+
+        try
+        {
+            var dto = await _transfers.TransferAsync(businessId, new CreateStockTransferRequest
+            {
+                ProductId = product.Id,
+                FromLocationId = fromId,
+                ToLocationId = toId.Value,
+                Quantity = qty.Value,
+                Notes = ba.GetStringOrNull("notes"),
+            }, recordedBy?.Id, recordedBy?.FullName);
+
+            return $"✅ Transferred {dto.Quantity:0.##} {UnitFormat.Plural(dto.Quantity, dto.Unit)} of {dto.ProductName} from *{dto.FromLocationName}* to *{dto.ToLocationName}*.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Bot stock transfer failed");
+            return $"❌ {FriendlyErrorMessage(ex)}";
+        }
     }
 
     private async Task<string> HandleCreateReceivableAsync(Guid businessId, JsonElement ba, User? recordedBy = null)
@@ -3131,7 +3225,7 @@ public class WhatsAppService : IWhatsAppService
         "📥 *Bulk restock:* \"Bought 10 rice, 5 juice, 3 shampoo\"\n" +
         "🛒 *Multi-sale:* \"Sold 3 rice and 2 beans at 5k each\"\n" +
         "✏️ *Corrections:* \"Cancel that\" / \"That was on credit\" / \"Add Ama to that\"\n" +
-        "📍 *Branches:* \"Branches\" to see your locations & switch which one you're recording to\n" +
+        "📍 *Branches:* \"Branches\" to switch which one you're recording to · \"Transfer 10 rice to Ikeja\" to move stock\n" +
         "📋 *Plans:* \"What plan am I on?\" / \"Plans\"\n\n" +
         "💡 *Tip:* Do multiple things at once!\n" +
         "\"Bought 3 yam at 2k, sold 2 toothpaste at 5k, NEPA bill 10k\"";
