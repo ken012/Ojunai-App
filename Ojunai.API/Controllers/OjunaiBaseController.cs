@@ -28,6 +28,14 @@ public abstract class OjunaiBaseController : ControllerBase, IAsyncActionFilter
     ///
     /// Scope is set per action and cleared in a finally, so no value can leak across requests.
     /// </summary>
+    /// <remarks>
+    /// [NonAction] is REQUIRED: this is the <see cref="IAsyncActionFilter"/> hook, not a routable endpoint.
+    /// Without it, MVC treats this public controller method as an action whose two complex parameters both
+    /// infer [FromBody], and startup aborts at MapControllers with "more than one parameter bound from body"
+    /// — crashing EVERY controller that inherits this base. The attribute only removes it from action
+    /// discovery; the filter pipeline still invokes it on every request via the interface.
+    /// </remarks>
+    [NonAction]
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
         try
