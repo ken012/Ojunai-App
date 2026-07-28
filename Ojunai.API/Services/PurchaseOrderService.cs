@@ -148,6 +148,24 @@ public class PurchaseOrderService : IPurchaseOrderService
 
     public async Task<PurchaseOrderDto> ReceiveAsync(Guid businessId, Guid id, ReceivePurchaseOrderRequest request, Guid? userId, string? userName)
     {
+        // Optional receiving-location override: receive into a chosen branch regardless of the current switcher
+        // (validated once). Null = the ambient location (switcher) / default, unchanged.
+        Guid? receiveLoc = null;
+        if (request.ReceivingLocationId is { } rl)
+        {
+            if (!await _db.Locations.AnyAsync(l => l.Id == rl && l.BusinessId == businessId && l.IsActive))
+                throw new InvalidOperationException("The receiving location is invalid or inactive.");
+            receiveLoc = rl;
+        }
+
+        // Serializable (+ retry via DbRetry) so the received stock serializes against a concurrent transfer on
+        // the shared per-location row; stock + cost + payable + status all commit together, or none do.
+        return await DbRetry.SerializableAsync(_db, async () =>
+        {
+        var prevScope = LocationScope.Current;
+        if (receiveLoc is { } r) LocationScope.Current = r; // route the mirror + txn stamps to the chosen branch
+        try
+        {
         var po = await LoadAsync(businessId, id);
         if (po.Status is PurchaseOrderStatus.Received or PurchaseOrderStatus.Cancelled)
             throw new InvalidOperationException($"This purchase order is already {po.Status.ToString().ToLowerInvariant()}.");
@@ -160,9 +178,6 @@ public class PurchaseOrderService : IPurchaseOrderService
 
         var now = DateTime.UtcNow;
         decimal receivedValue = 0;
-
-        // One transaction: stock + cost + payable all commit together, or none do.
-        await using var tx = await _db.Database.BeginTransactionAsync();
 
         foreach (var item in po.Items)
         {
@@ -235,8 +250,10 @@ public class PurchaseOrderService : IPurchaseOrderService
             po.SupplierName ?? po.PoNumber,
             $"received stock on purchase order");
         await _db.SaveChangesAsync();
-        await tx.CommitAsync();
         return ToDto(po);
+        }
+        finally { LocationScope.Current = prevScope; }
+        });
     }
 
     public async Task<PurchaseOrderDto> CancelAsync(Guid businessId, Guid id)

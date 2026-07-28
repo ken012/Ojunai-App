@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
 import { formatNaira, formatDateTime, pluralUnit } from "@/lib/format";
 import { hasPermission, Permission } from "@/lib/permissions";
+import { useBusiness } from "@/lib/data-sync";
 import type { PurchaseOrderDto, PurchaseOrderStatus, ContactDto, ProductDto, PaginatedResult } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -299,8 +300,12 @@ function CreatePODialog({ onClose }: { onClose: () => void }) {
 function PODetailDialog({ id, canManage, onClose }: { id: string; canManage: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const business = useBusiness();
+  const activeLocations = (business?.locations ?? []).filter((l) => l.isActive);
+  const showLocationPicker = !!business?.isMultiLocation && activeLocations.length > 1;
   const [receiveQty, setReceiveQty] = useState<Record<string, string>>({});
   const [createPayable, setCreatePayable] = useState(true);
+  const [receivingLocationId, setReceivingLocationId] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [mode, setMode] = useState<"view" | "receive">("view");
 
@@ -342,7 +347,7 @@ function PODetailDialog({ id, canManage, onClose }: { id: string; canManage: boo
       .map(([itemId, v]) => ({ itemId, quantityReceived: Number(v) || 0 }))
       .filter((l) => l.quantityReceived > 0);
     if (lines.length === 0) { toast.error("Nothing to receive", "Enter a received quantity for at least one line."); return; }
-    act("receive", { lines, createPayable }, "receive", "Stock received");
+    act("receive", { lines, createPayable, receivingLocationId: receivingLocationId || undefined }, "receive", "Stock received");
   }
 
   const canEdit = canManage && po && (po.status === "Draft" || po.status === "Sent" || po.status === "PartiallyReceived");
@@ -394,6 +399,22 @@ function PODetailDialog({ id, canManage, onClose }: { id: string; canManage: boo
                   );
                 })}
               </div>
+
+              {mode === "receive" && showLocationPicker && (
+                <div>
+                  <Label className="text-xs">Receive into branch</Label>
+                  <select
+                    className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
+                    value={receivingLocationId}
+                    onChange={(e) => setReceivingLocationId(e.target.value)}
+                  >
+                    <option value="">Current branch (from the top selector)</option>
+                    {activeLocations.map((l) => (
+                      <option key={l.id} value={l.id}>{l.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {mode === "receive" && po.supplierId && (
                 <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">

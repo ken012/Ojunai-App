@@ -43,6 +43,9 @@ public class ReceivePurchaseOrderRequest
     public List<ReceivePurchaseOrderItemInput> Lines { get; set; } = new();
     /// <summary>Create a payable to the supplier for the value received this time. Default true.</summary>
     public bool CreatePayable { get; set; } = true;
+    /// <summary>Multi-location: the branch to receive this stock into. Null = the currently-selected location
+    /// (the switcher) / default — so single-location businesses ignore it.</summary>
+    public Guid? ReceivingLocationId { get; set; }
 }
 
 public class PurchaseOrderItemDto
