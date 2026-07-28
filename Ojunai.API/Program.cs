@@ -241,6 +241,7 @@ builder.Services.AddScoped<OnboardingService>();
 builder.Services.AddScoped<SummaryJobService>();
 builder.Services.AddScoped<TrialReminderJobService>();
 builder.Services.AddScoped<TrialRevertJobService>();
+builder.Services.AddScoped<LocationQuotaReconcileJobService>(); // multi-location: soft-deactivate over-quota locations after a downgrade
 builder.Services.AddScoped<VoiceAITrialRevertJobService>();
 builder.Services.AddScoped<RenewalReminderJobService>();
 builder.Services.AddScoped<ImportJobService>();
@@ -534,6 +535,12 @@ RecurringJob.AddOrUpdate<VoiceAITrialRevertJobService>(
     "voiceai-trial-revert",
     svc => svc.RevertExpiredTrialsAsync(),
     "0 */4 * * *",
+    new RecurringJobOptions { TimeZone = lagosZone });
+
+RecurringJob.AddOrUpdate<LocationQuotaReconcileJobService>(
+    "location-quota-reconcile",
+    svc => svc.ReconcileAsync(),
+    "0 3 * * *", // daily at 03:00
     new RecurringJobOptions { TimeZone = lagosZone });
 
 RecurringJob.AddOrUpdate<RenewalReminderJobService>(

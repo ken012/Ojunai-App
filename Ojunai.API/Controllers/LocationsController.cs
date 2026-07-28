@@ -99,6 +99,17 @@ public class LocationsController : OjunaiBaseController
         {
             if (loc.IsDefault && !request.IsActive.Value)
                 return BadRequest(ApiResponse<LocationDto>.Fail("The default location can't be deactivated."));
+            // Don't strand stock: a location still holding stock would keep that stock in the business-wide
+            // roll-up while making it unsellable (you can't select a deactivated location). Require it to be
+            // transferred to another branch first.
+            if (!request.IsActive.Value && loc.IsActive)
+            {
+                var withStock = await _db.ProductLocationStocks
+                    .CountAsync(x => x.LocationId == loc.Id && x.CurrentStock > 0);
+                if (withStock > 0)
+                    return BadRequest(ApiResponse<LocationDto>.Fail(
+                        $"{loc.Name} still holds stock in {withStock} product{(withStock == 1 ? "" : "s")}. Transfer it to another branch first, then deactivate."));
+            }
             // Reactivating a non-default location is subject to the SAME gate + quota as creating one —
             // otherwise a downgraded business could deactivate then reactivate to exceed its limit.
             if (request.IsActive.Value && !loc.IsActive && !loc.IsDefault)
