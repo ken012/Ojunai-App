@@ -27,11 +27,26 @@ public class StockHoldService : IStockHoldService
             .FirstOrDefaultAsync(p => p.Id == productId && p.BusinessId == businessId && p.IsActive)
             ?? throw new KeyNotFoundException("Product not found.");
 
-        var heldQty = await GetHeldQuantityAsync(businessId, productId);
-        var available = product.CurrentStock - heldQty;
+        // When a location is selected, check availability against THAT location's stock + its own active holds
+        // (the new hold is stamped with the location by the central attribution pass). Else business-wide, unchanged.
+        var holdLoc = await _locStock.SelectedLocationForAsync(businessId);
+        decimal totalStock, heldQty;
+        if (holdLoc is { } hl)
+        {
+            totalStock = await _locStock.StockAtAsync(productId, hl);
+            heldQty = await _db.Set<StockHold>()
+                .Where(h => h.BusinessId == businessId && h.ProductId == productId && h.Status == HoldStatus.Active && h.LocationId == hl)
+                .SumAsync(h => h.Quantity);
+        }
+        else
+        {
+            totalStock = product.CurrentStock;
+            heldQty = await GetHeldQuantityAsync(businessId, productId);
+        }
+        var available = totalStock - heldQty;
 
         if (quantity > available)
-            throw new InvalidOperationException($"Only {available:0.##} {UnitFormat.Plural(available, product.Unit)} of {product.Name} available (total: {product.CurrentStock:0.##}, on hold: {heldQty:0.##}).");
+            throw new InvalidOperationException($"Only {available:0.##} {UnitFormat.Plural(available, product.Unit)} of {product.Name} available{(holdLoc != null ? " at this location" : "")} (total: {totalStock:0.##}, on hold: {heldQty:0.##}).");
 
         var hold = new StockHold
         {
