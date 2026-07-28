@@ -25,5 +25,10 @@ public enum InventoryTransactionType
     StockOut = 2,
     Adjustment = 3,
     Damaged = 4,
-    Wastage = 5
+    Wastage = 5,
+    // Multi-location transfers: the two legs of a StockTransfer, each stamped with its own LocationId (source
+    // for Out, destination for In). Informational movement-log rows — the stock move itself is done on the
+    // ProductLocationStock rows, and Product.CurrentStock is unchanged.
+    TransferOut = 6,
+    TransferIn = 7
 }

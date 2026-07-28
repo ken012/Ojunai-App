@@ -28,27 +28,48 @@ public class SalesService : ISalesService
     /// </summary>
     public async Task<SaleDto> CreateAsync(Guid businessId, CreateSaleRequest request, string source = "Manual", Guid? recordedByUserId = null, string? recordedByName = null)
     {
-        const int maxRetries = 3;
+        // 4 attempts (Serializable aborts on any read-write conflict, so allow a little more headroom than the
+        // old optimistic-only path) with a small growing backoff so a hot-row conflict doesn't burn every attempt
+        // in microseconds before the winner commits.
+        const int maxRetries = 4;
         for (var attempt = 0; attempt < maxRetries; attempt++)
         {
             try
             {
                 return await TryCreateSaleAsync(businessId, request, source, recordedByUserId, recordedByName);
             }
-            catch (DbUpdateConcurrencyException) when (attempt < maxRetries - 1)
+            catch (Exception ex) when (attempt < maxRetries - 1 && IsRetryableSaleException(ex))
             {
-                // A parallel sale or restock changed a product's stock while we were preparing ours.
-                // Detach the stale entity tracking so the next attempt fetches fresh stock values from the database.
+                // A parallel sale, stock transfer, or restock changed a product's stock while we were preparing
+                // ours — an optimistic-concurrency conflict (Product rowversion) OR a Serializable serialization
+                // failure/deadlock. Detach the stale entity tracking so the next attempt reads fresh stock values.
                 foreach (var entry in _db.ChangeTracker.Entries().ToList())
                     entry.State = EntityState.Detached;
+                await Task.Delay(15 * (attempt + 1));
             }
         }
         throw new InvalidOperationException("Could not complete sale due to high contention. Please try again.");
     }
 
+    /// <summary>Concurrency conflicts the sale should retry: the Product rowversion optimistic-concurrency
+    /// conflict, plus (now the sale runs Serializable, to serialize against stock transfers on the shared
+    /// per-location stock) a Postgres serialization failure (40001) or deadlock (40P01).</summary>
+    private static bool IsRetryableSaleException(Exception ex)
+    {
+        for (var e = (Exception?)ex; e != null; e = e.InnerException)
+        {
+            if (e is DbUpdateConcurrencyException) return true;
+            if (e is Npgsql.PostgresException pg && pg.SqlState is "40001" or "40P01") return true;
+        }
+        return false;
+    }
+
     private async Task<SaleDto> TryCreateSaleAsync(Guid businessId, CreateSaleRequest request, string source, Guid? recordedByUserId, string? recordedByName)
     {
-        await using var tx = await _db.Database.BeginTransactionAsync();
+        // Serializable so this sale serializes against a concurrent stock transfer (which directly rewrites the
+        // shared per-location stock row and is itself Serializable) — one aborts and the CreateAsync loop retries.
+        // Read Committed here would let the two lose an update on that row. The retry loop makes this transparent.
+        await using var tx = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
 
         var productIds = request.Items.Select(i => i.ProductId).Distinct().ToList();
         var products = await _db.Products

@@ -590,6 +590,10 @@ public partial class ReportService : IReportService
                     ? $"Removed {t.Quantity:0.##} {UnitFormat.Plural(t.Quantity, t.Product.Unit)} of {t.Product.Name}"
                     : t.Type == InventoryTransactionType.Damaged
                     ? $"Marked {t.Quantity:0.##} {UnitFormat.Plural(t.Quantity, t.Product.Unit)} of {t.Product.Name} as damaged"
+                    : t.Type == InventoryTransactionType.TransferOut
+                    ? $"Transferred out {t.Quantity:0.##} {UnitFormat.Plural(t.Quantity, t.Product.Unit)} of {t.Product.Name}"
+                    : t.Type == InventoryTransactionType.TransferIn
+                    ? $"Transferred in {t.Quantity:0.##} {UnitFormat.Plural(t.Quantity, t.Product.Unit)} of {t.Product.Name}"
                     : $"Adjusted {t.Product.Name} stock by {t.Quantity:0.##} {UnitFormat.Plural(t.Quantity, t.Product.Unit)}",
                 Amount = t.UnitCost.HasValue ? t.Quantity * t.UnitCost.Value : null,
                 RecordedBy = t.RecordedByName,

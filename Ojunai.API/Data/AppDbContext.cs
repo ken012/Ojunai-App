@@ -49,6 +49,7 @@ public class AppDbContext : DbContext
     public DbSet<Location> Locations => Set<Location>();
     public DbSet<ProductLocationStock> ProductLocationStocks => Set<ProductLocationStock>();
     public DbSet<UserLocation> UserLocations => Set<UserLocation>();
+    public DbSet<StockTransfer> StockTransfers => Set<StockTransfer>();
 
     // ── Multi-channel messaging (Phase 1 refactor) — additive ─────────────────
     public DbSet<ContactIdentity> ContactIdentities => Set<ContactIdentity>();
@@ -625,6 +626,15 @@ public class AppDbContext : DbContext
              .WithMany()
              .HasForeignKey(x => x.LocationId)
              .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        mb.Entity<StockTransfer>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.BusinessId, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.BusinessId, x.ProductId });
+            e.Property(x => x.Quantity).HasPrecision(18, 4);
+            // Plain Guid FK columns (no navigations) — additive, avoids multiple-cascade-path constraints.
         });
 
         mb.Entity<ContactIdentity>(e =>

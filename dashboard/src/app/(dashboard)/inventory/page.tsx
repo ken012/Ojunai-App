@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { Drawer, DrawerHeader, DrawerBody, DrawerFooter } from "@/components/ui/drawer";
 import { useToast } from "@/components/toast";
-import { AlertTriangle, Package, Pencil, Trash2, Minus, Plus, Lock, Unlock, ShoppingCart, Ban, Search, X, LayoutList, LayoutGrid, ScanLine, ClipboardCheck, Layers, CalendarClock } from "lucide-react";
+import { AlertTriangle, Package, Pencil, Trash2, Minus, Plus, Lock, Unlock, ShoppingCart, Ban, Search, X, LayoutList, LayoutGrid, ScanLine, ClipboardCheck, Layers, CalendarClock, ArrowLeftRight } from "lucide-react";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import type { ContactDto, BundleDto } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
@@ -808,6 +808,133 @@ function AddHoldDialog({
   );
 }
 
+// ─── Transfer Stock dialog (multi-location) ──────────────────────────────────
+function TransferStockDialog({
+  open,
+  onClose,
+  products,
+}: {
+  open: boolean;
+  onClose: () => void;
+  products: ProductDto[];
+}) {
+  const qc = useQueryClient();
+  const business = useBusiness();
+  const activeLocations = (business?.locations ?? []).filter((l) => l.isActive);
+  const [form, setForm] = useState({ productId: "", fromLocationId: "", toLocationId: "", quantity: "", notes: "" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      await api.post("/inventory/transfers", {
+        productId: form.productId,
+        fromLocationId: form.fromLocationId,
+        toLocationId: form.toLocationId,
+        quantity: Number(form.quantity),
+        notes: form.notes || undefined,
+      });
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-transfers"] });
+      handleClose();
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { errors?: string[] } } };
+      setError(ax.response?.data?.errors?.[0] ?? "Failed to transfer stock");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleClose() {
+    setForm({ productId: "", fromLocationId: "", toLocationId: "", quantity: "", notes: "" });
+    setError(null);
+    onClose();
+  }
+
+  const sameLoc = !!form.fromLocationId && form.fromLocationId === form.toLocationId;
+  const canSave = !!form.productId && !!form.fromLocationId && !!form.toLocationId && !sameLoc && Number(form.quantity) > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Transfer stock between branches</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>Product</Label>
+            <select
+              className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
+              value={form.productId}
+              onChange={(e) => setForm({ ...form, productId: e.target.value })}
+            >
+              <option value="">Select product</option>
+              {products.filter((p) => !p.isBundle).map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label>From</Label>
+              <select
+                className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
+                value={form.fromLocationId}
+                onChange={(e) => setForm({ ...form, fromLocationId: e.target.value })}
+              >
+                <option value="">Source</option>
+                {activeLocations.map((l) => (
+                  <option key={l.id} value={l.id}>{l.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label>To</Label>
+              <select
+                className="w-full h-9 px-2 rounded-md border border-slate-200 dark:border-slate-800 text-sm bg-white dark:bg-slate-900"
+                value={form.toLocationId}
+                onChange={(e) => setForm({ ...form, toLocationId: e.target.value })}
+              >
+                <option value="">Destination</option>
+                {activeLocations.filter((l) => l.id !== form.fromLocationId).map((l) => (
+                  <option key={l.id} value={l.id}>{l.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <Label>Quantity</Label>
+            <Input
+              type="number"
+              value={form.quantity}
+              onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+              placeholder="How many to move"
+            />
+          </div>
+          <div>
+            <Label>Notes (optional)</Label>
+            <Input
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              placeholder="e.g. restocking the Ikeja shelf"
+            />
+          </div>
+          {sameLoc && <p className="text-xs text-amber-600">Pick two different branches.</p>}
+          {error && <p className="text-xs text-red-500">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose} disabled={saving}>Cancel</Button>
+          <Button onClick={handleSave} disabled={saving || !canSave}>
+            {saving ? "Transferring…" : "Transfer"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Delete Product dialog ───────────────────────────────────────────────────
 function DeleteProductDialog({
   product,
@@ -1496,8 +1623,12 @@ function ProductRow({
 export default function InventoryPage() {
   const { toast } = useToast();
   const router = useRouter();
+  const business = useBusiness();
+  const canTransfer = hasPermission(Permission.ManageStock) && !!business?.isMultiLocation
+    && (business?.locations ?? []).filter((l) => l.isActive).length > 1;
   const [adding, setAdding] = useState(false);
   const [addingHold, setAddingHold] = useState(false);
+  const [transferring, setTransferring] = useState(false);
   const [editing, setEditing] = useState<ProductDto | null>(null);
   const [scanFind, setScanFind] = useState(false);
   const [prefillBarcode, setPrefillBarcode] = useState<string | null>(null);
@@ -1811,6 +1942,11 @@ export default function InventoryPage() {
                 {hasHolds && (
                   <Button variant="outline" onClick={() => setAddingHold(true)}>
                     <Lock size={14} className="mr-1" /> Hold Stock
+                  </Button>
+                )}
+                {canTransfer && (
+                  <Button variant="outline" onClick={() => setTransferring(true)}>
+                    <ArrowLeftRight size={14} className="mr-1" /> Transfer
                   </Button>
                 )}
                 <Button onClick={() => setAdding(true)}>+ Add Product</Button>
@@ -2260,6 +2396,7 @@ export default function InventoryPage() {
       <AddProductDialog open={adding} onClose={() => { setAdding(false); setPrefillBarcode(null); }} initialBarcode={prefillBarcode} />
       <BarcodeScanner open={scanFind} onClose={() => setScanFind(false)} onScan={handleScanFind} />
       <AddHoldDialog open={addingHold} onClose={() => setAddingHold(false)} products={allProducts} />
+      <TransferStockDialog open={transferring} onClose={() => setTransferring(false)} products={allProducts} />
       <EditProductDialog
         product={editing}
         open={editing !== null}
