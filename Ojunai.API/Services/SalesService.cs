@@ -409,6 +409,10 @@ public class SalesService : ISalesService
                     Amount = sale.TotalAmount,
                     Notes = $"Voided sale{customerNote}: {saleSummary} ({cs}{sale.TotalAmount:N0}) — receivable reversed",
                     Source = "Adjustment",
+                    // Stamp the reversal to the ORIGINAL sale's branch (not the ambient scope) so it cancels the
+                    // receivable at the same branch — otherwise voiding from "All"/another branch leaves the
+                    // original branch's balance still showing the debt. Explicit value skips the central stamp.
+                    LocationId = sale.LocationId,
                     RecordedByUserId = voidedByUserId,
                     RecordedByName = voidedByName
                 });
@@ -474,6 +478,8 @@ public class SalesService : ISalesService
                     Amount = sale.TotalAmount,
                     Notes = $"Returned sale{customerNote}: {saleSummary} ({cs}{sale.TotalAmount:N0}) — receivable reversed",
                     Source = "Adjustment",
+                    // Stamp to the original sale's branch so the reversal cancels the receivable at the same branch.
+                    LocationId = sale.LocationId,
                     RecordedByUserId = returnedByUserId,
                     RecordedByName = returnedByName
                 });

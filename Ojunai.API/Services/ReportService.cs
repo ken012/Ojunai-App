@@ -23,9 +23,9 @@ public partial class ReportService : IReportService
 
     public async Task<DashboardOverviewDto> GetDashboardOverviewAsync(Guid businessId)
     {
-        // Per-location scope: when a location is selected (multi-location business) all money figures below
-        // reflect that location only; null (single-location / "All locations") = business-wide, unchanged.
-        // Ledger (receivables/payables) and stock counts stay business-wide by design.
+        // Per-location scope: when a location is selected (multi-location business) all money figures below —
+        // sales, expenses, AND ledger (receivables/payables) — reflect that location only; null (single-location
+        // / "All locations") = business-wide, unchanged. Stock counts stay business-wide by design.
         var locId = await _locStock.SelectedLocationForAsync(businessId);
 
         var todayUtc = DateTime.UtcNow.Date;
@@ -39,7 +39,7 @@ public partial class ReportService : IReportService
             .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= todayUtc && e.CreatedAtUtc < tomorrowUtc && (locId == null || e.LocationId == locId))
             .SumAsync(e => e.Amount);
 
-        var (outstandingReceivables, outstandingPayables) = await GetOutstandingLedgerAsync(businessId);
+        var (outstandingReceivables, outstandingPayables) = await GetOutstandingLedgerAsync(businessId, locId);
 
         var lowStockCount = locId is { } lowLoc
             ? await (from p in _db.Products
@@ -132,7 +132,7 @@ public partial class ReportService : IReportService
             .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= start && e.CreatedAtUtc < end && (locId == null || e.LocationId == locId))
             .SumAsync(e => e.Amount);
 
-        var (receivables, payables) = await GetOutstandingLedgerAsync(businessId);
+        var (receivables, payables) = await GetOutstandingLedgerAsync(businessId, locId);
 
         var lowStockItems = await LowStockItemsAsync(businessId, locId);
 
@@ -189,7 +189,7 @@ public partial class ReportService : IReportService
 
         var ledger = await _db.LedgerEntries
             .Include(e => e.Contact)
-            .Where(e => e.BusinessId == businessId)
+            .Where(e => e.BusinessId == businessId && (locId == null || e.LocationId == locId))
             .ToListAsync();
 
         var topDebtors = ledger
@@ -254,8 +254,8 @@ public partial class ReportService : IReportService
             .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= monthStart && (locId == null || e.LocationId == locId))
             .SumAsync(e => e.Amount);
 
-        // Receivables/payables stay business-wide (debts roll up across branches by design).
-        var (receivables, payables) = await GetOutstandingLedgerAsync(businessId);
+        // Receivables/payables scope to the selected branch (locId null in the background summary job → business-wide).
+        var (receivables, payables) = await GetOutstandingLedgerAsync(businessId, locId);
 
         var cashIn = totalSales - totalExpenses;
 
@@ -322,7 +322,7 @@ public partial class ReportService : IReportService
         // 4. Receivables aging
         var receivableEntries = await _db.LedgerEntries
             .Include(e => e.Contact)
-            .Where(e => e.BusinessId == businessId &&
+            .Where(e => e.BusinessId == businessId && (locId == null || e.LocationId == locId) &&
                         (e.EntryType == LedgerEntryType.Receivable || e.EntryType == LedgerEntryType.ReceivablePayment))
             .ToListAsync();
 
@@ -747,11 +747,11 @@ public partial class ReportService : IReportService
     /// raw nets; callers clamp with Math.Max(0, …) exactly as before. Backed by the (BusinessId,
     /// EntryType) index. Produces identical totals to the previous load-all-then-sum-in-C# code.
     /// </summary>
-    private async Task<(decimal Receivables, decimal Payables)> GetOutstandingLedgerAsync(Guid businessId)
+    private async Task<(decimal Receivables, decimal Payables)> GetOutstandingLedgerAsync(Guid businessId, Guid? locId)
     {
         var sums = await _db.LedgerEntries
             .AsNoTracking()
-            .Where(e => e.BusinessId == businessId)
+            .Where(e => e.BusinessId == businessId && (locId == null || e.LocationId == locId))
             .GroupBy(e => e.EntryType)
             .Select(g => new { Type = g.Key, Total = g.Sum(e => e.Amount) })
             .ToListAsync();

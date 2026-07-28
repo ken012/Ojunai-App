@@ -21,4 +21,7 @@ public class ContactDto
     public decimal OutstandingReceivable { get; set; }
     public decimal OutstandingPayable { get; set; }
     public DateTime CreatedAtUtc { get; set; }
+    /// <summary>Name of the branch this contact was created at. Null for single-location businesses (nothing
+    /// to show). The contact list itself is business-wide; this is only an origin-branch label for the UI.</summary>
+    public string? CreatedAtBranch { get; set; }
 }

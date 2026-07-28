@@ -314,6 +314,8 @@ export interface ContactDto {
   outstandingReceivable: number;
   outstandingPayable: number;
   createdAtUtc: string;
+  /** Branch the contact was created at. Only present for multi-location businesses. */
+  createdAtBranch?: string;
 }
 
 export interface LedgerEntryDto {

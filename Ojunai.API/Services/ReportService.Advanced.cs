@@ -31,10 +31,12 @@ public partial class ReportService
     private async Task<AgingReportDto> BuildAgingReportAsync(Guid businessId, LedgerEntryType debtType, LedgerEntryType paymentType)
     {
         var now = DateTime.UtcNow;
+        var locId = await _locStock.SelectedLocationForAsync(businessId); // per-branch when selected; null = business-wide
 
         var entries = await _db.LedgerEntries
             .Include(e => e.Contact)
-            .Where(e => e.BusinessId == businessId && (e.EntryType == debtType || e.EntryType == paymentType))
+            .Where(e => e.BusinessId == businessId && (e.EntryType == debtType || e.EntryType == paymentType)
+                && (locId == null || e.LocationId == locId))
             .ToListAsync();
 
         var report = new AgingReportDto();
@@ -451,9 +453,10 @@ public partial class ReportService
 
     public async Task<List<CustomerReliabilityDto>> GetCustomerReliabilityAsync(Guid businessId)
     {
+        var locId = await _locStock.SelectedLocationForAsync(businessId); // per-branch when selected; null = business-wide
         var entries = await _db.LedgerEntries
             .Include(e => e.Contact)
-            .Where(e => e.BusinessId == businessId
+            .Where(e => e.BusinessId == businessId && (locId == null || e.LocationId == locId)
                         && (e.EntryType == LedgerEntryType.Receivable || e.EntryType == LedgerEntryType.ReceivablePayment))
             .OrderBy(e => e.CreatedAtUtc)
             .ToListAsync();
@@ -922,9 +925,10 @@ public partial class ReportService
     public async Task<OutstandingDebtSummaryDto> GetOutstandingDebtSummaryAsync(Guid businessId)
     {
         var now = DateTime.UtcNow;
+        var locId = await _locStock.SelectedLocationForAsync(businessId); // per-branch when selected; null (incl. background jobs) = business-wide
         var entries = await _db.LedgerEntries
             .Include(e => e.Contact)
-            .Where(e => e.BusinessId == businessId)
+            .Where(e => e.BusinessId == businessId && (locId == null || e.LocationId == locId))
             .ToListAsync();
 
         var byContact = entries.GroupBy(e => new { e.ContactId, e.Contact.Name });

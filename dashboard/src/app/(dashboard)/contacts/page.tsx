@@ -286,7 +286,12 @@ export default function ContactsPage() {
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <Avatar name={contact.name} size="sm" />
-                        <span className="font-medium text-slate-900 dark:text-slate-50">{contact.name}</span>
+                        <div className="flex flex-col">
+                          <span className="font-medium text-slate-900 dark:text-slate-50">{contact.name}</span>
+                          {contact.createdAtBranch && (
+                            <span className="text-xs text-slate-400 dark:text-slate-500">📍 {contact.createdAtBranch}</span>
+                          )}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>

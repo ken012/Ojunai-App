@@ -10,8 +10,13 @@ namespace Ojunai.API.Services;
 public class LedgerService : ILedgerService
 {
     private readonly AppDbContext _db;
+    private readonly LocationStockService _locStock;
 
-    public LedgerService(AppDbContext db) => _db = db;
+    public LedgerService(AppDbContext db, LocationStockService locStock)
+    {
+        _db = db;
+        _locStock = locStock;
+    }
 
     public async Task<LedgerEntryDto> CreateReceivableAsync(Guid businessId, CreateReceivableRequest request, string source = "Manual", Guid? recordedByUserId = null, string? recordedByName = null)
     {
@@ -123,9 +128,15 @@ public class LedgerService : ILedgerService
 
     public async Task<List<OutstandingBalanceDto>> GetOutstandingBalancesAsync(Guid businessId, string? type)
     {
+        // Per-branch scoping: when a branch is selected at a multi-location business, only that branch's debts
+        // count (locId non-null → filter on LocationId). Single-location / "All locations" → locId null → the
+        // predicate vanishes and the query is unchanged. Debts + their payments must be recorded at the same
+        // branch to net correctly (see docs/multi-location-spec.md).
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
+
         var query = _db.LedgerEntries
             .Include(e => e.Contact)
-            .Where(e => e.BusinessId == businessId);
+            .Where(e => e.BusinessId == businessId && (locId == null || e.LocationId == locId));
 
         var grouped = await query
             .GroupBy(e => new { e.ContactId, e.Contact.Name, e.Contact.Type })
@@ -147,6 +158,7 @@ public class LedgerService : ILedgerService
         var contactIds = grouped.Select(g => g.ContactId).ToList();
         var recentNotes = await _db.LedgerEntries
             .Where(e => e.BusinessId == businessId && contactIds.Contains(e.ContactId)
+                && (locId == null || e.LocationId == locId)
                 && e.Notes != null && (e.EntryType == LedgerEntryType.Receivable || e.EntryType == LedgerEntryType.Payable))
             .OrderByDescending(e => e.CreatedAtUtc)
             .ToListAsync();
@@ -173,9 +185,13 @@ public class LedgerService : ILedgerService
 
     public async Task<List<LedgerEntryDto>> GetContactLedgerAsync(Guid businessId, Guid contactId)
     {
+        // Scope a contact's ledger history to the selected branch so it stays consistent with the branch
+        // balance shown in the list. null (single-location / All) → full history, unchanged.
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
+
         var entries = await _db.LedgerEntries
             .Include(e => e.Contact)
-            .Where(e => e.BusinessId == businessId && e.ContactId == contactId)
+            .Where(e => e.BusinessId == businessId && e.ContactId == contactId && (locId == null || e.LocationId == locId))
             .OrderByDescending(e => e.CreatedAtUtc)
             .ToListAsync();
 

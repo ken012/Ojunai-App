@@ -11,11 +11,36 @@ public class ContactService : IContactService
 {
     private readonly AppDbContext _db;
     private readonly IActivityLogger _activity;
+    private readonly LocationStockService _locStock;
 
-    public ContactService(AppDbContext db, IActivityLogger activity)
+    public ContactService(AppDbContext db, IActivityLogger activity, LocationStockService locStock)
     {
         _db = db;
         _activity = activity;
+        _locStock = locStock;
+    }
+
+    /// <summary>
+    /// Per-branch balance labels. The contact LIST stays business-wide (contacts are master data visible at
+    /// every branch); this only resolves the origin-branch NAME to show per contact. Returns null for
+    /// single-location businesses (nothing to label). Falls back a null contact-location to the default branch
+    /// (e.g. contacts created under "All locations").
+    /// </summary>
+    private async Task<(Dictionary<Guid, string> Names, Guid? DefaultId)?> BranchLabelsAsync(Guid businessId)
+    {
+        var locs = await _db.Locations
+            .Where(l => l.BusinessId == businessId && l.IsActive)
+            .Select(l => new { l.Id, l.Name, l.IsDefault })
+            .ToListAsync();
+        if (locs.Count <= 1) return null; // single-location → no branch label
+        return (locs.ToDictionary(l => l.Id, l => l.Name), locs.FirstOrDefault(l => l.IsDefault)?.Id);
+    }
+
+    private static string? LabelFor(Guid? contactLocationId, (Dictionary<Guid, string> Names, Guid? DefaultId)? labels)
+    {
+        if (labels is null) return null; // single-location
+        var loc = contactLocationId ?? labels.Value.DefaultId;
+        return loc is { } l && labels.Value.Names.TryGetValue(l, out var name) ? name : null;
     }
 
     public async Task<PaginatedResult<ContactDto>> GetAllAsync(
@@ -39,8 +64,11 @@ public class ContactService : IContactService
             .OrderBy(c => c.Name)
             .ToListAsync();
 
+        // Balances scope to the selected branch (locId null = single-location / All → unchanged, business-wide).
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
+        var labels = await BranchLabelsAsync(businessId);
         var balances = await _db.LedgerEntries
-            .Where(e => e.BusinessId == businessId && pageIds.Contains(e.ContactId))
+            .Where(e => e.BusinessId == businessId && pageIds.Contains(e.ContactId) && (locId == null || e.LocationId == locId))
             .GroupBy(e => e.ContactId)
             .Select(g => new
             {
@@ -64,7 +92,8 @@ public class ContactService : IContactService
                 Type = c.Type.ToString(),
                 OutstandingReceivable = bal?.Receivable ?? 0,
                 OutstandingPayable = bal?.Payable ?? 0,
-                CreatedAtUtc = c.CreatedAtUtc
+                CreatedAtUtc = c.CreatedAtUtc,
+                CreatedAtBranch = LabelFor(c.LocationId, labels)
             };
         }).ToList();
 
@@ -78,8 +107,9 @@ public class ContactService : IContactService
             return new ContactTotalsDto { TotalContacts = 0, TotalReceivable = 0, TotalPayable = 0 };
 
         var idSet = filteredIds.ToHashSet();
+        var totalsLocId = await _locStock.SelectedLocationForAsync(businessId);
         var balances = await _db.LedgerEntries
-            .Where(e => e.BusinessId == businessId && idSet.Contains(e.ContactId))
+            .Where(e => e.BusinessId == businessId && idSet.Contains(e.ContactId) && (totalsLocId == null || e.LocationId == totalsLocId))
             .GroupBy(e => e.ContactId)
             .Select(g => new
             {
@@ -128,8 +158,11 @@ public class ContactService : IContactService
         var candidateIds = await query.OrderBy(c => c.Name).Select(c => c.Id).ToListAsync();
         if (candidateIds.Count == 0) return candidateIds;
 
+        // The balance FILTER ("who owes me" etc.) respects the selected branch too, so filtering by balance on
+        // Branch B matches on B's debts. The base list (no balance filter) above stays the full business-wide set.
+        var filterLocId = await _locStock.SelectedLocationForAsync(businessId);
         var balances = await _db.LedgerEntries
-            .Where(e => e.BusinessId == businessId && candidateIds.Contains(e.ContactId))
+            .Where(e => e.BusinessId == businessId && candidateIds.Contains(e.ContactId) && (filterLocId == null || e.LocationId == filterLocId))
             .GroupBy(e => e.ContactId)
             .Select(g => new
             {
@@ -159,8 +192,9 @@ public class ContactService : IContactService
             .FirstOrDefaultAsync(c => c.Id == contactId && c.BusinessId == businessId)
             ?? throw new KeyNotFoundException("Contact not found.");
 
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
         var ledger = await _db.LedgerEntries
-            .Where(e => e.ContactId == contactId && e.BusinessId == businessId)
+            .Where(e => e.ContactId == contactId && e.BusinessId == businessId && (locId == null || e.LocationId == locId))
             .ToListAsync();
 
         var receivable = ledger.Where(e => e.EntryType == LedgerEntryType.Receivable).Sum(e => e.Amount)
@@ -177,7 +211,8 @@ public class ContactService : IContactService
             Type = contact.Type.ToString(),
             OutstandingReceivable = receivable,
             OutstandingPayable = payable,
-            CreatedAtUtc = contact.CreatedAtUtc
+            CreatedAtUtc = contact.CreatedAtUtc,
+            CreatedAtBranch = LabelFor(contact.LocationId, await BranchLabelsAsync(businessId))
         };
     }
 
@@ -194,7 +229,7 @@ public class ContactService : IContactService
         _db.Contacts.Add(contact);
         await _activity.LogAsync(businessId, "contact.created", "Contact", contact.Id, contact.Name,
             $"added contact “{contact.Name}”");
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(); // central stamp sets contact.LocationId from the ambient branch (if multi-location)
 
         return new ContactDto
         {
@@ -205,7 +240,8 @@ public class ContactService : IContactService
             Type = contact.Type.ToString(),
             OutstandingReceivable = 0,
             OutstandingPayable = 0,
-            CreatedAtUtc = contact.CreatedAtUtc
+            CreatedAtUtc = contact.CreatedAtUtc,
+            CreatedAtBranch = LabelFor(contact.LocationId, await BranchLabelsAsync(businessId))
         };
     }
 

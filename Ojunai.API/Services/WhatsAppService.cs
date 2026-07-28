@@ -1856,6 +1856,21 @@ public class WhatsAppService : IWhatsAppService
         }
     }
 
+    /// <summary>
+    /// The branch this bot action is scoped to — the sender's effective branch when the business is genuinely
+    /// multi-location, else null (business-wide / single-location). Mirrors LocationStockService.SelectedLocationForAsync
+    /// so the bot's ledger reads scope exactly like the dashboard (this service doesn't inject that helper).
+    /// </summary>
+    private async Task<Guid?> ScopedLocationAsync(Guid businessId)
+    {
+        if (LocationScope.Current is not { } locId) return null;
+        var active = await _db.Locations
+            .Where(l => l.BusinessId == businessId && l.IsActive)
+            .Select(l => l.Id)
+            .ToListAsync();
+        return active.Count > 1 && active.Contains(locId) ? locId : null;
+    }
+
     private async Task<string> HandleCreateReceivableAsync(Guid businessId, JsonElement ba, User? recordedBy = null)
     {
         // Plan gate — ledger is not available on Starter tier
@@ -1922,12 +1937,16 @@ public class WhatsAppService : IWhatsAppService
         var receivableType = type == "receivable" ? LedgerEntryType.Receivable : LedgerEntryType.Payable;
         var paymentType = type == "receivable" ? LedgerEntryType.ReceivablePayment : LedgerEntryType.PayablePayment;
 
+        // Scope reads to the sender's branch so the balance we compute matches where the payment lands
+        // (payments are stamped to this branch). null = business-wide / single-location, unchanged.
+        var payLocId = await ScopedLocationAsync(businessId);
+
         // Batch clear ALL debts
         if (clearAllDebts == "true")
         {
             var allEntries = await _db.LedgerEntries
                 .Include(e => e.Contact)
-                .Where(e => e.BusinessId == businessId)
+                .Where(e => e.BusinessId == businessId && (payLocId == null || e.LocationId == payLocId))
                 .ToListAsync();
 
             var byContact = allEntries
@@ -1979,7 +1998,9 @@ public class WhatsAppService : IWhatsAppService
             }
             if (contact == null) return $"Contact '{contactName}' not found. Check the name and try again.";
 
-            var entries = await _db.LedgerEntries.Where(e => e.ContactId == contact.Id && e.BusinessId == businessId).ToListAsync();
+            var entries = await _db.LedgerEntries
+                .Where(e => e.ContactId == contact.Id && e.BusinessId == businessId && (payLocId == null || e.LocationId == payLocId))
+                .ToListAsync();
             var outstanding = entries.Where(e => e.EntryType == receivableType).Sum(e => e.Amount)
                             - entries.Where(e => e.EntryType == paymentType).Sum(e => e.Amount);
 
@@ -2296,8 +2317,10 @@ public class WhatsAppService : IWhatsAppService
         }
         if (contact == null) return $"Contact '{contactName}' not found.";
 
+        var balLocId = await ScopedLocationAsync(businessId); // per-branch balance, matching "who owes me"
         var entries = await _db.LedgerEntries
-            .Where(e => e.ContactId == contact.Id && e.BusinessId == businessId).ToListAsync();
+            .Where(e => e.ContactId == contact.Id && e.BusinessId == businessId && (balLocId == null || e.LocationId == balLocId))
+            .ToListAsync();
 
         var receivable = entries.Where(e => e.EntryType == LedgerEntryType.Receivable).Sum(e => e.Amount)
                        - entries.Where(e => e.EntryType == LedgerEntryType.ReceivablePayment).Sum(e => e.Amount);
@@ -3468,9 +3491,12 @@ public class WhatsAppService : IWhatsAppService
         }
         if (contact == null) return $"Contact '{contactName}' not found.";
 
+        // Scope to the sender's branch so the balance we adjust from matches where the adjustment entry lands.
+        var adjLocId = await ScopedLocationAsync(businessId);
+
         // Find the most recent receivable or payable entry for this contact
         var latestEntry = await _db.LedgerEntries
-            .Where(e => e.BusinessId == businessId && e.ContactId == contact.Id
+            .Where(e => e.BusinessId == businessId && e.ContactId == contact.Id && (adjLocId == null || e.LocationId == adjLocId)
                         && (e.EntryType == LedgerEntryType.Receivable || e.EntryType == LedgerEntryType.Payable))
             .OrderByDescending(e => e.CreatedAtUtc)
             .FirstOrDefaultAsync();
@@ -3489,7 +3515,7 @@ public class WhatsAppService : IWhatsAppService
 
             // Calculate total outstanding, not just the latest entry
             var entries = await _db.LedgerEntries
-                .Where(e => e.BusinessId == businessId && e.ContactId == contact.Id)
+                .Where(e => e.BusinessId == businessId && e.ContactId == contact.Id && (adjLocId == null || e.LocationId == adjLocId))
                 .ToListAsync();
 
             var dt = latestEntry.EntryType;
@@ -3524,7 +3550,7 @@ public class WhatsAppService : IWhatsAppService
             ? LedgerEntryType.ReceivablePayment : LedgerEntryType.PayablePayment;
 
         var allEntries = await _db.LedgerEntries
-            .Where(e => e.BusinessId == businessId && e.ContactId == contact.Id
+            .Where(e => e.BusinessId == businessId && e.ContactId == contact.Id && (adjLocId == null || e.LocationId == adjLocId)
                         && (e.EntryType == debtType || e.EntryType == payType))
             .ToListAsync();
 
