@@ -192,13 +192,12 @@ public partial class ReportService
     public async Task<List<InventoryTurnoverDto>> GetInventoryTurnoverAsync(Guid businessId)
     {
         var cutoff = DateTime.UtcNow.AddDays(-30);
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
-        var products = await _db.Products
-            .Where(p => p.BusinessId == businessId && p.IsActive)
-            .ToListAsync();
+        var products = await ProductsWithEffectiveStockAsync(businessId, locId);
 
         var salesByProduct = await _db.SaleItems
-            .Where(si => si.Sale.BusinessId == businessId && si.Sale.CreatedAtUtc >= cutoff)
+            .Where(si => si.Sale.BusinessId == businessId && si.Sale.CreatedAtUtc >= cutoff && (locId == null || si.Sale.LocationId == locId))
             .GroupBy(si => si.ProductId)
             .Select(g => new
             {
@@ -211,16 +210,16 @@ public partial class ReportService
         var lookup = salesByProduct.ToDictionary(x => x.ProductId);
 
         var result = new List<InventoryTurnoverDto>();
-        foreach (var p in products)
+        foreach (var (p, stock) in products)
         {
             lookup.TryGetValue(p.Id, out var sold);
             var qtySold = sold?.TotalQty ?? 0;
             var cogs = sold?.TotalCogs ?? 0;
             var velocity = qtySold / 30m;
-            var daysRemaining = velocity > 0 ? p.CurrentStock / velocity : decimal.MaxValue;
+            var daysRemaining = velocity > 0 ? stock / velocity : decimal.MaxValue;
 
-            var avgInventory = (p.CurrentStock + qtySold) / 2m;
-            var inventoryValue = (p.CostPrice ?? 0) * p.CurrentStock;
+            var avgInventory = (stock + qtySold) / 2m;
+            var inventoryValue = (p.CostPrice ?? 0) * stock;
             var avgInventoryValue = avgInventory * (p.CostPrice ?? 0);
             var turnoverRatio = avgInventoryValue > 0
                 ? cogs / avgInventoryValue
@@ -237,7 +236,7 @@ public partial class ReportService
                 ProductId = p.Id,
                 ProductName = p.Name,
                 Unit = p.Unit,
-                CurrentStock = p.CurrentStock,
+                CurrentStock = stock,
                 SoldLast30Days = qtySold,
                 DailyVelocity = Math.Round(velocity, 3),
                 DaysOfStockRemaining = daysRemaining > 999 ? 999 : Math.Round(daysRemaining, 1),
@@ -653,28 +652,27 @@ public partial class ReportService
     {
         safetyDays = Math.Clamp(safetyDays, 1, 90);
         var cutoff = DateTime.UtcNow.AddDays(-30);
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
-        var products = await _db.Products
-            .Where(p => p.BusinessId == businessId && p.IsActive)
-            .ToListAsync();
+        var products = await ProductsWithEffectiveStockAsync(businessId, locId);
 
         var velocity = await _db.SaleItems
-            .Where(si => si.Sale.BusinessId == businessId && si.Sale.CreatedAtUtc >= cutoff)
+            .Where(si => si.Sale.BusinessId == businessId && si.Sale.CreatedAtUtc >= cutoff && (locId == null || si.Sale.LocationId == locId))
             .GroupBy(si => si.ProductId)
             .Select(g => new { ProductId = g.Key, Qty = g.Sum(si => si.Quantity) })
             .ToDictionaryAsync(x => x.ProductId, x => x.Qty / 30m);
 
         var suggestions = new List<ReorderSuggestionDto>();
-        foreach (var p in products)
+        foreach (var (p, stock) in products)
         {
             var daily = velocity.GetValueOrDefault(p.Id, 0);
             if (daily <= 0) continue;
 
-            var daysLeft = p.CurrentStock / daily;
+            var daysLeft = stock / daily;
             if (daysLeft > safetyDays) continue;
 
             var target = daily * safetyDays;
-            var reorderQty = Math.Max(0, target - p.CurrentStock);
+            var reorderQty = Math.Max(0, target - stock);
             if (reorderQty <= 0) continue;
 
             var urgency = daysLeft < 3 ? "Critical"
@@ -686,7 +684,7 @@ public partial class ReportService
                 ProductId = p.Id,
                 ProductName = p.Name,
                 Unit = p.Unit,
-                CurrentStock = p.CurrentStock,
+                CurrentStock = stock,
                 DailyVelocity = Math.Round(daily, 3),
                 SuggestedReorderQty = Math.Ceiling(reorderQty),
                 EstimatedCost = Math.Ceiling(reorderQty) * (p.CostPrice ?? 0),

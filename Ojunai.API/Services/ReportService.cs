@@ -41,8 +41,16 @@ public partial class ReportService : IReportService
 
         var (outstandingReceivables, outstandingPayables) = await GetOutstandingLedgerAsync(businessId);
 
-        var lowStockCount = await _db.Products
-            .CountAsync(p => p.BusinessId == businessId && p.IsActive && !p.IsBundle && p.CurrentStock <= p.LowStockThreshold);
+        var lowStockCount = locId is { } lowLoc
+            ? await (from p in _db.Products
+                     where p.BusinessId == businessId && p.IsActive && !p.IsBundle
+                     join s in _db.ProductLocationStocks.Where(x => x.LocationId == lowLoc)
+                         on p.Id equals s.ProductId into gj
+                     from s in gj.DefaultIfEmpty()
+                     where (s == null ? 0m : s.CurrentStock) <= p.LowStockThreshold
+                     select p.Id).CountAsync()
+            : await _db.Products
+                .CountAsync(p => p.BusinessId == businessId && p.IsActive && !p.IsBundle && p.CurrentStock <= p.LowStockThreshold);
 
         // 7-day trend
         var sevenDaysAgo = todayUtc.AddDays(-6);
@@ -126,16 +134,7 @@ public partial class ReportService : IReportService
 
         var (receivables, payables) = await GetOutstandingLedgerAsync(businessId);
 
-        var lowStockItems = await _db.Products
-            .Where(p => p.BusinessId == businessId && p.IsActive && !p.IsBundle && p.CurrentStock <= p.LowStockThreshold)
-            .Select(p => new ProductDto
-            {
-                Id = p.Id, Name = p.Name, SKU = p.SKU, Unit = p.Unit,
-                CostPrice = p.CostPrice, SellingPrice = p.SellingPrice,
-                CurrentStock = p.CurrentStock, LowStockThreshold = p.LowStockThreshold,
-                IsLowStock = true, IsActive = p.IsActive, CreatedAtUtc = p.CreatedAtUtc
-            })
-            .ToListAsync();
+        var lowStockItems = await LowStockItemsAsync(businessId, locId);
 
         var totalSales = sales.Sum(s => s.TotalAmount);
 
@@ -186,16 +185,7 @@ public partial class ReportService : IReportService
             .Take(5)
             .ToListAsync();
 
-        var lowStockItems = await _db.Products
-            .Where(p => p.BusinessId == businessId && p.IsActive && !p.IsBundle && p.CurrentStock <= p.LowStockThreshold)
-            .Select(p => new ProductDto
-            {
-                Id = p.Id, Name = p.Name, SKU = p.SKU, Unit = p.Unit,
-                CostPrice = p.CostPrice, SellingPrice = p.SellingPrice,
-                CurrentStock = p.CurrentStock, LowStockThreshold = p.LowStockThreshold,
-                IsLowStock = true, IsActive = p.IsActive, CreatedAtUtc = p.CreatedAtUtc
-            })
-            .ToListAsync();
+        var lowStockItems = await LowStockItemsAsync(businessId, locId);
 
         var ledger = await _db.LedgerEntries
             .Include(e => e.Contact)
@@ -808,24 +798,84 @@ public partial class ReportService : IReportService
             .ToList();
     }
 
+    /// <summary>
+    /// Every active product paired with its EFFECTIVE stock: the selected location's ProductLocationStock (0
+    /// when it has no row there) when a location is selected, else the business-wide Product.CurrentStock. Lets
+    /// the stock-level analytics (dead-stock / stockout / turnover / reorder) reflect the selected branch;
+    /// single-location / no selection = business-wide, unchanged.
+    /// </summary>
+    private async Task<List<(Product Product, decimal Stock)>> ProductsWithEffectiveStockAsync(Guid businessId, Guid? locId)
+    {
+        var products = await _db.Products
+            .Where(p => p.BusinessId == businessId && p.IsActive)
+            .ToListAsync();
+        if (locId is not { } loc)
+            return products.Select(p => (p, p.CurrentStock)).ToList();
+
+        var ids = products.Select(p => p.Id).ToList();
+        var pls = await _db.ProductLocationStocks
+            .Where(x => x.LocationId == loc && ids.Contains(x.ProductId))
+            .ToDictionaryAsync(x => x.ProductId, x => x.CurrentStock);
+        return products.Select(p => (p, pls.GetValueOrDefault(p.Id, 0m))).ToList();
+    }
+
+    /// <summary>The low-stock products (as ProductDto), judged by the selected location's stock when a location
+    /// is selected (0 when it has no PLS row there), else business-wide — mirrors ProductService.GetLowStockAsync.</summary>
+    private async Task<List<ProductDto>> LowStockItemsAsync(Guid businessId, Guid? locId)
+    {
+        if (locId is { } loc)
+        {
+            var rows = await (
+                from p in _db.Products
+                where p.BusinessId == businessId && p.IsActive && !p.IsBundle
+                join s in _db.ProductLocationStocks.Where(x => x.LocationId == loc)
+                    on p.Id equals s.ProductId into gj
+                from s in gj.DefaultIfEmpty()
+                where (s == null ? 0m : s.CurrentStock) <= p.LowStockThreshold
+                select new { P = p, Stock = s == null ? 0m : s.CurrentStock })
+                .ToListAsync();
+            return rows.Select(r => new ProductDto
+            {
+                Id = r.P.Id, Name = r.P.Name, SKU = r.P.SKU, Unit = r.P.Unit,
+                CostPrice = r.P.CostPrice, SellingPrice = r.P.SellingPrice,
+                CurrentStock = r.Stock, LowStockThreshold = r.P.LowStockThreshold,
+                IsLowStock = true, IsActive = r.P.IsActive, CreatedAtUtc = r.P.CreatedAtUtc
+            }).ToList();
+        }
+        return await _db.Products
+            .Where(p => p.BusinessId == businessId && p.IsActive && !p.IsBundle && p.CurrentStock <= p.LowStockThreshold)
+            .Select(p => new ProductDto
+            {
+                Id = p.Id, Name = p.Name, SKU = p.SKU, Unit = p.Unit,
+                CostPrice = p.CostPrice, SellingPrice = p.SellingPrice,
+                CurrentStock = p.CurrentStock, LowStockThreshold = p.LowStockThreshold,
+                IsLowStock = true, IsActive = p.IsActive, CreatedAtUtc = p.CreatedAtUtc
+            })
+            .ToListAsync();
+    }
+
     public async Task<List<DeadStockItemDto>> GetDeadStockAsync(Guid businessId)
     {
         var twoWeeksAgo = DateTime.UtcNow.AddDays(-14);
-        var allProducts = await _db.Products
-            .Where(p => p.BusinessId == businessId && p.IsActive && p.CurrentStock > 0)
-            .ToListAsync();
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
 
+        var withStock = (await ProductsWithEffectiveStockAsync(businessId, locId)).Where(x => x.Stock > 0).ToList();
+        var allProducts = withStock.Select(x => x.Product).ToList();
+        var stockById = withStock.ToDictionary(x => x.Product.Id, x => x.Stock);
         var productIds = allProducts.Select(p => p.Id).ToList();
+
         var recentSoldIds = await _db.SaleItems
             .Include(i => i.Sale)
-            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= twoWeeksAgo && productIds.Contains(i.ProductId))
+            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= twoWeeksAgo && productIds.Contains(i.ProductId)
+                        && (locId == null || i.Sale.LocationId == locId))
             .Select(i => i.ProductId)
             .Distinct()
             .ToListAsync();
 
         var lastSaleDates = await _db.SaleItems
             .Include(i => i.Sale)
-            .Where(i => i.Sale.BusinessId == businessId && productIds.Contains(i.ProductId))
+            .Where(i => i.Sale.BusinessId == businessId && productIds.Contains(i.ProductId)
+                        && (locId == null || i.Sale.LocationId == locId))
             .GroupBy(i => i.ProductId)
             .Select(g => new { ProductId = g.Key, LastSale = g.Max(i => i.Sale.CreatedAtUtc) })
             .ToDictionaryAsync(x => x.ProductId, x => x.LastSale);
@@ -837,7 +887,7 @@ public partial class ReportService : IReportService
                 ProductId = p.Id,
                 ProductName = p.Name,
                 Unit = p.Unit,
-                CurrentStock = p.CurrentStock,
+                CurrentStock = stockById[p.Id],
                 DaysSinceLastSale = lastSaleDates.TryGetValue(p.Id, out var last)
                     ? (int)(DateTime.UtcNow - last).TotalDays
                     : -1
@@ -849,32 +899,34 @@ public partial class ReportService : IReportService
     public async Task<List<StockoutPredictionDto>> GetStockoutPredictionsAsync(Guid businessId)
     {
         var sevenDaysAgo = DateTime.UtcNow.Date.AddDays(-6);
-        var products = await _db.Products
-            .Where(p => p.BusinessId == businessId && p.IsActive && p.CurrentStock > 0)
-            .ToListAsync();
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
+        var products = (await ProductsWithEffectiveStockAsync(businessId, locId)).Where(x => x.Stock > 0).ToList();
 
-        var productIds = products.Select(p => p.Id).ToList();
+        var productIds = products.Select(x => x.Product.Id).ToList();
         var salesByProduct = await _db.SaleItems
             .Include(i => i.Sale)
-            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= sevenDaysAgo && productIds.Contains(i.ProductId))
+            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= sevenDaysAgo && productIds.Contains(i.ProductId)
+                        && (locId == null || i.Sale.LocationId == locId))
             .GroupBy(i => i.ProductId)
             .Select(g => new { ProductId = g.Key, TotalSold = g.Sum(i => i.Quantity) })
             .ToDictionaryAsync(x => x.ProductId, x => x.TotalSold);
 
         return products
-            .Select(p =>
+            .Select(x =>
             {
+                var p = x.Product;
+                var stock = x.Stock;
                 var sold7d = salesByProduct.GetValueOrDefault(p.Id, 0);
                 var dailyRate = sold7d / 7m;
-                var daysLeft = dailyRate > 0 ? p.CurrentStock / dailyRate : 999;
-                var restock = dailyRate > 0 ? Math.Max(0, (dailyRate * 7) - p.CurrentStock) : 0;
+                var daysLeft = dailyRate > 0 ? stock / dailyRate : 999;
+                var restock = dailyRate > 0 ? Math.Max(0, (dailyRate * 7) - stock) : 0;
                 var urgency = daysLeft <= 3 ? "critical" : daysLeft <= 7 ? "warning" : "ok";
                 return new StockoutPredictionDto
                 {
                     ProductId = p.Id,
                     ProductName = p.Name,
                     Unit = p.Unit,
-                    CurrentStock = p.CurrentStock,
+                    CurrentStock = stock,
                     DailyRate = Math.Round(dailyRate, 2),
                     DaysLeft = Math.Round(daysLeft, 1),
                     RestockQty = Math.Round(restock, 2),

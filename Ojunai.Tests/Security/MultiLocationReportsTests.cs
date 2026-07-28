@@ -146,4 +146,26 @@ public class MultiLocationReportsTests
         }
         finally { LocationScope.Current = null; }
     }
+
+    [Fact]
+    public async Task Dashboard_LowStockCount_ScopesToSelectedLocation()
+    {
+        using var db = NewContext();
+        var biz = await AddBizAsync(db);
+        var main = biz.DefaultLocationId!.Value;
+        var b = await AddLocAsync(db, biz.Id, "B");
+        // total 100 (threshold 5): 98 at Main, 2 at B → low at B only, not business-wide.
+        var p = new Product { BusinessId = biz.Id, Name = "W", Unit = "bag", LowStockThreshold = 5, CurrentStock = 0, IsActive = true };
+        db.Products.Add(p);
+        await db.SaveChangesAsync();
+        try { LocationScope.Current = main; p.CurrentStock += 98; await db.SaveChangesAsync(); } finally { LocationScope.Current = null; }
+        try { LocationScope.Current = b.Id; p.CurrentStock += 2; await db.SaveChangesAsync(); } finally { LocationScope.Current = null; }
+
+        Assert.Equal(0, (await Reports(db).GetDashboardOverviewAsync(biz.Id)).LowStockCount); // 100 > 5
+
+        try { LocationScope.Current = b.Id; Assert.Equal(1, (await Reports(db).GetDashboardOverviewAsync(biz.Id)).LowStockCount); } // 2 <= 5 at B
+        finally { LocationScope.Current = null; }
+        try { LocationScope.Current = main; Assert.Equal(0, (await Reports(db).GetDashboardOverviewAsync(biz.Id)).LowStockCount); } // 98 > 5 at Main
+        finally { LocationScope.Current = null; }
+    }
 }
