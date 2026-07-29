@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
+import { ScopeChip } from "@/components/scope-chip";
 import { EmptyState } from "@/components/empty-state";
 import { Avatar } from "@/components/avatar";
 import { Drawer, DrawerHeader, DrawerBody, DrawerFooter } from "@/components/ui/drawer";
@@ -154,6 +155,13 @@ export default function ContactsPage() {
           ) : null
         }
       />
+
+      {/* Debts roll up across every branch by design, so these totals are always company-wide even when a
+          branch is selected elsewhere. `empty:hidden` collapses this entirely for single-location businesses
+          (ScopeChip renders nothing → the wrapper is empty → hidden), so their page is unchanged. */}
+      <div className="empty:hidden">
+        <ScopeChip businessWide />
+      </div>
 
       <div className="grid grid-cols-2 gap-4">
         <Card>

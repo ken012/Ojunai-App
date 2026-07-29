@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { MapPin } from "lucide-react";
 import { useBusiness } from "@/lib/data-sync";
 import { getSelectedLocation, setSelectedLocation } from "@/lib/location";
+import { scopingForPath } from "@/lib/location-scope";
 
 /**
  * Location switcher (multi-location). Scoped to the CURRENT user's accessible locations:
@@ -17,6 +19,7 @@ import { getSelectedLocation, setSelectedLocation } from "@/lib/location";
  */
 export function LocationSwitcher() {
   const business = useBusiness();
+  const pathname = usePathname();
 
   const accessibleIds = business?.accessibleLocationIds ?? null;
   const activeAll = (business?.locations ?? []).filter((l) => l.isActive);
@@ -51,6 +54,21 @@ export function LocationSwitcher() {
   }, [business]);
 
   if (!enabled) return null;
+
+  // On pages that don't filter by branch (settings, onboarding, catalog, import, voice-ai), never present an
+  // interactive branch filter — that would imply the page is branch-specific when it isn't. Show a locked
+  // "All branches" chip instead, so the scope is stated but clearly not switchable here.
+  if (scopingForPath(pathname) !== "scoped") {
+    return (
+      <div
+        className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-slate-700 px-2 h-8 text-xs font-medium text-slate-400 dark:text-slate-500"
+        title="This page isn't branch-specific — it applies to your whole business."
+      >
+        <MapPin size={14} className="text-slate-400" />
+        <span>All branches</span>
+      </div>
+    );
+  }
 
   if (!canSwitch) {
     // Restricted to a single location → show which one (no switching to do).

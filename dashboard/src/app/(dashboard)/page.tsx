@@ -31,6 +31,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
+import { ScopeChip } from "@/components/scope-chip";
 import { useChartTheme, useTooltipStyle } from "@/lib/chart-theme";
 import {
   TrendingUp,
@@ -390,11 +391,15 @@ export default function TodayPage() {
             <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-50 tracking-tight truncate">
               {greet}{biz?.name ? `, ${biz.name}` : ""}
             </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">
-              {ov.todaySaleCount > 0
-                ? `${ov.todaySaleCount} sale${ov.todaySaleCount === 1 ? "" : "s"} today`
-                : "No sales yet today"}
-            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">
+                {ov.todaySaleCount > 0
+                  ? `${ov.todaySaleCount} sale${ov.todaySaleCount === 1 ? "" : "s"} today`
+                  : "No sales yet today"}
+              </p>
+              {/* Which branch these headline numbers reflect (nothing for single-location). */}
+              <ScopeChip />
+            </div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <button

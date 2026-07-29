@@ -8,6 +8,7 @@ import { usePlanStatus } from "@/lib/use-plan-status";
 import { useBusiness } from "@/lib/data-sync";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { PageHeader } from "@/components/page-header";
+import { ScopeChip } from "@/components/scope-chip";
 import { useChartTheme, useTooltipStyle } from "@/lib/chart-theme";
 import { useStickyState } from "@/lib/sticky-state";
 import type {
@@ -147,6 +148,7 @@ export default function ReportsPage() {
       <PageHeader
         title="Reports"
         subtitle="Financial, customer, inventory, and operations insights"
+        actions={<ScopeChip />}
       />
 
       <Tabs defaultValue="financial" className="space-y-5">

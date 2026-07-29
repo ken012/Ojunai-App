@@ -1019,6 +1019,22 @@ public class WhatsAppService : IWhatsAppService
         return await ExecuteIntentAsync(user, parsed);
     }
 
+    // Location-scoped READ intents: replies whose sales/expenses/inventory figures reflect the sender's
+    // selected branch (via LocationScope). We stamp a branch footer onto these for multi-location businesses
+    // so a branch number is never mistaken for a company-wide one — the same "which scope am I looking at?"
+    // legibility the dashboard gets from the switcher/scope-chip. Debt/ledger intents are deliberately ABSENT
+    // (balances roll up across branches by design). Single-location businesses get no footer (ScopeLabelAsync
+    // returns null), so their replies stay byte-for-byte unchanged.
+    private static readonly HashSet<string> LocationScopedReadIntents = new()
+    {
+        "get_today_sales", "get_daily_summary", "get_week_sales", "get_all_stock", "get_low_stock",
+        "get_profit_estimate", "get_top_products", "get_today_sales_detail", "get_product_sales_today",
+        "get_specific_stock", "get_staff_sales", "get_product_staff", "get_product_buyers",
+        "get_transaction_history", "get_dead_stock", "get_profit_by_product", "get_stockout_prediction",
+        "get_today_expenses", "get_recent_expenses", "get_week_comparison", "get_product_profit",
+        "get_stock_value",
+    };
+
     private async Task<string> ExecuteIntentAsync(User user, ParsedMessage parsed)
     {
         // Permission check
@@ -1031,7 +1047,7 @@ public class WhatsAppService : IWhatsAppService
         var businessId = user.BusinessId;
         var ba = parsed.BusinessAction;
 
-        return parsed.Intent switch
+        var reply = parsed.Intent switch
         {
             "create_sale" => await HandleCreateSaleAsync(businessId, ba, user),
             "create_expense" => await HandleCreateExpenseAsync(businessId, ba, user),
@@ -1102,6 +1118,16 @@ public class WhatsAppService : IWhatsAppService
             "get_export_link" => HandleGetExportLink(businessId, ba, user),
             _ => HandleUnknown()
         };
+
+        // Multi-location: stamp the branch scope onto location-scoped read replies so the reader always
+        // knows whether a figure is one branch or the whole business. No-op for single-location businesses.
+        if (LocationScopedReadIntents.Contains(parsed.Intent))
+        {
+            var scopeLabel = await ScopeLabelAsync(businessId);
+            if (scopeLabel != null) reply = $"{reply}\n\n📍 _{scopeLabel}_";
+        }
+
+        return reply;
     }
 
     /// <summary>
@@ -1894,6 +1920,28 @@ public class WhatsAppService : IWhatsAppService
             .Where(x => x.LocationId == locId && ids.Contains(x.ProductId))
             .ToDictionaryAsync(x => x.ProductId, x => x.CurrentStock);
         return ids.ToDictionary(id => id, id => pls.GetValueOrDefault(id, 0m));
+    }
+
+    /// <summary>
+    /// A human branch-scope label for a bot reply: the selected branch's name when the sender is scoped to one,
+    /// "All branches" when the business is multi-location but no specific branch is in scope (owner viewing all),
+    /// or <c>null</c> for a single-location business — so single-location replies get no footer and stay
+    /// byte-for-byte unchanged. Gate matches <see cref="ScopedLocationAsync"/> (>1 active location).
+    /// </summary>
+    private async Task<string?> ScopeLabelAsync(Guid businessId)
+    {
+        var active = await _db.Locations
+            .Where(l => l.BusinessId == businessId && l.IsActive)
+            .Select(l => new { l.Id, l.Name })
+            .ToListAsync();
+        if (active.Count <= 1) return null; // single-location → no footer, unchanged
+
+        if (LocationScope.Current is { } locId)
+        {
+            var match = active.FirstOrDefault(a => a.Id == locId);
+            if (match != null) return match.Name;
+        }
+        return "All branches";
     }
 
     private async Task<string> HandleCreateReceivableAsync(Guid businessId, JsonElement ba, User? recordedBy = null)
