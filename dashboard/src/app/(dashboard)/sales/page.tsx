@@ -469,9 +469,10 @@ function EmailReceiptDialog({
   );
 }
 
-// Smart-defaults storage. Persists last-used values across visits so high-frequency
-// sale recording skips the most-repeated keystrokes (customer, payment method, status).
-type SaleDefaults = { contactId?: string; paymentStatus?: "Paid" | "Unpaid" | "PartiallyPaid"; paymentMethod?: string };
+// Smart-defaults storage. Persists last-used values across visits so high-frequency sale recording
+// skips the most-repeated keystroke: the payment method. The CUSTOMER is deliberately NOT remembered —
+// it differs almost every sale (walk-ins), so pre-filling the last customer just means clearing it each time.
+type SaleDefaults = { paymentStatus?: "Paid" | "Unpaid" | "PartiallyPaid"; paymentMethod?: string };
 const SALE_DEFAULTS_KEY = "ojunai-last-sale-defaults";
 function readSaleDefaults(): SaleDefaults {
   if (typeof window === "undefined") return {};
@@ -504,9 +505,9 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
       setIncludeVat(biz?.vatEnabled ?? false);
       const d = readSaleDefaults();
       // Always reset payment status to "Paid" — recording credit again by default would be a footgun.
-      // But payment method and customer are safe to remember.
+      // Payment method is safe to remember; the customer always starts blank (see SaleDefaults note).
       if (d.paymentMethod) setPaymentMethod(d.paymentMethod);
-      if (d.contactId) setContactId(d.contactId);
+      setContactId("");
     }
   }, [open, biz?.vatEnabled]);
 
@@ -653,8 +654,8 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
       qc.invalidateQueries({ queryKey: ["sales"] });
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["low-stock"] });
-      // Remember last-used values for smart defaults on next sale
-      writeSaleDefaults({ contactId, paymentMethod });
+      // Remember only the payment method for next sale — not the customer (starts blank each time).
+      writeSaleDefaults({ paymentMethod });
       toast.success("Sale recorded", `${formatNaira(total)} · ${validLines.length} item${validLines.length !== 1 ? "s" : ""}`);
       handleClose();
     } catch (err: unknown) {
@@ -666,9 +667,10 @@ function RecordSaleDialog({ open, onClose }: { open: boolean; onClose: () => voi
   }
 
   function handleClose() {
-    // Reset only the line items + status; contact + method persist via defaults next open.
+    // Reset line items, status, and the customer (blank each sale); payment method persists via defaults.
     setLines([{ productId: "", quantity: "", unitPrice: "" }]);
     setPaymentStatus("Paid");
+    setContactId("");
     setError(null);
     onClose();
   }
