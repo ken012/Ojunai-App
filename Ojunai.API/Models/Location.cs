@@ -24,6 +24,9 @@ public class Location
     public string? Address { get; set; }
     public string? City { get; set; }
     public string? State { get; set; }
+    /// <summary>Branch phone shown on this branch's receipts. There's no business-level phone, so this is the
+    /// only phone source — null just means no phone line on the receipt.</summary>
+    public string? Phone { get; set; }
     public string? Currency { get; set; }
     public string? Timezone { get; set; }
 

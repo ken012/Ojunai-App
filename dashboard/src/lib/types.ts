@@ -107,6 +107,11 @@ export interface LocationDto {
   type: string;
   isDefault: boolean;
   isActive: boolean;
+  /** Per-branch details shown on this branch's receipts (fall back to the business value). */
+  address?: string;
+  city?: string;
+  state?: string;
+  phone?: string;
 }
 
 export interface ProductDto {

@@ -38,7 +38,7 @@ public class LocationsController : OjunaiBaseController
         var locations = await _db.Locations
             .Where(l => l.BusinessId == BusinessId)
             .OrderByDescending(l => l.IsDefault).ThenBy(l => l.CreatedAtUtc)
-            .Select(l => new LocationDto { Id = l.Id, Name = l.Name, Type = l.Type, IsDefault = l.IsDefault, IsActive = l.IsActive })
+            .Select(l => new LocationDto { Id = l.Id, Name = l.Name, Type = l.Type, IsDefault = l.IsDefault, IsActive = l.IsActive, Address = l.Address, City = l.City, State = l.State, Phone = l.Phone })
             .ToListAsync();
 
         if (User.GetRole() is not (UserRole.Owner or UserRole.Admin))
@@ -87,7 +87,7 @@ public class LocationsController : OjunaiBaseController
         await _db.SaveChangesAsync();
 
         return Ok(ApiResponse<LocationDto>.Ok(
-            new LocationDto { Id = loc.Id, Name = loc.Name, Type = loc.Type, IsDefault = loc.IsDefault, IsActive = loc.IsActive },
+            new LocationDto { Id = loc.Id, Name = loc.Name, Type = loc.Type, IsDefault = loc.IsDefault, IsActive = loc.IsActive, Address = loc.Address, City = loc.City, State = loc.State, Phone = loc.Phone },
             "Location created."));
     }
 
@@ -134,11 +134,17 @@ public class LocationsController : OjunaiBaseController
             loc.IsActive = request.IsActive.Value;
         }
 
+        // Per-branch receipt details. A non-null blank clears the field (→ business fallback); null leaves it.
+        if (request.Address != null) loc.Address = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim();
+        if (request.City != null) loc.City = string.IsNullOrWhiteSpace(request.City) ? null : request.City.Trim();
+        if (request.State != null) loc.State = string.IsNullOrWhiteSpace(request.State) ? null : request.State.Trim();
+        if (request.Phone != null) loc.Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim();
+
         await _activity.LogAsync(BusinessId, "location.updated", "Location", loc.Id, loc.Name, $"updated location '{loc.Name}'");
         await _db.SaveChangesAsync();
 
         return Ok(ApiResponse<LocationDto>.Ok(
-            new LocationDto { Id = loc.Id, Name = loc.Name, Type = loc.Type, IsDefault = loc.IsDefault, IsActive = loc.IsActive },
+            new LocationDto { Id = loc.Id, Name = loc.Name, Type = loc.Type, IsDefault = loc.IsDefault, IsActive = loc.IsActive, Address = loc.Address, City = loc.City, State = loc.State, Phone = loc.Phone },
             "Location updated."));
     }
 }

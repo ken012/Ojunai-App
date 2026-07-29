@@ -95,7 +95,7 @@ public class BusinessController : OjunaiBaseController
         result.Locations = await _db.Locations
             .Where(l => l.BusinessId == BusinessId)
             .OrderByDescending(l => l.IsDefault).ThenBy(l => l.CreatedAtUtc)
-            .Select(l => new LocationDto { Id = l.Id, Name = l.Name, Type = l.Type, IsDefault = l.IsDefault, IsActive = l.IsActive })
+            .Select(l => new LocationDto { Id = l.Id, Name = l.Name, Type = l.Type, IsDefault = l.IsDefault, IsActive = l.IsActive, Address = l.Address, City = l.City, State = l.State, Phone = l.Phone })
             .ToListAsync();
 
         // Scope the switcher to what THIS user may access (Owner/Admin = all; restricted = assignments or the

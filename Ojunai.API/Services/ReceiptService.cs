@@ -71,7 +71,9 @@ public class ReceiptService : IReceiptService
             }
         }
 
-        var bytes = BuildPdf(sale, business);
+        // The branch this sale was recorded at drives the receipt's address/phone (falls back to the business).
+        var loc = sale.LocationId is { } locId ? await _db.Locations.FindAsync(locId) : null;
+        var bytes = BuildPdf(sale, business, loc);
         return (bytes, sale.ReceiptNumber!);
     }
 
@@ -119,12 +121,40 @@ public class ReceiptService : IReceiptService
             Items = items,
         };
 
-        return BuildPdf(sample, biz);
+        return BuildPdf(sample, biz, null); // preview = business-level details, no branch
     }
 
-    private byte[] BuildPdf(Sale sale, Business biz)
+    internal sealed record ReceiptOrg(string? BranchName, string? Address, string? CityStateCountry, string? Phone);
+
+    /// <summary>
+    /// Resolves the org lines printed at the top of a receipt, per branch. Address/City/State fall back to the
+    /// business when the branch leaves them blank; Phone comes only from the branch (there's no business phone).
+    /// BranchName is shown only for a NON-default branch, so single-location / Main receipts are byte-for-byte
+    /// unchanged. Pure + internal so the coalescing rules are unit-tested.
+    /// </summary>
+    internal static ReceiptOrg ResolveReceiptOrg(Business biz, Location? loc)
+    {
+        static string? Pick(string? branch, string? business) =>
+            !string.IsNullOrWhiteSpace(branch) ? branch!.Trim()
+            : (!string.IsNullOrWhiteSpace(business) ? business!.Trim() : null);
+
+        var address = Pick(loc?.Address, biz.Address);
+        var cityStateCountry = string.Join(", ", new[]
+            {
+                Pick(loc?.City, biz.City),
+                Pick(loc?.State, biz.State),
+                string.IsNullOrWhiteSpace(biz.Country) ? null : biz.Country!.Trim(),
+            }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        var phone = string.IsNullOrWhiteSpace(loc?.Phone) ? null : loc!.Phone!.Trim();
+        var branchName = loc is { IsDefault: false } && !string.IsNullOrWhiteSpace(loc.Name) ? loc.Name.Trim() : null;
+
+        return new ReceiptOrg(branchName, address, string.IsNullOrWhiteSpace(cityStateCountry) ? null : cityStateCountry, phone);
+    }
+
+    private byte[] BuildPdf(Sale sale, Business biz, Location? loc)
     {
         QuestPDF.Settings.License = LicenseType.Community;
+        var org = ResolveReceiptOrg(biz, loc);
 
         var cs = BillingConfig.Symbol(biz.Currency);
         var hasVat = sale.VatAmount > 0;
@@ -146,18 +176,18 @@ public class ReceiptService : IReceiptService
 
                 p.Content().Column(col =>
                 {
-                    // ── Header: business identity ──
+                    // ── Header: business / branch identity ──
                     col.Item().Column(c =>
                     {
                         c.Item().Text(headerText).FontSize(16).Bold().FontColor("#0F172A");
-                        if (!string.IsNullOrWhiteSpace(biz.Address))
-                            c.Item().Text(biz.Address).FontSize(9).FontColor("#64748B");
-                        if (!string.IsNullOrWhiteSpace(biz.City) || !string.IsNullOrWhiteSpace(biz.State))
-                        {
-                            var loc = string.Join(", ", new[] { biz.City, biz.State, biz.Country }
-                                .Where(s => !string.IsNullOrWhiteSpace(s)));
-                            c.Item().Text(loc).FontSize(9).FontColor("#64748B");
-                        }
+                        if (org.BranchName != null)
+                            c.Item().Text(org.BranchName).FontSize(10).FontColor("#334155");
+                        if (org.Address != null)
+                            c.Item().Text(org.Address).FontSize(9).FontColor("#64748B");
+                        if (org.CityStateCountry != null)
+                            c.Item().Text(org.CityStateCountry).FontSize(9).FontColor("#64748B");
+                        if (org.Phone != null)
+                            c.Item().Text($"Tel: {org.Phone}").FontSize(9).FontColor("#64748B");
                         if (!string.IsNullOrWhiteSpace(biz.TaxId))
                             c.Item().Text($"TIN: {biz.TaxId}").FontSize(9).FontColor("#64748B");
                     });

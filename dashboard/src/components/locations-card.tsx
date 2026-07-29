@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MapPin, Plus, Loader2, Check, X } from "lucide-react";
+import { MapPin, Plus, Loader2 } from "lucide-react";
 import { useBusiness, useDataSync } from "@/lib/data-sync";
 import { api } from "@/lib/api";
 import { useToast } from "@/components/toast";
@@ -26,7 +26,7 @@ export function LocationsCard() {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
+  const [editForm, setEditForm] = useState({ name: "", address: "", city: "", state: "", phone: "" });
   const [busyId, setBusyId] = useState<string | null>(null); // "new" while adding, else the location id
 
   const entitled = !!business?.isMultiLocation;
@@ -74,17 +74,23 @@ export function LocationsCard() {
     }
   }
 
-  async function saveRename(loc: LocationDto) {
-    const name = editName.trim();
-    if (!name || name === loc.name) { setEditingId(null); return; }
+  async function saveLocation(loc: LocationDto) {
+    const name = editForm.name.trim();
+    if (!name) return;
     setBusyId(loc.id);
     try {
-      await api.patch(`/business/locations/${loc.id}`, { name });
+      await api.patch(`/business/locations/${loc.id}`, {
+        name,
+        address: editForm.address.trim(),
+        city: editForm.city.trim(),
+        state: editForm.state.trim(),
+        phone: editForm.phone.trim(),
+      });
       setEditingId(null);
       await refresh();
-      toast.success("Location renamed");
+      toast.success("Location saved");
     } catch (e: unknown) {
-      toast.error("Couldn't rename location", errText(e));
+      toast.error("Couldn't save location", errText(e));
     } finally {
       setBusyId(null);
     }
@@ -118,21 +124,26 @@ export function LocationsCard() {
               className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2.5"
             >
               {editingId === l.id ? (
-                <div className="flex flex-1 items-center gap-2">
-                  <Input
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") saveRename(l); if (e.key === "Escape") setEditingId(null); }}
-                    autoFocus
-                    className="h-8"
-                    maxLength={200}
-                  />
-                  <Button size="sm" variant="ghost" disabled={busyId === l.id} onClick={() => saveRename(l)} aria-label="Save">
-                    <Check size={15} />
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditingId(null)} aria-label="Cancel">
-                    <X size={15} />
-                  </Button>
+                <div className="flex-1 space-y-2">
+                  <Input value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                    placeholder="Branch name" autoFocus className="h-8" maxLength={200} />
+                  <Input value={editForm.address} onChange={(e) => setEditForm((f) => ({ ...f, address: e.target.value }))}
+                    placeholder="Address (shown on receipts)" className="h-8" maxLength={300} />
+                  <div className="flex gap-2">
+                    <Input value={editForm.city} onChange={(e) => setEditForm((f) => ({ ...f, city: e.target.value }))}
+                      placeholder="City" className="h-8" maxLength={100} />
+                    <Input value={editForm.state} onChange={(e) => setEditForm((f) => ({ ...f, state: e.target.value }))}
+                      placeholder="State" className="h-8" maxLength={100} />
+                  </div>
+                  <Input value={editForm.phone} onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
+                    placeholder="Phone (shown on receipts)" className="h-8" maxLength={40} />
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500">Address &amp; phone print on this branch&rsquo;s receipts. Leave blank to use your business details.</p>
+                  <div className="flex gap-2">
+                    <Button size="sm" disabled={busyId === l.id || !editForm.name.trim()} onClick={() => saveLocation(l)}>
+                      {busyId === l.id ? <Loader2 size={14} className="animate-spin" /> : "Save"}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>Cancel</Button>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -145,8 +156,8 @@ export function LocationsCard() {
                     {!l.isActive && <Badge variant="outline">Inactive</Badge>}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    <Button size="sm" variant="ghost" onClick={() => { setEditingId(l.id); setEditName(l.name); }}>
-                      Rename
+                    <Button size="sm" variant="ghost" onClick={() => { setEditingId(l.id); setEditForm({ name: l.name, address: l.address ?? "", city: l.city ?? "", state: l.state ?? "", phone: l.phone ?? "" }); }}>
+                      Edit
                     </Button>
                     {!l.isDefault && (
                       <Button size="sm" variant="ghost" disabled={busyId === l.id} onClick={() => toggleActive(l)}>
