@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import { getStoredBusiness, getStoredUser } from "@/lib/auth";
+import { getSelectedLocation, setSelectedLocation } from "@/lib/location";
 import type { BusinessDto, UserDto } from "@/lib/types";
 
 interface DataSyncState {
@@ -32,8 +33,23 @@ export function DataSyncProvider({ children }: { children: React.ReactNode }) {
       api.get<{ data: UserDto }>("/auth/me"),
     ]).then(([bizRes, userRes]) => {
       if (bizRes.status === "fulfilled" && bizRes.value.data.data) {
-        setBusiness(bizRes.value.data.data);
-        localStorage.setItem("oj_business", JSON.stringify(bizRes.value.data.data));
+        const biz = bizRes.value.data.data;
+        setBusiness(biz);
+        localStorage.setItem("oj_business", JSON.stringify(biz));
+
+        // Hydrate the branch selection from the server so the web switcher and the bot share ONE choice.
+        // The server (User.SelectedLocationId, resolved to what the user may access) wins over the device-local
+        // localStorage. Only act when the field is actually present (`undefined` = older backend → leave local
+        // alone) and for multi-location businesses. If the server disagrees with what this device had, the data
+        // already fetched used the old scope, so reload once to refetch correctly — it converges immediately
+        // (after the reload server === local, so it won't loop).
+        if (biz.isMultiLocation && biz.selectedLocationId !== undefined) {
+          const server = biz.selectedLocationId ?? null;
+          if (server !== getSelectedLocation()) {
+            setSelectedLocation(server);
+            if (typeof window !== "undefined") window.location.reload();
+          }
+        }
       }
       if (userRes.status === "fulfilled" && userRes.value.data.data) {
         // Keep the FULL user (with phone + DOB) in memory so Settings can render

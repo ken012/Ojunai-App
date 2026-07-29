@@ -70,7 +70,12 @@ public sealed class LocationChatService
             .Where(u => u.Id == userId).Select(u => u.SelectedLocationId).FirstOrDefaultAsync();
         var current = await _access.ResolveEffectiveLocationAsync(businessId, userId, role, selected);
 
-        var options = locations.Select(l => new BranchOption(l.Id, l.Name, l.Id == current)).ToList();
+        // Owner/Admin can also view the whole business ("All branches", the Guid.Empty sentinel → null scope);
+        // restricted staff are always pinned to one branch, so they never see this option.
+        var options = new List<BranchOption>();
+        if (role is UserRole.Owner or UserRole.Admin)
+            options.Add(new BranchOption(Guid.Empty, "All branches", current == null));
+        options.AddRange(locations.Select(l => new BranchOption(l.Id, l.Name, l.Id == current)));
         var currentName = options.FirstOrDefault(o => o.IsCurrent)?.Name;
         var text = currentName != null
             ? $"📍 *Your branches* — tap one to switch. Recording to *{currentName}* now."
@@ -86,6 +91,20 @@ public sealed class LocationChatService
     /// </summary>
     public async Task<string> ApplySelectionAsync(Guid businessId, Guid userId, UserRole role, Guid locationId)
     {
+        if (locationId == Guid.Empty)
+        {
+            // "All branches" — only all-access roles may go business-wide; a restricted staffer resolves to a
+            // concrete branch (never null), so reject even if a stale/forged token carries the empty sentinel.
+            var effAll = await _access.ResolveEffectiveLocationAsync(businessId, userId, role, null);
+            if (effAll != null)
+                return "Sorry, you're set up for a single branch. Send *branches* to see your options.";
+            var allUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId && u.BusinessId == businessId);
+            if (allUser == null) return "Couldn't find your account. Try again.";
+            allUser.SelectedLocationId = null;
+            await _db.SaveChangesAsync();
+            return "✅ Switched to *All branches*. Your totals now cover the whole business. Send *branches* anytime to switch.";
+        }
+
         var loc = await _db.Locations
             .FirstOrDefaultAsync(l => l.Id == locationId && l.BusinessId == businessId && l.IsActive);
         if (loc == null)

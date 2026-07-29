@@ -105,7 +105,46 @@ public class BusinessController : OjunaiBaseController
         result.AccessibleLocationIds = accessible;
         var activeCount = result.Locations.Count(l => l.IsActive);
         result.LocationAccessRestricted = accessible.Count < activeCount;
+
+        // Surface the user's persisted branch selection so the web switcher hydrates from the SAME state the
+        // bot uses (User.SelectedLocationId). Emit it only if still accessible; a restricted user with a
+        // stale/absent pick falls back to their primary branch; an owner falls back to null = "All branches".
+        var stored = await _db.Users.Where(u => u.Id == UserId).Select(u => u.SelectedLocationId).FirstOrDefaultAsync();
+        result.SelectedLocationId = (stored is { } s && accessible.Contains(s))
+            ? s
+            : (result.LocationAccessRestricted && accessible.Count > 0 ? accessible[0] : null);
         return Ok(ApiResponse<BusinessDto>.Ok(result));
+    }
+
+    /// <summary>
+    /// Persist the CURRENT user's selected branch so the web switcher and the WhatsApp/Telegram/Messenger bot
+    /// share one selection. <c>locationId = null</c> means "All branches" (business-wide) — allowed only for
+    /// all-access roles; a restricted user is pinned to their primary branch instead. A non-null branch must be
+    /// in the user's accessible set (tenant- and access-safe).
+    /// </summary>
+    [HttpPut("selected-location")]
+    public async Task<ActionResult<ApiResponse<Guid?>>> SetSelectedLocation([FromBody] SetSelectedLocationRequest request)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == UserId && u.BusinessId == BusinessId);
+        if (user == null) return NotFound(ApiResponse<Guid?>.Fail("User not found."));
+
+        Guid? toStore;
+        if (request.LocationId is { } id)
+        {
+            var accessible = await _locationAccess.AccessibleLocationIdsAsync(BusinessId, UserId, User.GetRole());
+            if (!accessible.Contains(id))
+                return BadRequest(ApiResponse<Guid?>.Fail("You don't have access to that branch."));
+            toStore = id;
+        }
+        else
+        {
+            // "All branches" request → null for all-access; restricted users resolve to their pinned branch.
+            toStore = await _locationAccess.ResolveEffectiveLocationAsync(BusinessId, UserId, User.GetRole(), null);
+        }
+
+        user.SelectedLocationId = toStore;
+        await _db.SaveChangesAsync();
+        return Ok(ApiResponse<Guid?>.Ok(toStore));
     }
 
     [HttpGet("plan-status")]

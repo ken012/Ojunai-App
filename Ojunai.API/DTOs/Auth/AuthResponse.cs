@@ -93,4 +93,8 @@ public class BusinessDto
     /// <summary>True when the current user is restricted to a strict SUBSET of the active locations — the
     /// switcher then hides "All locations" and always keeps a single location selected.</summary>
     public bool LocationAccessRestricted { get; set; }
+    /// <summary>The CURRENT user's persisted branch selection (User.SelectedLocationId), resolved to what they
+    /// may actually access — null = "All branches" (business-wide). Shared with the WhatsApp/Telegram/Messenger
+    /// bot so the web switcher and the bot agree on one selected branch. Populated by GET /business.</summary>
+    public Guid? SelectedLocationId { get; set; }
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { MapPin } from "lucide-react";
+import { api } from "@/lib/api";
 import { useBusiness } from "@/lib/data-sync";
 import { getSelectedLocation, setSelectedLocation } from "@/lib/location";
 import { scopingForPath } from "@/lib/location-scope";
@@ -85,8 +86,16 @@ export function LocationSwitcher() {
 
   const value = active.some((l) => l.id === selected) ? selected : restricted ? active[0].id : "all";
 
-  function onChange(next: string) {
-    setSelectedLocation(next === "all" ? null : next); // persisted → survives the reload
+  async function onChange(next: string) {
+    const id = next === "all" ? null : next;
+    setSelectedLocation(id); // write local first so the reloaded page sends the right X-Location-Id header
+    // Persist to the server too so the bot (WhatsApp/Telegram/Messenger) shares this same selection. Best-effort
+    // and awaited so the reload doesn't cancel it; local state already works even if this fails.
+    try {
+      await api.put("/business/selected-location", { locationId: id });
+    } catch {
+      /* ignore — the header-based scoping still works this session; server sync will retry on next switch */
+    }
     if (typeof window !== "undefined") window.location.reload();
   }
 

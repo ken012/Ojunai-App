@@ -130,9 +130,44 @@ public class MultiLocationChannelParityTests
 
         var picker = await NewService(db).BuildPickerAsync(biz.Id, owner.Id, owner.Role);
 
-        Assert.Equal(2, picker.Options.Count);
+        // Owner/Admin also get an "All branches" option (Guid.Empty sentinel) on top of the two real branches.
+        Assert.Equal(3, picker.Options.Count);
+        Assert.Contains(picker.Options, o => o.Id == Guid.Empty && o.Name == "All branches" && !o.IsCurrent);
         Assert.Contains(picker.Options, o => o.Id == mainId && !o.IsCurrent);
         Assert.Contains(picker.Options, o => o.Id == ikeja.Id && o.IsCurrent);
+    }
+
+    [Fact]
+    public async Task Picker_Owner_NoSelection_FlagsAllBranchesCurrent()
+    {
+        await using var db = NewContext();
+        var biz = await AddBizAsync(db);
+        await AddLocAsync(db, biz.Id, "Ikeja");
+        var owner = await AddUserAsync(db, biz.Id, UserRole.Owner); // no selection → viewing all branches
+
+        var picker = await NewService(db).BuildPickerAsync(biz.Id, owner.Id, owner.Role);
+
+        Assert.Contains(picker.Options, o => o.Id == Guid.Empty && o.IsCurrent);       // "All branches" is current
+        Assert.DoesNotContain(picker.Options, o => o.Id != Guid.Empty && o.IsCurrent); // no branch is flagged current
+    }
+
+    [Fact]
+    public async Task Picker_RestrictedStaff_MultiBranch_HasNoAllBranchesOption()
+    {
+        await using var db = NewContext();
+        var biz = await AddBizAsync(db);
+        var mainId = biz.DefaultLocationId!.Value;
+        var ikeja = await AddLocAsync(db, biz.Id, "Ikeja");
+        var sales = await AddUserAsync(db, biz.Id, UserRole.Sales);
+        db.UserLocations.Add(new UserLocation { UserId = sales.Id, LocationId = ikeja.Id });
+        db.UserLocations.Add(new UserLocation { UserId = sales.Id, LocationId = mainId });
+        await db.SaveChangesAsync();
+
+        var picker = await NewService(db).BuildPickerAsync(biz.Id, sales.Id, sales.Role);
+
+        // Assigned to BOTH branches → can switch between them, but NEVER an "All branches" (business-wide) option.
+        Assert.Equal(2, picker.Options.Count);
+        Assert.DoesNotContain(picker.Options, o => o.Id == Guid.Empty);
     }
 
     [Fact]
@@ -179,6 +214,38 @@ public class MultiLocationChannelParityTests
 
         Assert.Contains("isn't available", reply);
         Assert.Null((await db.Users.FindAsync(owner.Id))!.SelectedLocationId);
+    }
+
+    [Fact]
+    public async Task Apply_Owner_AllBranches_ClearsSelectionToNull()
+    {
+        await using var db = NewContext();
+        var biz = await AddBizAsync(db);
+        var ikeja = await AddLocAsync(db, biz.Id, "Ikeja");
+        var owner = await AddUserAsync(db, biz.Id, UserRole.Owner, selected: ikeja.Id);
+
+        // The "All branches" sentinel (Guid.Empty) clears the owner's selection → business-wide scope.
+        var reply = await NewService(db).ApplySelectionAsync(biz.Id, owner.Id, owner.Role, Guid.Empty);
+
+        Assert.Contains("All branches", reply);
+        Assert.Null((await db.Users.FindAsync(owner.Id))!.SelectedLocationId);
+    }
+
+    [Fact]
+    public async Task Apply_RestrictedStaff_AllBranches_Rejected_SelectionUnchanged()
+    {
+        await using var db = NewContext();
+        var biz = await AddBizAsync(db);
+        var ikeja = await AddLocAsync(db, biz.Id, "Ikeja");
+        var sales = await AddUserAsync(db, biz.Id, UserRole.Sales, selected: ikeja.Id);
+        db.UserLocations.Add(new UserLocation { UserId = sales.Id, LocationId = ikeja.Id });
+        await db.SaveChangesAsync();
+
+        // Even a forged "All branches" token can't widen a restricted staffer to business-wide.
+        var reply = await NewService(db).ApplySelectionAsync(biz.Id, sales.Id, sales.Role, Guid.Empty);
+
+        Assert.Contains("single branch", reply);
+        Assert.Equal(ikeja.Id, (await db.Users.FindAsync(sales.Id))!.SelectedLocationId); // unchanged
     }
 
     [Fact]

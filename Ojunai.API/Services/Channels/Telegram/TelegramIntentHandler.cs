@@ -703,11 +703,13 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
     private async Task ResumeSelectLocationAsync(PendingActionConsumeResult consumed, ConversationMessage inbound, CancellationToken ct)
     {
         var payload = JsonSerializer.Deserialize<SelectLocationPayload>(consumed.PayloadJson);
-        if (payload is null || payload.LocationId == Guid.Empty)
+        if (payload is null)
         {
             await Reply(inbound, "Couldn't read which branch to switch to. Send *branches* to try again.", ct);
             return;
         }
+        // LocationId == Guid.Empty is the intentional "All branches" choice (owner/admin) — ApplySelectionAsync
+        // validates access for it, so it's NOT a malformed payload here.
         var role = await _db.Users.AsNoTracking()
             .Where(u => u.Id == consumed.UserId).Select(u => u.Role).FirstOrDefaultAsync(ct);
         var reply = await _location.ApplySelectionAsync(consumed.BusinessId, consumed.UserId, role, payload.LocationId);

@@ -777,16 +777,28 @@ public class WhatsAppService : IWhatsAppService
                 : $"📍 You're set up at *{only.Name}*. All your entries go there.";
         }
 
-        // Mark the branch the sender is currently effectively recording to.
+        // Mark the branch the sender is currently effectively recording to (null = viewing all branches).
         var current = await _access.ResolveEffectiveLocationAsync(user.BusinessId, user.Id, user.Role, user.SelectedLocationId);
+
+        // Owner/Admin can also view the whole business ("All branches", the Guid.Empty sentinel → null scope);
+        // restricted staff are always pinned to one branch, so they never see this option.
+        var isAllAccess = user.Role is UserRole.Owner or UserRole.Admin;
+        var entries = new List<(Guid Id, string Name)>();
+        if (isAllAccess) entries.Add((Guid.Empty, "All branches"));
+        entries.AddRange(locations.Select(l => (l.Id, l.Name)));
 
         var sb = new System.Text.StringBuilder();
         sb.Append("📍 *Your branches* — reply with a number to switch:\n\n");
-        for (int i = 0; i < locations.Count; i++)
-            sb.Append($"{i + 1}. {locations[i].Name}{(locations[i].Id == current ? " ✅ (current)" : "")}\n");
-        sb.Append("\nEverything you record (sales, stock) goes to the branch you pick, until you switch again.");
+        for (int i = 0; i < entries.Count; i++)
+        {
+            var isCurrent = entries[i].Id == Guid.Empty ? current == null : entries[i].Id == current;
+            sb.Append($"{i + 1}. {entries[i].Name}{(isCurrent ? " ✅ (current)" : "")}\n");
+        }
+        sb.Append(isAllAccess
+            ? "\nPick *All branches* for business-wide totals, or a branch to record and view there."
+            : "\nEverything you record (sales, stock) goes to the branch you pick, until you switch again.");
 
-        var payload = JsonSerializer.Serialize(locations.Select(l => new { l.Id, l.Name }));
+        var payload = JsonSerializer.Serialize(entries.Select(e => new { e.Id, e.Name }));
         await SetPendingActionAsync(user.BusinessId, user.Id, "select_location", payload, "locationChoice",
             "Which branch? Reply with the number.");
 
@@ -819,6 +831,19 @@ public class WhatsAppService : IWhatsAppService
                   ?? options.FirstOrDefault(o => o.Name.StartsWith(r, StringComparison.OrdinalIgnoreCase));
         }
         if (chosen == null) return null; // not a recognizable choice → caller treats the message as a fresh request
+
+        if (chosen.Id == Guid.Empty)
+        {
+            // "All branches" — only all-access roles (Owner/Admin) may go business-wide. A restricted staffer is
+            // always pinned, so ResolveEffectiveLocationAsync(null) returns a concrete branch → reject (defense
+            // in depth: their picker never offers this, but a stale/forged payload can't widen their scope).
+            var effAll = await _access.ResolveEffectiveLocationAsync(user.BusinessId, user.Id, user.Role, null);
+            if (effAll != null)
+                return "Sorry, you're set up for a single branch. Reply *branches* to see your options.";
+            user.SelectedLocationId = null;
+            await ClearPendingActionAsync(user.BusinessId, user.Id);
+            return "✅ Switched to *All branches*. Your totals now cover the whole business. Reply *branches* anytime to switch.";
+        }
 
         // Defense-in-depth: confirm the chosen branch is actually accessible (guards a stale/foreign payload).
         var effective = await _access.ResolveEffectiveLocationAsync(user.BusinessId, user.Id, user.Role, chosen.Id);

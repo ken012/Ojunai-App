@@ -98,6 +98,9 @@ export interface BusinessDto {
   accessibleLocationIds?: string[];
   /** True when the current user is restricted to a strict subset of locations — switcher hides "All". */
   locationAccessRestricted?: boolean;
+  /** The current user's persisted branch selection, shared with the bot. null = "All branches". `undefined`
+   *  means an older backend that doesn't emit it yet (skip hydration). */
+  selectedLocationId?: string | null;
 }
 
 export interface LocationDto {
