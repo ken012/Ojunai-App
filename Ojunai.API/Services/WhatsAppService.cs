@@ -1871,6 +1871,31 @@ public class WhatsAppService : IWhatsAppService
         return active.Count > 1 && active.Contains(locId) ? locId : null;
     }
 
+    /// <summary>
+    /// Per-product EFFECTIVE stock for a bot read: the sender's branch <see cref="ProductLocationStock"/>
+    /// (0 where the branch has no PLS row) when the business is genuinely multi-location, else the business-wide
+    /// <c>Product.CurrentStock</c>. Mirrors ReportService.ProductsWithEffectiveStockAsync so bot stock reads scope
+    /// like the dashboard. Every requested id is present in the result (branch stock, 0, or CurrentStock), so
+    /// callers can index with <c>stock[p.Id]</c> safely. Returns CurrentStock for single-location businesses,
+    /// keeping their behaviour byte-for-byte unchanged.
+    /// </summary>
+    private async Task<Dictionary<Guid, decimal>> StockByProductAsync(Guid businessId, IEnumerable<Guid> productIds)
+    {
+        var ids = productIds.Distinct().ToList();
+        if (ids.Count == 0) return new Dictionary<Guid, decimal>();
+
+        var locId = await ScopedLocationAsync(businessId);
+        if (locId is null)
+            return await _db.Products
+                .Where(p => p.BusinessId == businessId && ids.Contains(p.Id))
+                .ToDictionaryAsync(p => p.Id, p => p.CurrentStock);
+
+        var pls = await _db.ProductLocationStocks
+            .Where(x => x.LocationId == locId && ids.Contains(x.ProductId))
+            .ToDictionaryAsync(x => x.ProductId, x => x.CurrentStock);
+        return ids.ToDictionary(id => id, id => pls.GetValueOrDefault(id, 0m));
+    }
+
     private async Task<string> HandleCreateReceivableAsync(Guid businessId, JsonElement ba, User? recordedBy = null)
     {
         // Plan gate — ledger is not available on Starter tier
@@ -2199,9 +2224,11 @@ public class WhatsAppService : IWhatsAppService
 
         // Top sold product today
         var todayUtc = DateTime.UtcNow.Date;
+        var locId = await ScopedLocationAsync(businessId);
         var topProduct = await _db.SaleItems
             .Include(i => i.Sale).Include(i => i.Product)
-            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= todayUtc)
+            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= todayUtc
+                        && (locId == null || i.Sale.LocationId == locId))
             .GroupBy(i => i.Product.Name)
             .Select(g => new { Name = g.Key, Rev = g.Sum(i => i.TotalPrice) })
             .OrderByDescending(p => p.Rev)
@@ -2239,7 +2266,11 @@ public class WhatsAppService : IWhatsAppService
 
         if (items.Count == 0) return "You have no products set up yet.";
 
-        // Get held quantities for all products in one query
+        // Branch-effective stock per product (business-wide roll-up for single-location / no branch selected).
+        var stock = await StockByProductAsync(businessId, items.Select(p => p.Id));
+
+        // Get held quantities for all products in one query. StockHolds carry no LocationId, so they stay
+        // business-wide; the "available" figure subtracts them from the branch stock.
         var activeHolds = await _db.StockHolds
             .Where(h => h.BusinessId == businessId && h.Status == HoldStatus.Active)
             .GroupBy(h => h.ProductId)
@@ -2248,9 +2279,10 @@ public class WhatsAppService : IWhatsAppService
 
         var lines = items.Select(p =>
         {
+            var cur = stock[p.Id];
             var held = activeHolds.GetValueOrDefault(p.Id, 0);
-            var flag = p.CurrentStock <= p.LowStockThreshold ? " ⚠️" : "";
-            var holdStr = held > 0 ? $" ({held:0.##} on hold, {(p.CurrentStock - held):0.##} avail)" : "";
+            var flag = cur <= p.LowStockThreshold ? " ⚠️" : "";
+            var holdStr = held > 0 ? $" ({held:0.##} on hold, {(cur - held):0.##} avail)" : "";
             var priceStr = "";
             if (showPrices)
             {
@@ -2259,22 +2291,46 @@ public class WhatsAppService : IWhatsAppService
                 if (p.CostPrice.HasValue) prices.Add($"Cost: {_cs}{p.CostPrice.Value:N0}");
                 if (prices.Count > 0) priceStr = $" — {string.Join(" | ", prices)}";
             }
-            return $"• {p.Name}: {p.CurrentStock:0.##} {UnitFormat.Plural(p.CurrentStock, p.Unit)}{holdStr}{flag}{priceStr}";
+            return $"• {p.Name}: {cur:0.##} {UnitFormat.Plural(cur, p.Unit)}{holdStr}{flag}{priceStr}";
         });
         return $"📦 *Stock Levels*\n{string.Join("\n", lines)}";
     }
 
     private async Task<string> HandleGetLowStockAsync(Guid businessId)
     {
-        var items = await _db.Products
-            .Where(p => p.BusinessId == businessId && p.IsActive && !p.IsBundle && p.CurrentStock <= p.LowStockThreshold)
-            .OrderBy(p => p.CurrentStock).ToListAsync();
+        // Low-stock is judged in-DB against stock, so when a branch is selected the threshold must compare
+        // against that branch's PLS stock (0 where it has no row), mirroring ReportService.LowStockItemsAsync.
+        var locId = await ScopedLocationAsync(businessId);
+
+        List<(Product Product, decimal Stock)> items;
+        if (locId is { } loc)
+        {
+            items = (await (
+                from p in _db.Products
+                where p.BusinessId == businessId && p.IsActive && !p.IsBundle
+                join s in _db.ProductLocationStocks.Where(x => x.LocationId == loc)
+                    on p.Id equals s.ProductId into gj
+                from s in gj.DefaultIfEmpty()
+                where (s == null ? 0m : s.CurrentStock) <= p.LowStockThreshold
+                orderby (s == null ? 0m : s.CurrentStock)
+                select new { P = p, Stock = s == null ? 0m : s.CurrentStock })
+                .ToListAsync())
+                .Select(r => (r.P, r.Stock)).ToList();
+        }
+        else
+        {
+            items = (await _db.Products
+                .Where(p => p.BusinessId == businessId && p.IsActive && !p.IsBundle && p.CurrentStock <= p.LowStockThreshold)
+                .OrderBy(p => p.CurrentStock).ToListAsync())
+                .Select(p => (p, p.CurrentStock)).ToList();
+        }
 
         if (items.Count == 0) return "✅ All products have sufficient stock.";
-        var lines = items.Select(p =>
+        var lines = items.Select(x =>
         {
+            var p = x.Product;
             var priceStr = p.SellingPrice.HasValue ? $" — {_cs}{p.SellingPrice.Value:N0}" : "";
-            return $"• {p.Name}: {p.CurrentStock:0.##} {UnitFormat.Plural(p.CurrentStock, p.Unit)} (min: {p.LowStockThreshold:0.##}){priceStr}";
+            return $"• {p.Name}: {x.Stock:0.##} {UnitFormat.Plural(x.Stock, p.Unit)} (min: {p.LowStockThreshold:0.##}){priceStr}";
         });
         return $"⚠️ *Low Stock* ({items.Count} items)\n{string.Join("\n", lines)}";
     }
@@ -2347,11 +2403,13 @@ public class WhatsAppService : IWhatsAppService
         if (string.IsNullOrEmpty(productName)) return "Which product do you want to check?";
 
         var todayUtc = DateTime.UtcNow.Date;
+        var locId = await ScopedLocationAsync(businessId);
         var saleItems = await _db.SaleItems
             .Include(i => i.Sale)
             .Include(i => i.Product)
             .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= todayUtc
-                        && i.Product.Name.ToLower().Contains(productName.ToLower()))
+                        && i.Product.Name.ToLower().Contains(productName.ToLower())
+                        && (locId == null || i.Sale.LocationId == locId))
             .ToListAsync();
 
         if (saleItems.Count == 0)
@@ -2497,12 +2555,14 @@ public class WhatsAppService : IWhatsAppService
         if (string.IsNullOrEmpty(productName)) return "Which product? E.g. \"Who sold rice today?\"";
 
         var todayUtc = DateTime.UtcNow.Date;
+        var locId = await ScopedLocationAsync(businessId);
         var saleItems = await _db.SaleItems
             .Include(i => i.Sale)
             .Include(i => i.Product)
             .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= todayUtc
                         && i.Product.Name.ToLower().Contains(productName.ToLower())
-                        && i.Sale.RecordedByName != null)
+                        && i.Sale.RecordedByName != null
+                        && (locId == null || i.Sale.LocationId == locId))
             .ToListAsync();
 
         if (saleItems.Count == 0)
@@ -2526,11 +2586,13 @@ public class WhatsAppService : IWhatsAppService
         if (string.IsNullOrEmpty(productName)) return "Which product? E.g. \"Who bought rice today?\"";
 
         var todayUtc = DateTime.UtcNow.Date;
+        var locId = await ScopedLocationAsync(businessId);
         var saleItems = await _db.SaleItems
             .Include(i => i.Sale).ThenInclude(s => s.Contact)
             .Include(i => i.Product)
             .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= todayUtc
-                        && i.Product.Name.ToLower().Contains(productName.ToLower()))
+                        && i.Product.Name.ToLower().Contains(productName.ToLower())
+                        && (locId == null || i.Sale.LocationId == locId))
             .OrderByDescending(i => i.Sale.CreatedAtUtc)
             .ToListAsync();
 
@@ -2577,14 +2639,17 @@ public class WhatsAppService : IWhatsAppService
         if (matched.Count == 0)
             return $"No products found matching: {string.Join(", ", names)}";
 
+        var stock = await StockByProductAsync(businessId, matched.Select(p => p.Id));
+
         var lines = matched.Select(p =>
         {
+            var cur = stock[p.Id];
             var prices = new List<string>();
             if (p.SellingPrice.HasValue) prices.Add($"Sell: {_cs}{p.SellingPrice.Value:N0}");
             if (p.CostPrice.HasValue) prices.Add($"Cost: {_cs}{p.CostPrice.Value:N0}");
             var priceStr = prices.Count > 0 ? $" — {string.Join(" | ", prices)}" : "";
-            var flag = p.CurrentStock <= p.LowStockThreshold ? " ⚠️" : "";
-            return $"• {p.Name}: {p.CurrentStock:0.##} {UnitFormat.Plural(p.CurrentStock, p.Unit)}{flag}{priceStr}";
+            var flag = cur <= p.LowStockThreshold ? " ⚠️" : "";
+            return $"• {p.Name}: {cur:0.##} {UnitFormat.Plural(cur, p.Unit)}{flag}{priceStr}";
         });
 
         return $"📦 *Stock*\n{string.Join("\n", lines)}";
@@ -2596,11 +2661,13 @@ public class WhatsAppService : IWhatsAppService
         if (string.IsNullOrEmpty(staffName)) return "Which staff member? E.g. \"What did Mary sell today?\"";
 
         var todayUtc = DateTime.UtcNow.Date;
+        var locId = await ScopedLocationAsync(businessId);
         var saleItems = await _db.SaleItems
             .Include(i => i.Sale)
             .Include(i => i.Product)
             .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= todayUtc
-                        && i.Sale.RecordedByName != null && i.Sale.RecordedByName.ToLower().Contains(staffName.ToLower()))
+                        && i.Sale.RecordedByName != null && i.Sale.RecordedByName.ToLower().Contains(staffName.ToLower())
+                        && (locId == null || i.Sale.LocationId == locId))
             .ToListAsync();
 
         if (saleItems.Count == 0) return $"No sales recorded by {staffName} today.";
@@ -2768,10 +2835,12 @@ public class WhatsAppService : IWhatsAppService
     private async Task<string> HandleGetTransactionHistoryAsync(Guid businessId)
     {
         var todayUtc = DateTime.UtcNow.Date;
+        var locId = await ScopedLocationAsync(businessId);
         var sales = await _db.Sales
             .Include(s => s.Items).ThenInclude(i => i.Product)
             .Include(s => s.Contact)
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= todayUtc)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= todayUtc
+                        && (locId == null || s.LocationId == locId))
             .OrderByDescending(s => s.CreatedAtUtc)
             .Take(10)
             .ToListAsync();
@@ -2793,14 +2862,20 @@ public class WhatsAppService : IWhatsAppService
     private async Task<string> HandleGetDeadStockAsync(Guid businessId)
     {
         var twoWeeksAgo = DateTime.UtcNow.AddDays(-14);
+        var locId = await ScopedLocationAsync(businessId);
         var allProducts = await _db.Products
-            .Where(p => p.BusinessId == businessId && p.IsActive && p.CurrentStock > 0)
+            .Where(p => p.BusinessId == businessId && p.IsActive)
             .ToListAsync();
+
+        // "In stock" and the sold-recently check both judge against the selected branch when multi-location.
+        var stock = await StockByProductAsync(businessId, allProducts.Select(p => p.Id));
+        allProducts = allProducts.Where(p => stock[p.Id] > 0).ToList();
 
         var productIds = allProducts.Select(p => p.Id).ToList();
         var recentSoldIds = await _db.SaleItems
             .Include(i => i.Sale)
-            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= twoWeeksAgo && productIds.Contains(i.ProductId))
+            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= twoWeeksAgo && productIds.Contains(i.ProductId)
+                        && (locId == null || i.Sale.LocationId == locId))
             .Select(i => i.ProductId)
             .Distinct()
             .ToListAsync();
@@ -2809,17 +2884,19 @@ public class WhatsAppService : IWhatsAppService
 
         if (deadStock.Count == 0) return "All your products have sold in the last 2 weeks. No dead stock.";
 
-        var lines = deadStock.Select(p => $"• {p.Name}: {p.CurrentStock:0.##} {UnitFormat.Plural(p.CurrentStock, p.Unit)} in stock — no sales in 14 days");
+        var lines = deadStock.Select(p => $"• {p.Name}: {stock[p.Id]:0.##} {UnitFormat.Plural(stock[p.Id], p.Unit)} in stock — no sales in 14 days");
         return $"💤 *Dead Stock* ({deadStock.Count} items)\n{string.Join("\n", lines)}\n\nConsider discounting or returning these.";
     }
 
     private async Task<string> HandleGetProfitByProductAsync(Guid businessId)
     {
         var thirtyDaysAgo = DateTime.UtcNow.Date.AddDays(-29);
+        var locId = await ScopedLocationAsync(businessId);
         var saleItems = await _db.SaleItems
             .Include(i => i.Sale)
             .Include(i => i.Product)
-            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= thirtyDaysAgo && i.Product.CostPrice.HasValue)
+            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= thirtyDaysAgo && i.Product.CostPrice.HasValue
+                        && (locId == null || i.Sale.LocationId == locId))
             .ToListAsync();
 
         if (saleItems.Count == 0) return "Not enough data to calculate profit by product. Make sure products have cost prices set.";
@@ -2865,14 +2942,20 @@ public class WhatsAppService : IWhatsAppService
     private async Task<string> HandleGetStockoutPredictionAsync(Guid businessId)
     {
         var sevenDaysAgo = DateTime.UtcNow.Date.AddDays(-6);
+        var locId = await ScopedLocationAsync(businessId);
         var products = await _db.Products
-            .Where(p => p.BusinessId == businessId && p.IsActive && p.CurrentStock > 0)
+            .Where(p => p.BusinessId == businessId && p.IsActive)
             .ToListAsync();
+
+        // Branch-effective stock drives both the "in stock" filter and the days-left math.
+        var stock = await StockByProductAsync(businessId, products.Select(p => p.Id));
+        products = products.Where(p => stock[p.Id] > 0).ToList();
 
         var productIds = products.Select(p => p.Id).ToList();
         var salesByProduct = await _db.SaleItems
             .Include(i => i.Sale)
-            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= sevenDaysAgo && productIds.Contains(i.ProductId))
+            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= sevenDaysAgo && productIds.Contains(i.ProductId)
+                        && (locId == null || i.Sale.LocationId == locId))
             .GroupBy(i => i.ProductId)
             .Select(g => new { ProductId = g.Key, TotalSold = g.Sum(i => i.Quantity) })
             .ToDictionaryAsync(x => x.ProductId, x => x.TotalSold);
@@ -2880,11 +2963,12 @@ public class WhatsAppService : IWhatsAppService
         var predictions = products
             .Select(p =>
             {
+                var cur = stock[p.Id];
                 var sold7d = salesByProduct.GetValueOrDefault(p.Id, 0);
                 var dailyRate = sold7d / 7m;
-                var daysLeft = dailyRate > 0 ? p.CurrentStock / dailyRate : 999;
-                var restock = dailyRate > 0 ? Math.Max(0, (dailyRate * 7) - p.CurrentStock) : 0;
-                return new { p.Name, p.Unit, p.CurrentStock, DailyRate = dailyRate, DaysLeft = daysLeft, Restock = restock };
+                var daysLeft = dailyRate > 0 ? cur / dailyRate : 999;
+                var restock = dailyRate > 0 ? Math.Max(0, (dailyRate * 7) - cur) : 0;
+                return new { p.Name, p.Unit, CurrentStock = cur, DailyRate = dailyRate, DaysLeft = daysLeft, Restock = restock };
             })
             .Where(p => p.DaysLeft < 14 && p.DailyRate > 0)
             .OrderBy(p => p.DaysLeft)
@@ -2912,10 +2996,12 @@ public class WhatsAppService : IWhatsAppService
         if (count > 20) count = 20;
 
         var thirtyDaysAgo = DateTime.UtcNow.Date.AddDays(-29);
+        var locId = await ScopedLocationAsync(businessId);
         var allSold = await _db.SaleItems
             .Include(i => i.Sale)
             .Include(i => i.Product)
-            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= thirtyDaysAgo)
+            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= thirtyDaysAgo
+                        && (locId == null || i.Sale.LocationId == locId))
             .GroupBy(i => new { i.Product.Name, i.Product.Unit })
             .Select(g => new
             {
@@ -2942,10 +3028,12 @@ public class WhatsAppService : IWhatsAppService
     private async Task<string> HandleGetTodaySalesDetailAsync(Guid businessId)
     {
         var todayUtc = DateTime.UtcNow.Date;
+        var locId = await ScopedLocationAsync(businessId);
         var saleItems = await _db.SaleItems
             .Include(i => i.Sale)
             .Include(i => i.Product)
-            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= todayUtc)
+            .Where(i => i.Sale.BusinessId == businessId && i.Sale.CreatedAtUtc >= todayUtc
+                        && (locId == null || i.Sale.LocationId == locId))
             .ToListAsync();
 
         if (saleItems.Count == 0) return "No sales recorded today.";
@@ -3119,8 +3207,10 @@ public class WhatsAppService : IWhatsAppService
     private async Task<string> HandleGetTodayExpensesAsync(Guid businessId)
     {
         var todayUtc = DateTime.UtcNow.Date;
+        var locId = await ScopedLocationAsync(businessId);
         var expenses = await _db.Expenses
-            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= todayUtc)
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= todayUtc
+                        && (locId == null || e.LocationId == locId))
             .OrderByDescending(e => e.CreatedAtUtc)
             .Take(10)
             .ToListAsync();
@@ -3136,8 +3226,10 @@ public class WhatsAppService : IWhatsAppService
     private async Task<string> HandleGetRecentExpensesAsync(Guid businessId)
     {
         var sevenDaysAgo = DateTime.UtcNow.Date.AddDays(-6);
+        var locId = await ScopedLocationAsync(businessId);
         var expenses = await _db.Expenses
-            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= sevenDaysAgo)
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= sevenDaysAgo
+                        && (locId == null || e.LocationId == locId))
             .OrderByDescending(e => e.CreatedAtUtc)
             .Take(10)
             .ToListAsync();
@@ -4052,18 +4144,25 @@ public class WhatsAppService : IWhatsAppService
         if (today.DayOfWeek == DayOfWeek.Sunday) thisWeekStart = thisWeekStart.AddDays(-7);
         var lastWeekStart = thisWeekStart.AddDays(-7);
 
+        // Net mixes sales and expenses, so both sides scope to the same branch or the comparison is apples-to-oranges.
+        var locId = await ScopedLocationAsync(businessId);
+
         var thisWeekSales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= thisWeekStart)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= thisWeekStart
+                        && (locId == null || s.LocationId == locId))
             .SumAsync(s => s.TotalAmount);
         var lastWeekSales = await _db.Sales
-            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= lastWeekStart && s.CreatedAtUtc < thisWeekStart)
+            .Where(s => s.BusinessId == businessId && s.CreatedAtUtc >= lastWeekStart && s.CreatedAtUtc < thisWeekStart
+                        && (locId == null || s.LocationId == locId))
             .SumAsync(s => s.TotalAmount);
 
         var thisWeekExpenses = await _db.Expenses
-            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= thisWeekStart)
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= thisWeekStart
+                        && (locId == null || e.LocationId == locId))
             .SumAsync(e => e.Amount);
         var lastWeekExpenses = await _db.Expenses
-            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= lastWeekStart && e.CreatedAtUtc < thisWeekStart)
+            .Where(e => e.BusinessId == businessId && e.CreatedAtUtc >= lastWeekStart && e.CreatedAtUtc < thisWeekStart
+                        && (locId == null || e.LocationId == locId))
             .SumAsync(e => e.Amount);
 
         var thisNet = thisWeekSales - thisWeekExpenses;
@@ -4100,9 +4199,11 @@ public class WhatsAppService : IWhatsAppService
         if (!product.CostPrice.HasValue) return $"No cost price set for {product.Name}. Add a cost price to see profitability.";
 
         var thirtyDaysAgo = DateTime.UtcNow.Date.AddDays(-29);
+        var locId = await ScopedLocationAsync(businessId);
         var saleItems = await _db.SaleItems
             .Include(i => i.Sale)
-            .Where(i => i.Sale.BusinessId == businessId && i.ProductId == product.Id && i.Sale.CreatedAtUtc >= thirtyDaysAgo)
+            .Where(i => i.Sale.BusinessId == businessId && i.ProductId == product.Id && i.Sale.CreatedAtUtc >= thirtyDaysAgo
+                        && (locId == null || i.Sale.LocationId == locId))
             .ToListAsync();
 
         if (saleItems.Count == 0) return $"No sales of {product.Name} in the last 30 days.";
@@ -4339,8 +4440,12 @@ public class WhatsAppService : IWhatsAppService
     private async Task<string> HandleGetStockValueAsync(Guid businessId)
     {
         var products = await _db.Products
-            .Where(p => p.BusinessId == businessId && p.IsActive && p.CurrentStock > 0)
+            .Where(p => p.BusinessId == businessId && p.IsActive)
             .ToListAsync();
+
+        // Value what's in stock AT the selected branch (business-wide roll-up for single-location).
+        var stock = await StockByProductAsync(businessId, products.Select(p => p.Id));
+        products = products.Where(p => stock[p.Id] > 0).ToList();
 
         if (products.Count == 0) return "No products in stock.";
 
@@ -4351,9 +4456,10 @@ public class WhatsAppService : IWhatsAppService
 
         foreach (var p in products)
         {
-            if (p.CostPrice.HasValue) totalCostValue += p.CurrentStock * p.CostPrice.Value;
+            var cur = stock[p.Id];
+            if (p.CostPrice.HasValue) totalCostValue += cur * p.CostPrice.Value;
             else noCost++;
-            if (p.SellingPrice.HasValue) totalSellValue += p.CurrentStock * p.SellingPrice.Value;
+            if (p.SellingPrice.HasValue) totalSellValue += cur * p.SellingPrice.Value;
             else noSell++;
         }
 
