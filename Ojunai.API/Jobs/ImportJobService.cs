@@ -110,6 +110,13 @@ public class ImportJobService
             var business = await _db.Businesses.FindAsync(job.BusinessId);
             var cs = BillingConfig.Symbol(business?.Currency);
 
+            // Re-establish the branch this import targets (the HTTP request that set it has long ended). With the
+            // ambient scope set, the AppDbContext dual-write mirror routes imported stock deltas to the right
+            // ProductLocationStock and stamps ILocationScoped rows (InventoryTransaction/Contact/LedgerEntry);
+            // Sale/Expense are stamped explicitly at their build sites. Null (single-location / no branch) =
+            // default location, unchanged.
+            using var _locScope = LocationScope.Push(job.LocationId);
+
             switch (job.Type)
             {
                 case ImportJobType.Inventory:
@@ -370,7 +377,8 @@ public class ImportJobService
                                 RecordedByUserId = user?.Id,
                                 RecordedByName = user?.FullName,
                                 CreatedAtUtc = invDate,
-                                ImportBatchId = job.Id
+                                ImportBatchId = job.Id,
+                                LocationId = LocationScope.Current,
                             });
                         }
                     }
@@ -511,7 +519,8 @@ public class ImportJobService
                         Source = EntrySource.Import,
                         RecordedByUserId = user?.Id,
                         RecordedByName = user?.FullName,
-                        CreatedAtUtc = saleDate
+                        CreatedAtUtc = saleDate,
+                        LocationId = LocationScope.Current, // the branch this import targets (Sale isn't ILocationScoped)
                     };
                     sale.Items.Add(new SaleItem
                     {
@@ -619,7 +628,8 @@ public class ImportJobService
                         RecordedByUserId = user?.Id,
                         RecordedByName = user?.FullName,
                         CreatedAtUtc = DateTime.SpecifyKind(expParsedDate, DateTimeKind.Utc),
-                        ImportBatchId = job.Id
+                        ImportBatchId = job.Id,
+                        LocationId = LocationScope.Current, // the branch this import targets (Expense isn't ILocationScoped)
                     });
 
                     job.SuccessCount++;

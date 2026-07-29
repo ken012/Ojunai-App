@@ -23,6 +23,7 @@ public class ImportController : OjunaiBaseController
     private readonly PlanGuard _planGuard;
     private readonly IBackgroundJobClient _jobs;
     private readonly ILogger<ImportController> _logger;
+    private readonly Services.LocationAccessService _access;
 
     // Raised from 5MB since processing runs in the background and no longer blocks the request.
     private const long MaxFileSize = 50 * 1024 * 1024; // 50MB
@@ -31,19 +32,20 @@ public class ImportController : OjunaiBaseController
     // here is about protecting memory during the initial parse, not HTTP latency.
     private const int MaxRows = 100_000;
 
-    public ImportController(AppDbContext db, PlanGuard planGuard, IBackgroundJobClient jobs, ILogger<ImportController> logger)
+    public ImportController(AppDbContext db, PlanGuard planGuard, IBackgroundJobClient jobs, ILogger<ImportController> logger, Services.LocationAccessService access)
     {
         _db = db;
         _planGuard = planGuard;
         _jobs = jobs;
         _logger = logger;
+        _access = access;
     }
 
     [HttpPost("inventory")]
     [RequirePermission(Permission.ManageStock)]
     [RequestSizeLimit(MaxFileSize)]
-    public Task<ActionResult<ApiResponse<ImportJobDto>>> ImportInventory(IFormFile file, [FromQuery] string mode = "new_purchase")
-        => EnqueueImportAsync(file, ImportJobType.Inventory, Permission.ManageStock, mode);
+    public Task<ActionResult<ApiResponse<ImportJobDto>>> ImportInventory(IFormFile file, [FromQuery] string mode = "new_purchase", [FromQuery] Guid? locationId = null)
+        => EnqueueImportAsync(file, ImportJobType.Inventory, Permission.ManageStock, mode, locationId);
 
     [HttpPost("sales")]
     [RequirePermission(Permission.RecordSales)]
@@ -149,10 +151,27 @@ public class ImportController : OjunaiBaseController
         return Ok(ApiResponse<List<ImportJobDto>>.Ok(jobs.Select(MapToDto).ToList()));
     }
 
-    private async Task<ActionResult<ApiResponse<ImportJobDto>>> EnqueueImportAsync(IFormFile file, ImportJobType type, string permission, string mode = "default")
+    private async Task<ActionResult<ApiResponse<ImportJobDto>>> EnqueueImportAsync(IFormFile file, ImportJobType type, string permission, string mode = "default", Guid? locationId = null)
     {
         var (allowed, planErr) = await _planGuard.CheckFeatureAsync(BusinessId, "csv_import");
         if (!allowed) return BadRequest(ApiResponse<ImportJobDto>.Fail(planErr!));
+
+        // Resolve the branch this import targets — the worker runs in the background with no request context, so
+        // we capture it now. An explicit pick (the inventory import dialog's branch dropdown) is validated against
+        // the user's access; otherwise fall back to whatever branch the top switcher had selected (already
+        // resolved + pinned for restricted users by the base controller). Null = business-wide / default branch.
+        Guid? targetLocation;
+        if (locationId is { } picked)
+        {
+            var effective = await _access.ResolveEffectiveLocationAsync(BusinessId, UserId, User.GetRole(), picked);
+            if (effective != picked || !await _db.Locations.AnyAsync(l => l.Id == picked && l.BusinessId == BusinessId && l.IsActive))
+                return BadRequest(ApiResponse<ImportJobDto>.Fail("That branch isn't available, or you don't have access to it."));
+            targetLocation = picked;
+        }
+        else
+        {
+            targetLocation = LocationScope.Current;
+        }
 
         var (csvText, rowCount, parseError) = ReadAndValidateFile(file);
         if (parseError != null) return BadRequest(ApiResponse<ImportJobDto>.Fail(parseError));
@@ -198,7 +217,8 @@ public class ImportController : OjunaiBaseController
             FileName = sanitizedName,
             TotalRows = rowCount,
             ImportMode = mode,
-            SkipExpenses = mode == "existing_stock" || mode == "price_update" || mode == "update_details"
+            SkipExpenses = mode == "existing_stock" || mode == "price_update" || mode == "update_details",
+            LocationId = targetLocation,
         };
         _db.ImportJobs.Add(job);
         await _db.SaveChangesAsync();

@@ -28,6 +28,11 @@ public class ImportJob
     public bool SkipExpenses { get; set; }
     public string ImportMode { get; set; } = "default";
 
+    /// <summary>Branch this import targets, captured at enqueue from the caller's selected branch (or an explicit
+    /// pick). The worker re-establishes it as the ambient LocationScope so imported stock lands at the right
+    /// ProductLocationStock and sale/expense/inventory rows carry it. Null = business-wide / default branch.</summary>
+    public Guid? LocationId { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? StartedAtUtc { get; set; }
     public DateTime? CompletedAtUtc { get; set; }

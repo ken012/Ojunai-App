@@ -4,7 +4,8 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { roleHasPermission, Permission } from "@/lib/permissions";
-import { useDataSync } from "@/lib/data-sync";
+import { useDataSync, useBusiness } from "@/lib/data-sync";
+import { getSelectedLocation } from "@/lib/location";
 import { usePlanStatus } from "@/lib/use-plan-status";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { useToast } from "@/components/toast";
@@ -137,6 +138,20 @@ function validateRows(headers: string[], rows: string[][], importType: string): 
 
 export default function ImportPage() {
   const { toast } = useToast();
+  const business = useBusiness();
+  const activeLocations = useMemo(() => (business?.locations ?? []).filter((l) => l.isActive), [business?.locations]);
+  const multiLoc = !!business?.isMultiLocation && activeLocations.length > 1;
+  const [importLocationId, setImportLocationId] = useState<string>("");
+  // Default the import target to the branch the top switcher is on (else the default branch).
+  useEffect(() => {
+    if (!multiLoc) return;
+    if (importLocationId && activeLocations.some((l) => l.id === importLocationId)) return;
+    const sel = getSelectedLocation();
+    setImportLocationId(sel && activeLocations.some((l) => l.id === sel)
+      ? sel
+      : (activeLocations.find((l) => l.isDefault)?.id ?? activeLocations[0].id));
+  }, [multiLoc, activeLocations, importLocationId]);
+
   const [type, setType] = useState<ImportType>("inventory");
   const [file, setFile] = useState<File | null>(null);
   const [allRows, setAllRows] = useState<string[][]>([]);
@@ -285,7 +300,10 @@ export default function ImportPage() {
       const formData = new FormData();
       formData.append("file", csvFile);
       const hasMode = type === "inventory" || type === "sales" || type === "contacts-ledger";
-      const url = hasMode ? `/import/${type}?mode=${importMode}` : `/import/${type}`;
+      let url = hasMode ? `/import/${type}?mode=${importMode}` : `/import/${type}`;
+      // Inventory imports land at the chosen branch (stock has to live somewhere concrete).
+      if (type === "inventory" && multiLoc && importLocationId)
+        url += `${url.includes("?") ? "&" : "?"}locationId=${importLocationId}`;
       const { data } = await api.post<{ data: ImportJob }>(url, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
@@ -403,6 +421,22 @@ export default function ImportPage() {
                 </div>
               </label>
             </div>
+
+            {multiLoc && (
+              <div className="mt-4 border-t border-slate-100 dark:border-slate-800 pt-3">
+                <Label className="text-xs">Import into branch</Label>
+                <select
+                  value={importLocationId}
+                  onChange={(e) => setImportLocationId(e.target.value)}
+                  className="mt-1 w-full h-9 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm text-slate-900 dark:text-slate-100"
+                >
+                  {activeLocations.map((l) => (
+                    <option key={l.id} value={l.id}>{l.name}{l.isDefault ? " (default)" : ""}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">Stock and inventory expenses from this file land at this branch. Products themselves stay shared across all branches.</p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
