@@ -51,6 +51,9 @@ public class ActivityLogger : IActivityLogger
                 Summary = Trunc(summary, 500),
                 Details = details,
                 CreatedAtUtc = DateTime.UtcNow,
+                // Stamp the branch this action happened at (ambient scope is set on every write surface). Single-
+                // location never sends X-Location-Id → null; the read side gates on >1-active so this is safe.
+                LocationId = LocationScope.Current,
             });
             // NOTE: not saved here — the caller's SaveChangesAsync commits it atomically with the action.
         }

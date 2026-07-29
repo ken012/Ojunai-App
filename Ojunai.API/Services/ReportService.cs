@@ -431,6 +431,18 @@ public partial class ReportService : IReportService
         // applied explicitly here (a global query filter would be bypassed).
         var locId = await _locStock.SelectedLocationForAsync(businessId);
 
+        // Resolve branch names so every feed row can show WHERE it happened. Only for multi-location businesses
+        // (otherwise there's one place and no chip); one tiny query. NameOf → null for null/unknown ids.
+        var branchNames = new Dictionary<Guid, string>();
+        {
+            var locs = await _db.Locations
+                .Where(l => l.BusinessId == businessId && l.IsActive)
+                .Select(l => new { l.Id, l.Name })
+                .ToListAsync();
+            if (locs.Count > 1) branchNames = locs.ToDictionary(l => l.Id, l => l.Name);
+        }
+        string? NameOf(Guid? id) => id is { } x ? branchNames.GetValueOrDefault(x) : null;
+
         // Bound each source query so a single feed request (default view supplies no date filter) can't
         // drag a high-volume tenant's ENTIRE history into memory and OOM the shared process (N-6). Each
         // source is already ordered newest-first, so this keeps the most recent rows — far more than any
@@ -500,7 +512,8 @@ public partial class ReportService : IReportService
                     Source = s.Source,
                     PaymentStatus = s.PaymentStatus.ToString(),
                     PaymentMethod = s.PaymentMethod,
-                    CreatedAtUtc = s.CreatedAtUtc
+                    CreatedAtUtc = s.CreatedAtUtc,
+                    LocationName = NameOf(s.LocationId)
                 });
 
                 // Void event — separate entry at the void timestamp so it shows at the top of the feed
@@ -521,7 +534,8 @@ public partial class ReportService : IReportService
                         RecordedBy = s.RecordedByName,
                         Source = s.DeleteReason == "returned" ? "Return" : "Void",
                         Details = $"Original sale {MakeRef(s.Id, "SL")} from {s.CreatedAtUtc:dd MMM yyyy HH:mm}",
-                        CreatedAtUtc = s.DeletedAtUtc.Value
+                        CreatedAtUtc = s.DeletedAtUtc.Value,
+                        LocationName = NameOf(s.LocationId)
                     });
                 }
             }
@@ -551,7 +565,8 @@ public partial class ReportService : IReportService
                 ContactName = e.PaidTo,
                 RecordedBy = e.RecordedByName,
                 Source = e.Source,
-                CreatedAtUtc = e.CreatedAtUtc
+                CreatedAtUtc = e.CreatedAtUtc,
+                LocationName = NameOf(e.LocationId)
             }));
         }
 
@@ -589,7 +604,8 @@ public partial class ReportService : IReportService
                 RecordedBy = t.RecordedByName,
                 Source = t.RecordedByName != null ? "Staff" : null,
                 Details = t.Notes,
-                CreatedAtUtc = t.CreatedAtUtc
+                CreatedAtUtc = t.CreatedAtUtc,
+                LocationName = NameOf(t.LocationId)
             }));
         }
 
@@ -663,7 +679,8 @@ public partial class ReportService : IReportService
                     RecordedBy = e.RecordedByName,
                     Source = e.Source,
                     Details = e.Notes,
-                    CreatedAtUtc = e.CreatedAtUtc
+                    CreatedAtUtc = e.CreatedAtUtc,
+                    LocationName = NameOf(e.LocationId)
                 });
             }
         }
@@ -672,7 +689,7 @@ public partial class ReportService : IReportService
         if (type == null || type == "action")
         {
             var actionsQ = _db.ActivityLogEntries.AsNoTracking()
-                .Where(a => a.BusinessId == businessId);
+                .Where(a => a.BusinessId == businessId && (locId == null || a.LocationId == locId));
             if (lo.HasValue) actionsQ = actionsQ.Where(a => a.CreatedAtUtc >= lo.Value);
             if (hi.HasValue) actionsQ = actionsQ.Where(a => a.CreatedAtUtc < hi.Value);
             var actions = await actionsQ
@@ -693,6 +710,7 @@ public partial class ReportService : IReportService
                 Action = a.Action,
                 EntityType = a.EntityType,
                 EntityId = a.EntityId,
+                LocationName = NameOf(a.LocationId),
             }));
         }
 

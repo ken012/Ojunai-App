@@ -21,7 +21,7 @@ import {
   Activity as ActivityIcon, Calendar,
   ShoppingCart, Receipt as ReceiptIcon, Package, CheckCircle, AlertTriangle, Wallet,
   Pencil, Trash2, Users, Settings, CreditCard, KeyRound, Upload, Layers, Truck,
-  ClipboardCheck, Link2Off,
+  ClipboardCheck, Link2Off, MapPin,
 } from "lucide-react";
 
 // ─── Type taxonomy ──────────────────────────────────────────────────────────
@@ -153,13 +153,14 @@ function formatTime(d: Date): string {
 
 // ─── CSV export ─────────────────────────────────────────────────────────────
 function exportToCsv(items: ActivityFeedDto[]) {
-  const headers = ["Time", "Type", "Ref", "Description", "Details", "Contact", "Source", "Recorded by", "Amount"];
+  const headers = ["Time", "Type", "Ref", "Description", "Details", "Location", "Contact", "Source", "Recorded by", "Amount"];
   const rows = items.map((it) => [
     new Date(it.createdAtUtc).toISOString(),
     metaFor(it.type).label,
     it.refId ?? "",
     it.description ?? "",
     it.details ?? "",
+    it.locationName ?? "",
     it.contactName ?? "",
     it.source ?? "",
     it.recordedBy ?? "",
@@ -602,6 +603,11 @@ function ActivityRow({
         {item.details && (
           <p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-md mt-0.5">{item.details}</p>
         )}
+        {item.locationName && (
+          <span className="inline-flex items-center gap-1 mt-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+            <MapPin size={10} /> {item.locationName}
+          </span>
+        )}
       </td>
       <td className="px-3 py-2 text-sm text-slate-600 dark:text-slate-400 align-top">
         <span className="truncate block max-w-[140px]">{item.contactName ?? <span className="text-slate-300 dark:text-slate-600">—</span>}</span>
@@ -703,6 +709,7 @@ function DetailDrawer({
             </div>
           } />
 
+          {item.locationName && <DetailRow label="Location" value={<span className="inline-flex items-center gap-1"><MapPin size={12} className="text-slate-400" /> {item.locationName}</span>} />}
           {item.contactName && <DetailRow label="Contact" value={item.contactName} />}
           {item.source && <DetailRow label="Source" value={<SourceBadge source={item.source} />} />}
           {item.recordedBy && <DetailRow label="Recorded by" value={item.recordedBy} />}

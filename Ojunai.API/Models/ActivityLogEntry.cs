@@ -39,4 +39,10 @@ public class ActivityLogEntry
     public string? Details { get; set; }
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+
+    /// <summary>Branch this action happened at, stamped from the ambient LocationScope at write time (which is
+    /// already set on every dashboard/bot/job write). Null = business-wide / "All locations" / single-location
+    /// (the header is only sent for multi-location, so single-location stays null). Existing rows are backfilled
+    /// to the default branch. The activity feed filters + labels by this for multi-location businesses.</summary>
+    public Guid? LocationId { get; set; }
 }

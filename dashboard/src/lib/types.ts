@@ -391,6 +391,8 @@ export interface ActivityFeedDto {
   paymentMethod?: string;
   details?: string;
   createdAtUtc: string;
+  /** Branch this happened at. Only present for multi-location businesses. */
+  locationName?: string;
   // Only present on "action" (audit-log) rows — drive per-action icons + deep-links.
   action?: string;      // dotted code, e.g. "product.deleted"
   entityType?: string;  // "Product", "Contact", "Staff", "Business", "Billing", "Channel", "User", …
