@@ -341,9 +341,16 @@ public class SalesService : ISalesService
                 CustomerName = s.Contact != null ? s.Contact.Name : null,
                 RecordedByName = s.RecordedByName,
                 Source = s.Source,
-                CreatedAtUtc = s.CreatedAtUtc
+                CreatedAtUtc = s.CreatedAtUtc,
+                LocationId = s.LocationId,
             })
             .ToListAsync();
+
+        // Tag each row with its branch name (multi-location only) so an "All locations" export is self-describing.
+        var branchNames = await _locStock.BranchNamesAsync(businessId);
+        if (branchNames != null)
+            foreach (var it in items)
+                it.LocationName = it.LocationId is { } lid ? branchNames.GetValueOrDefault(lid) : null;
 
         return new PaginatedResult<SaleSummaryDto>
         {

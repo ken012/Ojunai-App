@@ -77,4 +77,7 @@ public class SaleSummaryDto
     public string Source { get; set; } = "Manual";
     public DateTime CreatedAtUtc { get; set; }
     public DateTime? DeletedAtUtc { get; set; }
+    public Guid? LocationId { get; set; }
+    /// <summary>Branch this sale was recorded at — populates the "Location" column on the multi-location export.</summary>
+    public string? LocationName { get; set; }
 }

@@ -307,7 +307,8 @@ export default function ExportPage() {
         `/sales?${params}`
       );
       const items = data.data?.items ?? [];
-      const headers = ["Date", "Customer", "Items", "Payment Status", "Payment Method", "Amount", "Source", "Recorded By"];
+      const multiLoc = !!business?.isMultiLocation;
+      const headers = ["Date", "Customer", "Items", "Payment Status", "Payment Method", "Amount", ...(multiLoc ? ["Location"] : []), "Source", "Recorded By"];
       const rows = items.map((s) => [
         fmtDate(s.createdAtUtc, tz),
         s.customerName ?? "",
@@ -315,6 +316,7 @@ export default function ExportPage() {
         s.paymentStatus,
         s.paymentMethod ?? "",
         String(s.totalAmount),
+        ...(multiLoc ? [s.locationName ?? ""] : []),
         s.source ?? "",
         s.recordedByName ?? "",
       ]);
@@ -340,7 +342,8 @@ export default function ExportPage() {
         `/expenses?${params}`
       );
       const items = data.data?.items ?? [];
-      const headers = ["Date", "Category", "Expense Type", "Amount", "Paid To", "Notes", "Source", "Recorded By"];
+      const multiLoc = !!business?.isMultiLocation;
+      const headers = ["Date", "Category", "Expense Type", "Amount", "Paid To", "Notes", ...(multiLoc ? ["Location"] : []), "Source", "Recorded By"];
       const rows = items.map((e) => [
         fmtDate(e.createdAtUtc, tz),
         e.category,
@@ -348,6 +351,7 @@ export default function ExportPage() {
         String(e.amount),
         e.paidTo ?? "",
         e.notes ?? "",
+        ...(multiLoc ? [e.locationName ?? ""] : []),
         e.source ?? "",
         (e as ExpenseDto & { recordedByName?: string }).recordedByName ?? "",
       ]);

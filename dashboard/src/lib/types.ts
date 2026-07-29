@@ -279,6 +279,9 @@ export interface SaleSummaryDto {
   source?: string;
   createdAtUtc: string;
   deletedAtUtc?: string;
+  locationId?: string | null;
+  /** Branch this sale was recorded at. Only meaningful for multi-location businesses. */
+  locationName?: string;
 }
 
 export interface SaleDto extends SaleSummaryDto {
@@ -310,6 +313,9 @@ export interface ExpenseDto {
   paymentMethod?: string;
   source?: string;
   createdAtUtc: string;
+  locationId?: string | null;
+  /** Branch this expense was recorded at. Only meaningful for multi-location businesses. */
+  locationName?: string;
 }
 
 export interface ContactDto {

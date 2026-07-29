@@ -34,6 +34,17 @@ public class LocationStockService
         return activeIds.Count > 1 && activeIds.Contains(locId) ? locId : null;
     }
 
+    /// <summary>Active branch id→name for a business, or null when it's single-location (nothing to label).
+    /// Used to tag list rows / exports with the branch they belong to.</summary>
+    public async Task<Dictionary<Guid, string>?> BranchNamesAsync(Guid businessId)
+    {
+        var locs = await _db.Locations
+            .Where(l => l.BusinessId == businessId && l.IsActive)
+            .Select(l => new { l.Id, l.Name })
+            .ToListAsync();
+        return locs.Count > 1 ? locs.ToDictionary(l => l.Id, l => l.Name) : null;
+    }
+
     /// <summary>A product's stock at a location (0 when it has no row there).</summary>
     public async Task<decimal> StockAtAsync(Guid productId, Guid locationId)
         => (await _db.ProductLocationStocks

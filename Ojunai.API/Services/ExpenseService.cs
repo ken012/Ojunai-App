@@ -101,6 +101,12 @@ public class ExpenseService : IExpenseService
             .Select(e => ToDto(e))
             .ToListAsync();
 
+        // Tag each row with its branch name (multi-location only) for the "All locations" export's Location column.
+        var branchNames = await _locStock.BranchNamesAsync(businessId);
+        if (branchNames != null)
+            foreach (var it in items)
+                it.LocationName = it.LocationId is { } lid ? branchNames.GetValueOrDefault(lid) : null;
+
         return new PaginatedResult<ExpenseDto>
         {
             Items = items,
@@ -181,6 +187,7 @@ public class ExpenseService : IExpenseService
         PaidTo = e.PaidTo,
         PaymentMethod = e.PaymentMethod,
         Source = e.Source,
-        CreatedAtUtc = e.CreatedAtUtc
+        CreatedAtUtc = e.CreatedAtUtc,
+        LocationId = e.LocationId,
     };
 }

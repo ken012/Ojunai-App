@@ -34,6 +34,9 @@ public class ExpenseDto
     public string? PaymentMethod { get; set; }
     public string Source { get; set; } = "Manual";
     public DateTime CreatedAtUtc { get; set; }
+    public Guid? LocationId { get; set; }
+    /// <summary>Branch this expense was recorded at — populates the "Location" column on the multi-location export.</summary>
+    public string? LocationName { get; set; }
 }
 
 public class ExpenseFiltersDto
