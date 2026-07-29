@@ -1,8 +1,7 @@
 "use client";
 
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { useStickyState } from "@/lib/sticky-state";
 import { cn } from "@/lib/utils";
 
 /**
@@ -10,7 +9,8 @@ import { cn } from "@/lib/utils";
  *
  * Behavior:
  *   - Header bar (always visible) shows title + icon + chevron. Click toggles open.
- *   - Content shows only when open. State is persisted per-section in localStorage.
+ *   - Content shows only when open. State is NOT persisted — every section starts collapsed on each
+ *     visit (cleaner), so opening one doesn't leave the page cluttered next time you come back.
  *   - URL hash auto-opens: navigating to /settings#account opens the "account" section
  *     (the desktop sidebar updates the hash on click, so clicking a sidebar item
  *     opens + scrolls to that section).
@@ -37,7 +37,9 @@ export function SettingsSection({
   children: ReactNode;
   defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useStickyState<boolean>(`settings-${id}-open`, defaultOpen);
+  // Ephemeral (not persisted): sections always start collapsed on each visit. The hash effect below
+  // still expands the one you navigated to.
+  const [open, setOpen] = useState<boolean>(defaultOpen);
 
   // Auto-open when the URL hash points at this section. Fires on mount AND on
   // hashchange so sidebar clicks (which only update the hash) reliably expand
