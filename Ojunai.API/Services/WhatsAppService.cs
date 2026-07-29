@@ -3337,7 +3337,9 @@ public class WhatsAppService : IWhatsAppService
 
         var secret = _config["Jwt:Secret"]!;
         var baseUrl = _config["App:BaseUrl"] ?? "https://api.ojunai.com";
-        var token = ExportTokenHelper.GenerateToken(businessId, user.Id, reportType, from, to, secret);
+        // Scope the export to the sender's effective branch (already set on LocationScope for this bot request);
+        // baked into the signed token so ServePdf — which has no request scope — can apply it. Null = business-wide.
+        var token = ExportTokenHelper.GenerateToken(businessId, user.Id, reportType, from, to, secret, location: LocationScope.Current);
         var downloadUrl = $"{baseUrl}/api/export/download?token={token}";
 
         var label = reportType switch

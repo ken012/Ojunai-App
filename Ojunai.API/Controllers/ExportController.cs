@@ -108,7 +108,7 @@ public class ExportController : ControllerBase
     {
         try
         {
-            var pdf = await _pdf.GenerateReportPdfAsync(payload.BusinessId, payload.ReportType, payload.From, payload.To);
+            var pdf = await _pdf.GenerateReportPdfAsync(payload.BusinessId, payload.ReportType, payload.From, payload.To, payload.Location);
             var filename = $"Ojunai-{Capitalize(payload.ReportType)}-{payload.From:yyyyMMdd}-{payload.To:yyyyMMdd}.pdf";
             return File(pdf, "application/pdf", filename);
         }

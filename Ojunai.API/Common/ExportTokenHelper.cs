@@ -4,11 +4,11 @@ using System.Text.Json;
 
 namespace Ojunai.API.Common;
 
-public record ExportTokenPayload(Guid BusinessId, Guid UserId, string ReportType, DateOnly From, DateOnly To, long ExpiresAtUnix);
+public record ExportTokenPayload(Guid BusinessId, Guid UserId, string ReportType, DateOnly From, DateOnly To, long ExpiresAtUnix, Guid? Location = null);
 
 public static class ExportTokenHelper
 {
-    public static string GenerateToken(Guid businessId, Guid userId, string reportType, DateOnly from, DateOnly to, string secret, TimeSpan? expiry = null)
+    public static string GenerateToken(Guid businessId, Guid userId, string reportType, DateOnly from, DateOnly to, string secret, TimeSpan? expiry = null, Guid? location = null)
     {
         var exp = DateTimeOffset.UtcNow.Add(expiry ?? TimeSpan.FromHours(24)).ToUnixTimeSeconds();
         var payload = JsonSerializer.Serialize(new
@@ -18,7 +18,8 @@ public static class ExportTokenHelper
             type = reportType,
             from = from.ToString("yyyy-MM-dd"),
             to = to.ToString("yyyy-MM-dd"),
-            exp
+            exp,
+            loc = location?.ToString(), // branch this export is scoped to; null/absent = business-wide (back-compat)
         });
 
         var payloadB64 = ToUrlSafeBase64(Encoding.UTF8.GetBytes(payload));
@@ -52,7 +53,11 @@ public static class ExportTokenHelper
 
             if (DateTimeOffset.UtcNow.ToUnixTimeSeconds() > exp) return null;
 
-            return new ExportTokenPayload(bid, uid, type, from, to, exp);
+            // Optional branch scope (absent/null on legacy tokens = business-wide).
+            Guid? loc = root.TryGetProperty("loc", out var locEl) && locEl.ValueKind == JsonValueKind.String
+                && Guid.TryParse(locEl.GetString(), out var lg) ? lg : null;
+
+            return new ExportTokenPayload(bid, uid, type, from, to, exp, loc);
         }
         catch
         {

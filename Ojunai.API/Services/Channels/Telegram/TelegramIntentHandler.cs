@@ -981,7 +981,8 @@ public sealed class TelegramIntentHandler : ITelegramIntentHandler
         byte[] pdfBytes;
         try
         {
-            pdfBytes = await _pdfExports.GenerateReportPdfAsync(businessId, reportType, from, to);
+            // Scope to the sender's effective branch (set on LocationScope for this handler); null = business-wide.
+            pdfBytes = await _pdfExports.GenerateReportPdfAsync(businessId, reportType, from, to, LocationScope.Current);
         }
         catch (Exception ex)
         {
