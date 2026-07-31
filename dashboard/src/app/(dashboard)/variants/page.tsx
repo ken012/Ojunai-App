@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
+import { ScopeChip } from "@/components/scope-chip";
 import { formatNaira, pluralUnit } from "@/lib/format";
 import { hasPermission, Permission } from "@/lib/permissions";
 import { useBusiness, useDataSync } from "@/lib/data-sync";
@@ -43,9 +44,14 @@ export default function VariantsPage() {
       <PageHeader
         title="Product variants"
         subtitle="Manage a style once — its sizes, colours, etc. are each a real product"
-        actions={canManage ? (
-          <Button onClick={() => setCreating(true)} className="gap-1.5"><Plus size={16} /> New variant product</Button>
-        ) : undefined}
+        actions={
+          <>
+            <ScopeChip />
+            {canManage && (
+              <Button onClick={() => setCreating(true)} className="gap-1.5"><Plus size={16} /> New variant product</Button>
+            )}
+          </>
+        }
       />
 
       {isLoading ? (
@@ -278,7 +284,11 @@ function StyleView({ id, canManage, onBack }: { id: string; canManage: boolean; 
         <>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">{g.name}</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">{g.name}</h2>
+                {/* Which branch the Stock column reflects (nothing for single-location). */}
+                <ScopeChip />
+              </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">{g.axes.map((a) => `${a.name}: ${a.values.join(", ")}`).join(" · ")}</p>
             </div>
             {canManage && (

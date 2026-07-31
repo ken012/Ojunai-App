@@ -16,11 +16,13 @@ public class VariantGroupService : IVariantGroupService
 {
     private readonly AppDbContext _db;
     private readonly IActivityLogger _activity;
+    private readonly LocationStockService _locStock;
 
-    public VariantGroupService(AppDbContext db, IActivityLogger activity)
+    public VariantGroupService(AppDbContext db, IActivityLogger activity, LocationStockService locStock)
     {
         _db = db;
         _activity = activity;
+        _locStock = locStock;
     }
 
     public async Task<VariantGroupDto> CreateAsync(Guid businessId, CreateVariantGroupRequest request)
@@ -94,7 +96,8 @@ public class VariantGroupService : IVariantGroupService
             .ToListAsync();
         var byGroup = variants.GroupBy(p => p.VariantGroupId!.Value).ToDictionary(g => g.Key, g => g.ToList());
 
-        return groups.Select(g => ToDto(g, byGroup.GetValueOrDefault(g.Id) ?? new List<Product>(), includeVariants: false)).ToList();
+        var effectiveStock = await EffectiveStockAsync(businessId, variants);
+        return groups.Select(g => ToDto(g, byGroup.GetValueOrDefault(g.Id) ?? new List<Product>(), includeVariants: false, effectiveStock)).ToList();
     }
 
     public async Task<VariantGroupDto> GetAsync(Guid businessId, Guid groupId)
@@ -105,7 +108,8 @@ public class VariantGroupService : IVariantGroupService
             .Where(p => p.BusinessId == businessId && p.IsActive && p.VariantGroupId == groupId)
             .OrderBy(p => p.Name)
             .ToListAsync();
-        return ToDto(group, variants, includeVariants: true);
+        var effectiveStock = await EffectiveStockAsync(businessId, variants);
+        return ToDto(group, variants, includeVariants: true, effectiveStock);
     }
 
     public async Task<VariantGroupDto> AddVariantAsync(Guid businessId, Guid groupId, AddVariantRequest request)
@@ -164,6 +168,19 @@ public class VariantGroupService : IVariantGroupService
     }
 
     // ── helpers ────────────────────────────────────────────────────────────────
+
+    /// <summary>Per-variant EFFECTIVE stock overlaid onto the SELECTED branch's ProductLocationStock (0 where a
+    /// variant has no row there) — variants are ordinary products, so their per-location stock already exists.
+    /// Returns null when the business is single-location or no branch is selected, so <see cref="ToDto"/> falls
+    /// back to each variant's business-wide CurrentStock and single-location stays byte-for-byte unchanged.</summary>
+    private async Task<IReadOnlyDictionary<Guid, decimal>?> EffectiveStockAsync(Guid businessId, List<Product> variants)
+    {
+        if (variants.Count == 0) return null;
+        var locId = await _locStock.SelectedLocationForAsync(businessId);
+        if (locId is not { } loc) return null;
+        return await _locStock.StockAtAsync(variants.Select(v => v.Id).ToList(), loc);
+    }
+
     private sealed record Combo(Dictionary<string, string> Values);
 
     private static List<Combo> CartesianProduct(List<VariantAxisInput> axes)
@@ -183,8 +200,13 @@ public class VariantGroupService : IVariantGroupService
         return result;
     }
 
-    private static VariantGroupDto ToDto(VariantGroup g, List<Product> variants, bool includeVariants)
+    private static VariantGroupDto ToDto(VariantGroup g, List<Product> variants, bool includeVariants,
+        IReadOnlyDictionary<Guid, decimal>? effectiveStock = null)
     {
+        // Branch-effective stock per variant: the selected branch's PLS (0 if no row) when scoped, else the
+        // business-wide roll-up. Drives TotalStock, the low-stock count, and each variant's shown stock.
+        decimal Stock(Product v) => effectiveStock is null ? v.CurrentStock : effectiveStock.GetValueOrDefault(v.Id, 0m);
+
         var axisNames = JsonSerializer.Deserialize<List<string>>(g.Axes) ?? new List<string>();
         var prices = variants.Where(v => v.SellingPrice.HasValue).Select(v => v.SellingPrice!.Value).ToList();
 
@@ -207,8 +229,8 @@ public class VariantGroupService : IVariantGroupService
             Category = g.Category,
             Axes = axes,
             VariantCount = variants.Count,
-            TotalStock = variants.Sum(v => v.CurrentStock),
-            LowStockCount = variants.Count(v => v.CurrentStock <= v.LowStockThreshold),
+            TotalStock = variants.Sum(v => Stock(v)),
+            LowStockCount = variants.Count(v => Stock(v) <= v.LowStockThreshold),
             MinPrice = prices.Count > 0 ? prices.Min() : null,
             MaxPrice = prices.Count > 0 ? prices.Max() : null,
             CreatedAtUtc = g.CreatedAtUtc,
@@ -223,9 +245,9 @@ public class VariantGroupService : IVariantGroupService
                     Unit = v.Unit,
                     SellingPrice = v.SellingPrice,
                     CostPrice = v.CostPrice,
-                    CurrentStock = v.CurrentStock,
+                    CurrentStock = Stock(v),
                     LowStockThreshold = v.LowStockThreshold,
-                    IsLowStock = v.CurrentStock <= v.LowStockThreshold,
+                    IsLowStock = Stock(v) <= v.LowStockThreshold,
                 }).ToList()
                 : new List<VariantDto>(),
         };

@@ -24,9 +24,9 @@ const RULES: { prefix: string; scoping: LocationScoping }[] = [
   { prefix: "/export", scoping: "scoped" },
   { prefix: "/activity", scoping: "scoped" },
   { prefix: "/contacts", scoping: "scoped" },
+  { prefix: "/variants", scoping: "scoped" }, // variants ARE products → their stock is per-branch
   { prefix: "/settings", scoping: "config" },
   { prefix: "/get-started", scoping: "config" },
-  { prefix: "/variants", scoping: "config" },
   { prefix: "/import", scoping: "config" },
   { prefix: "/voice-ai", scoping: "config" },
 ];
