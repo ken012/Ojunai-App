@@ -426,9 +426,15 @@ function VoiceMeter({ planStatus }: {
 }) {
   const isTrial = planStatus.voiceAIPlanStatus === "trial";
   const used = isTrial ? planStatus.voiceAITrialMinutesUsed : planStatus.voiceAICycleMinutesUsed;
+  // An ACTIVE line with no tier has no minute allowance to count against — the backend returns null for
+  // both "included" and "remaining" (VoiceAIGuard.GetVoiceAICycleMinutesRemaining short-circuits on an
+  // empty tier) and nothing anywhere enforces a cycle cap. That's the internal/comp'd-account shape.
+  // Rendering those nulls as 0 used to read as "0 minutes left / line dead" — the exact opposite of the
+  // truth, which is that the line is uncapped. Show it as uncapped instead.
+  const uncapped = !isTrial && planStatus.voiceAITierMinutesIncluded == null;
   const cap = isTrial ? VOICE_AI_TRIAL_MINUTES : (planStatus.voiceAITierMinutesIncluded ?? 0);
   const remaining = isTrial ? (planStatus.voiceAITrialMinutesRemaining ?? 0) : (planStatus.voiceAICycleMinutesRemaining ?? 0);
-  const pct = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
+  const pct = uncapped ? 0 : cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
   const tone = pct >= 90 ? "bg-rose-500" : pct >= 70 ? "bg-amber-500" : "bg-emerald-500";
 
   return (
@@ -438,15 +444,23 @@ function VoiceMeter({ planStatus }: {
           {isTrial ? "Free trial usage" : `${planStatus.voiceAITier ? VOICE_AI_TIER_LABELS[planStatus.voiceAITier] : "Voice"} — this cycle`}
         </p>
         <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-          {used} / {cap} min
+          {uncapped ? `${used} min` : `${used} / ${cap} min`}
         </p>
       </div>
-      <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-        <div className={`h-full ${tone} transition-all`} style={{ width: `${pct}%` }} />
-      </div>
+      {!uncapped && (
+        <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+          <div className={`h-full ${tone} transition-all`} style={{ width: `${pct}%` }} />
+        </div>
+      )}
       <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-2">
-        {remaining} inbound minute{remaining === 1 ? "" : "s"} remaining
-        {isTrial && " on your trial — subscribe to keep your line live"}
+        {uncapped ? (
+          <>No minute cap on this line — usage is tracked but not limited.</>
+        ) : (
+          <>
+            {remaining} inbound minute{remaining === 1 ? "" : "s"} remaining
+            {isTrial && " on your trial — subscribe to keep your line live"}
+          </>
+        )}
       </p>
     </div>
   );
